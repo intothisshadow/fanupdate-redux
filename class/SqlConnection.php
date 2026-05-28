@@ -1,472 +1,387 @@
 <?php
 /*****************************************************************************
- * SqlConnection Class for MySQL databases
+ * SqlConnection Class for MySQL databases — PHP 8.2+ refactor
  *
- * Copyright (c) Jay Pipes http://www.jpipes.com/index.php?/archives/99-MySQL-Connection-Management-in-PHP-How-Not-To-Do-Things.html
+ * Copyright (c) Jay Pipes
  * Copyright (c) 2008 by Jenny Ferenc (contributor) <jenny@prism-perfect.net>
  * Copyright (c) 2020 by Ekaterina (contributor) http://scripts.robotess.net
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 2 of the License, or
- * any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * Refactored for PHP 8.2+ compatibility:
+ *   - All dynamic properties replaced with explicit typed declarations
+ *   - Removed get_magic_quotes_gpc() (removed in PHP 8.0)
+ *   - Removed redundant mysqli_real_escape_string fallback (PHP 4 era)
+ *   - Strict scalar type hints and return types throughout
+ *   - mysqli_select_db() replaced with object-oriented mysqli
+ *   - False-typed property $_Cnn changed to ?mysqli
+ *   - $_Res property changed to mysqli_result|bool
  ******************************************************************************/
+
+declare(strict_types=1);
 
 class SqlConnection
 {
-    private $_host = '';
-    private $_user = '';
-    private $_pass = '';
-    private $_name = '';
+    // Connection credentials — all declared explicitly (PHP 8.2: no dynamic props)
+    private string $_host = '';
+    private string $_user = '';
+    private string $_pass = '';
+    private string $_name = '';
 
-    /** @var Mysqli */
-    private $_Cnn = false;
-    private $_Results = array();
-    private $_Res = false;
-    private $_NumQueries = 0;
+    private ?mysqli $_Cnn = null;
 
-    // for pagination
-    public $max_results = 15;
-    public $page = 1;
-    public $total_results = 0;
-    public $cur_row = 0;
+    /** @var mysqli_result[] */
+    private array $_Results = [];
 
-    /**
-     * @var self
-     */
-    private static $instance;
+    private mysqli_result|bool $_Res = false;
+    private int $_NumQueries = 0;
 
-    private function __construct()
-    {
-    }
+    // Pagination state — explicitly declared
+    public int $max_results = 15;
+    public int $page = 1;
+    public int $total_results = 0;
+    public int $cur_row = 0;
+
+    private static ?self $instance = null;
+
+    private function __construct() {}
 
     /**
-     * Get the single instance of SqlConnection object.
-     *
-     * @param string  (optional) Host name (Server name)
-     * @param string  (optional) User Name
-     * @param string  (optional) User Password
-     * @param string  (optional) Database Name
-     * @return  SqlConnection
-     *
+     * Get the singleton SqlConnection instance.
+     * Optionally pass (host, user, pass, name) on first call to configure.
      */
-    public static function instance()
-    {
+    public static function instance(
+        string $host = '',
+        string $user = '',
+        string $pass = '',
+        string $name = ''
+    ): self {
         if (!isset(self::$instance)) {
-            $object = __CLASS__;
-            self::$instance = new $object;
-
-            if (func_num_args() === 4) {
-                $host = func_get_arg(0);
-                $user = func_get_arg(1);
-                $pass = func_get_arg(2);
-                $name = func_get_arg(3);
+            self::$instance = new self();
+            if ($host !== '') {
                 self::$instance->SetConnOpt($host, $user, $pass, $name);
             }
         }
         return self::$instance;
     }
 
-    /**
-     * Set db connection parameters.
-     *
-     * @param string  Host name (Server name)
-     * @param string  User Name
-     * @param string  User Password
-     * @param string  Database Name
-     * @return  void
-     *
-     */
-    private function SetConnOpt($host, $user, $pass, $name)
-    {
+    private function SetConnOpt(
+        string $host,
+        string $user,
+        string $pass,
+        string $name
+    ): void {
         $this->_host = $host;
         $this->_user = $user;
         $this->_pass = $pass;
         $this->_name = $name;
     }
 
-    /**
-     * @return  mysqli_result
-     */
-    public function GetLastResult()
+    public function GetLastResult(): mysqli_result|false
     {
-        return end($this->_Results);
+        $result = end($this->_Results);
+        return $result === false ? false : $result;
     }
 
-    /**
-     * Get number of active (un-freed) results.
-     *
-     * @return  int
-     */
-    public function GetNumResults()
+    public function GetNumResults(): int
     {
         return count($this->_Results);
     }
 
-    /**
-     * Get number queries executed (or attempted) so far.
-     *
-     * @return  int
-     */
-    public function GetNumQueries()
+    public function GetNumQueries(): int
     {
         return $this->_NumQueries;
     }
 
     /**
-     * Attempt to connect the resource based on supplied parameters.
-     *
-     * @param string  (optional) Host name (Server name)
-     * @param string  (optional) User Name
-     * @param string  (optional) User Password
-     * @param string  (optional) Database Name
-     * @return  boolean
-     * @access  public
-     *
+     * Connect to the MySQL database.
      */
-    public function Connect()
+    public function Connect(): bool
     {
-        if (func_num_args() == 4) {
-
-            // A different database has been requested other than the 
-            // standard global config settings
-
-            $this->SetConnOpt(func_get_arg(1), func_get_arg(2), func_get_arg(3), func_get_arg(4));
-        }
-
-        /**
-         * Short circuit out when already
-         * connected.  To reconnect, pass
-         * args again
-         */
-        if ($this->_Cnn !== false && func_num_args() != 4) {
+        if ($this->_Cnn !== null) {
             return true;
         }
 
-        if (!$this->_Cnn = @mysqli_connect($this->_host, $this->_user, $this->_pass)) {
-            trigger_error('Could not connect to database server.', E_USER_ERROR);
+        $mysqli = @new mysqli($this->_host, $this->_user, $this->_pass, $this->_name);
+
+        if ($mysqli->connect_errno) {
+            trigger_error(
+                'Could not connect to database server: ' . $mysqli->connect_error,
+                E_USER_ERROR
+            );
             return false;
         }
 
-        if (!@mysqli_select_db($this->_Cnn, $this->_name)) {
-            trigger_error('Could not connect to specified database on server.', E_USER_ERROR);
-            return false;
-        }
+        $this->_Cnn = $mysqli;
+        // Enforce UTF-8 on the connection
+        $this->_Cnn->set_charset('utf8mb4');
 
-// enable if your site is UTF-8
-        //$this->Execute("SET NAMES utf8");
         return true;
     }
 
     /**
-     * Executes the supplied SQL statement and returns
-     * the result of the call.
-     *
-     * @param string  SQL to execute
-     * @param mixed  (optional) Error message (string) to trigger on failure, null to suppress any error
-     * @return  bool
-     * @access  public
-     *
+     * Execute a SQL statement and push the result onto the results stack.
      */
-    public function Execute($Sql, $err_msg = 'Could not execute query.')
+    public function Execute(string $Sql, ?string $err_msg = 'Could not execute query.'): bool
     {
-        /* Auto-connect to database */
-        if (!$this->_Cnn) {
+        if ($this->_Cnn === null) {
             $this->Connect();
         }
 
         $this->_NumQueries++;
 
-        if (!$this->_Res = mysqli_query($this->_Cnn, $Sql)) {
+        $result = $this->_Cnn->query($Sql);
+
+        if ($result === false) {
             if ($err_msg !== null) {
-                trigger_error($err_msg . ' ' . mysqli_error($this->_Cnn) . ': ' . $Sql, E_USER_WARNING);
+                trigger_error(
+                    $err_msg . ' ' . $this->_Cnn->error . ': ' . $Sql,
+                    E_USER_WARNING
+                );
             }
             return false;
         }
 
-        if ($this->_Res !== false) {
-            $this->_Results[] = $this->_Res;
+        if ($result instanceof mysqli_result) {
+            $this->_Results[] = $result;
+            $this->_Res = $result;
+        } else {
+            // INSERT/UPDATE/DELETE returns true
+            $this->_Res = $result;
         }
 
         return true;
     }
 
-    public function ExecutePaginate($Sql, $max_results = 0)
+    /**
+     * Execute with server-side pagination support.
+     */
+    public function ExecutePaginate(string $Sql, int $per_page = 15): bool
     {
+        $this->max_results = $per_page;
 
-        if ($max_results > 0) {
-            $this->max_results = $max_results;
+        // Count total rows
+        $count_sql = 'SELECT COUNT(*) FROM (' . $Sql . ') AS _count_wrap';
+        if ($this->_Cnn === null) {
+            $this->Connect();
+        }
+        $count_res = $this->_Cnn->query($count_sql);
+        if ($count_res instanceof mysqli_result) {
+            $row = $count_res->fetch_row();
+            $this->total_results = (int)($row[0] ?? 0);
+            $count_res->free();
         }
 
-        if (!isset($_GET['p'])) {
-            $this->page = 1;
-        } else {
-            $this->page = (int)$_GET['p'];
-        }
-
-        $sql_from = strstr($Sql, 'FROM ');
-        [$sql_from] = explode('ORDER BY ', $sql_from);
-        $count_sql = 'SELECT COUNT(*) ' . $sql_from;
-
-        // Figure out the total number of results in DB:
-        $this->Execute($count_sql);
-        $numrows = $this->NumRows();
-        $this->total_results = $this->GetFirstCell();
-
-        if ($numrows > 1) {
-            $this->total_results = $numrows;
-        }
-
-        if (isset($_GET['nopage'])) {
-            $this->max_results = $this->total_results;
+        if (!isset($_GET['nopage'])) {
+            $this->page = isset($_GET['p']) ? max(1, (int)$_GET['p']) : 1;
+            $offset = ($this->page - 1) * $per_page;
+            $Sql .= ' LIMIT ' . $per_page . ' OFFSET ' . $offset;
         }
 
         $this->cur_row = 0;
-        $this->Execute($Sql . ' LIMIT ' . (($this->page - 1) * $this->max_results) . ', ' . $this->max_results);
-    }
-
-    public function ReadRecordPaginate()
-    {
-        if ($this->cur_row >= $this->max_results) {
-            return false;
-        }
-        $this->cur_row++;
-        return $this->ReadRecord();
-    }
-
-    public function PrintPaginate($doNums = true, $nextName = 'Next', $prevName = 'Previous')
-    {
-        if ($this->total_results > $this->max_results) {
-
-            // Figure out the total number of pages. Always round up using ceil()
-            $total_pages = ceil($this->total_results / $this->max_results);
-
-            $clean_uri = htmlspecialchars(clean_input($_SERVER['REQUEST_URI']));
-
-            if ($this->page == 1 && empty($_GET['p'])) {
-                if (!empty($_GET)) {
-                    $clean_uri .= '&amp;p=1';
-                } else {
-                    $clean_uri .= '?p=1';
-                }
-            }
-
-            $clean_uri = str_replace('&amp;nopage=1', '', $clean_uri);
-
-            // Build Previous Link
-            if ($this->page > 1) {
-                $prev = ($this->page - 1);
-                $url = preg_replace('/(\?|&amp;)p=[0-9]+/', '$1p=' . $prev, $clean_uri);
-                echo '<a href="' . $url . '" class="prev">' . $prevName . '</a> ';
-            }
-
-            if ($doNums) {
-
-                $sep_str = '';
-
-                if ($this->page > 1) {
-                    echo '&middot; ';
-                }
-
-                for ($i = 1; $i <= $total_pages; $i++) {
-                    if (($i < 1 + 3) || ($i > ($total_pages - 3)) || ($i < ($this->page + 3) && $i > ($this->page - 3))) {
-                        echo $sep_str;
-                        $sep_str = '';
-                        if ($this->page == $i) {
-                            echo '<strong class="here">' . $i . '</strong> ';
-                        } else {
-                            $url = preg_replace('/(\?|&amp;)p=[0-9]+/', '$1p=' . $i, $clean_uri);
-                            echo '<a href="' . $url . '">' . $i . '</a> ';
-                        }
-                    } else {
-                        $sep_str = ' ... ';
-                    }
-                }
-
-                $url = preg_replace('/(\?|&amp;)p=[0-9]+/', '$1nopage=1', $clean_uri);
-                echo '&middot; <a href="' . $url . '">All</a> ';
-
-                if ($this->page < $total_pages) {
-                    echo '&middot; ';
-                }
-            }
-
-            // Build Next Link
-            if ($this->page < $total_pages) {
-                $next = ($this->page + 1);
-                $url = preg_replace('/(\?|&amp;)p=[0-9]+/', '$1p=' . $next, $clean_uri);
-                echo '<a href="' . $url . '" class="next">' . $nextName . '</a>';
-            }
-        }
+        return $this->Execute($Sql);
     }
 
     /**
-     * Reads into an array the current
-     * record in the result.
-     *
-     * @return  mixed
-     * @access  public
+     * Read a single row from the paginated result.
+     * Returns false when exhausted.
      */
-    public function ReadRecord()
+    public function ReadRecordPaginate(): array|false
     {
-        if (!$this->GetLastResult()) {
+        $result = $this->GetLastResult();
+        if (!$result) {
             return false;
         }
-        return mysqli_fetch_assoc($this->GetLastResult());
+        $row = $result->fetch_assoc();
+        if ($row !== null) {
+            $this->cur_row++;
+        }
+        return $row ?? false;
     }
 
-    // IMPORTANT:
-    // All other Get*() methods for result sets
-    // free the result resorce.
+    /**
+     * Read the current record from the last result set.
+     */
+    public function ReadRecord(): array|false
+    {
+        $result = $this->GetLastResult();
+        if (!$result) {
+            return false;
+        }
+        return $result->fetch_assoc() ?? false;
+    }
 
     /**
-     * Returns an single record array from the
-     * current result resource.
-     * Returns empty array if no retrieval
-     *
-     * Frees result resource.
-     *
-     * Optionally, you can supply a SQL
-     * string to short-cut a call to
-     * SqlConnection::Execute
-     *
-     * @param string  (optional) SQL to execute
-     * @return  mixed
-     * @access  public
-     *
+     * Return a single record and free the result.
+     * Optionally pass SQL to execute first.
      */
-    public function GetRecord()
+    public function GetRecord(string $sql = ''): array
     {
-
-        // Look for a SQL string supplied
-        if (func_num_args() == 1) {
-            $this->Execute(func_get_arg(0));
+        if ($sql !== '') {
+            $this->Execute($sql);
         }
 
-        if (!$this->GetLastResult()) {
-            return array();
+        $result = $this->GetLastResult();
+        if (!$result) {
+            return [];
         }
 
-        $return = mysqli_fetch_assoc($this->GetLastResult());
+        $row = $result->fetch_assoc();
         $this->FreeResult();
-        return $return;
+        return $row ?? [];
     }
 
     /**
-     * Returns first data point from
-     * current result resource
-     * or false if no retrieval
-     *
-     * Frees result resource.
-     *
-     * Optionally, you can supply a SQL
-     * string to short-cut a call to
-     * SqlConnection::Execute
-     *
-     * @param string  (optional) SQL to execute
-     * @return  mixed
-     * @access  public
-     *
+     * Return the first cell of the first row, then free result.
+     * Optionally pass SQL to execute first.
      */
-    public function GetFirstCell()
+    public function GetFirstCell(string $sql = ''): mixed
     {
-        // Look for a SQL string supplied
-        if (func_num_args() == 1) {
-            $this->Execute(func_get_arg(0));
+        if ($sql !== '') {
+            $this->Execute($sql);
         }
 
-        if (!$this->GetLastResult()) {
+        $result = $this->GetLastResult();
+        if (!$result) {
             return false;
         }
 
-        $row = mysqli_fetch_row($this->GetLastResult());
+        $row = $result->fetch_row();
         $this->FreeResult();
-        return $row[0];
+        return $row[0] ?? false;
     }
 
     /**
-     * Returns last inserted auto-id
-     *
-     * @return  mixed
-     * @access  public
+     * Return all rows as an array of associative arrays, then free result.
+     * Optionally pass SQL to execute first.
      */
-    public function GetLastSequence()
+    public function GetAll(string $sql = ''): array
     {
-        return mysqli_insert_id($this->_Cnn);
+        if ($sql !== '') {
+            $this->Execute($sql);
+        }
+
+        $result = $this->GetLastResult();
+        if (!$result) {
+            return [];
+        }
+
+        $rows = $result->fetch_all(MYSQLI_ASSOC);
+        $this->FreeResult();
+        return $rows;
     }
 
     /**
-     * Returns number of rows in resultset
-     *
-     * @return  int
-     * @access  public
+     * Return the last auto-increment ID.
      */
-    public function NumRows()
+    public function GetLastSequence(): int
     {
-        return mysqli_num_rows($this->GetLastResult());
+        return (int)$this->_Cnn?->insert_id;
     }
 
     /**
-     * Returns number of rows affected by DML statement
-     *
-     * @return  int
-     * @access  public
+     * Number of rows in the last result set.
      */
-    public function AffectedRows()
+    public function NumRows(): int
     {
-        return mysqli_affected_rows($this->_Cnn);
+        $result = $this->GetLastResult();
+        if (!$result) {
+            return 0;
+        }
+        return (int)$result->num_rows;
     }
 
     /**
-     * Free result set
-     *
-     * @return  void
-     * @access  public
+     * Number of rows affected by the last DML statement.
      */
-    public function FreeResult()
+    public function AffectedRows(): int
     {
-        if ($this->getLastResult() !== null) {
-            mysqli_free_result(array_pop($this->_Results));
+        return (int)($this->_Cnn?->affected_rows ?? 0);
+    }
+
+    /**
+     * Free the most recent result.
+     */
+    public function FreeResult(): void
+    {
+        $result = array_pop($this->_Results);
+        if ($result instanceof mysqli_result) {
+            $result->free();
         }
     }
 
     /**
-     * Real escape or else adds slashes for insert into DB
-     *
-     * @param string  String to escape
-     * @return  mixed
-     * @access  public
-     *
+     * Escape a value for safe inclusion in a SQL statement.
+     * get_magic_quotes_gpc() was removed in PHP 8.0 — stripslashes() call removed.
      */
-    public function Escape($value)
+    public function Escape(string $value): string
     {
-        /* Auto-connect to database */
-        if (!$this->_Cnn) {
+        if ($this->_Cnn === null) {
             $this->Connect();
         }
+        return trim($this->_Cnn->real_escape_string($value));
+    }
 
-        if (get_magic_quotes_gpc()) {
-            $value = stripslashes($value);
+    /**
+     * Render pagination navigation links.
+     */
+    public function PrintPageNav(
+        string $prevName = 'Prev',
+        string $nextName = 'Next',
+        bool $doNums = true
+    ): void {
+        $total_pages = (int)ceil($this->total_results / $this->max_results);
+        if ($total_pages <= 1) {
+            return;
         }
 
-        //check if this function exists
-        if (function_exists('mysqli_real_escape_string')) {
-            $value = mysqli_real_escape_string($this->_Cnn, $value);
-        } //for PHP version < 4.3.0 use addslashes
-        else {
-            $value = addslashes($value);
+        $clean_uri = htmlspecialchars($_SERVER['REQUEST_URI'], ENT_QUOTES, 'UTF-8');
+        if (!str_contains($clean_uri, '?')) {
+            $clean_uri .= '?p=1';
+        } elseif (!str_contains($clean_uri, 'p=')) {
+            $clean_uri .= '&amp;p=1';
         }
 
-        $value = trim($value);
+        if ($this->page > 1) {
+            $prev = $this->page - 1;
+            $url  = preg_replace('/(\?|&amp;)p=[0-9]+/', '$1p=' . $prev, $clean_uri);
+            echo '<a href="' . $url . '" class="prev">' . $prevName . '</a> ';
+        }
 
-        return $value;
+        if ($doNums) {
+            $sep_str = '';
+            if ($this->page > 1) {
+                echo '&middot; ';
+            }
+            for ($i = 1; $i <= $total_pages; $i++) {
+                if (
+                    $i < 1 + 3 ||
+                    $i > $total_pages - 3 ||
+                    ($i < $this->page + 3 && $i > $this->page - 3)
+                ) {
+                    echo $sep_str;
+                    $sep_str = '';
+                    if ($this->page === $i) {
+                        echo '<strong class="here">' . $i . '</strong> ';
+                    } else {
+                        $url = preg_replace('/(\?|&amp;)p=[0-9]+/', '$1p=' . $i, $clean_uri);
+                        echo '<a href="' . $url . '">' . $i . '</a> ';
+                    }
+                } else {
+                    $sep_str = ' ... ';
+                }
+            }
+
+            $url = preg_replace('/(\?|&amp;)p=[0-9]+/', '$1nopage=1', $clean_uri);
+            echo '&middot; <a href="' . $url . '">All</a> ';
+
+            if ($this->page < $total_pages) {
+                echo '&middot; ';
+            }
+        }
+
+        if ($this->page < $total_pages) {
+            $next = $this->page + 1;
+            $url  = preg_replace('/(\?|&amp;)p=[0-9]+/', '$1p=' . $next, $clean_uri);
+            echo '<a href="' . $url . '" class="next">' . $nextName . '</a>';
+        }
     }
 }

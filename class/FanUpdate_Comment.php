@@ -1,204 +1,173 @@
 <?php
 /*****************************************************************************
- * FanUpdate
+ * FanUpdate_Comment — PHP 8.2+ refactor
  * Copyright (c) Jenny Ferenc <jenny@prism-perfect.net>
  * Copyright (c) 2020 by Ekaterina (contributor) http://scripts.robotess.net
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 2 of the License, or
- * any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * Refactored for PHP 8.2+ compatibility:
+ *   - declare(strict_types=1) added
+ *   - All properties explicitly declared with types
+ *   - Strict return types on all methods
+ *   - Gravatar URL updated from HTTP to HTTPS
  ******************************************************************************/
+
+declare(strict_types=1);
 
 class FanUpdate_Comment
 {
-    public $params = array();
-    public $fu;
+    // Explicitly declared — PHP 8.2 forbids dynamic properties
+    public array     $params = [];
+    public FanUpdate $fu;
 
-    public function __construct($params, FanUpdate $fu, $self = null)
+    public function __construct(array $params, FanUpdate $fu, ?string $self = null)
     {
         $this->params = $params;
-        $this->fu = $fu;
+        $this->fu     = $fu;
 
-        if (empty($this->params['comment_id'])) {
-            $this->params['comment_id'] = 0;
-        }
+        $this->params['comment_id'] = (int)($this->params['comment_id'] ?? 0);
+        $this->params['entry_id']   = (int)($this->params['entry_id']   ?? 0);
+        $this->params['name']       = $this->params['name']    ?? 'Anonymous';
+        $this->params['email']      = $this->params['email']   ?? '';
+        $this->params['url']        = $this->params['url']     ?? '';
+        $this->params['comment']    = $this->params['comment'] ?? '';
+        $this->params['added']      = $this->params['added']   ?? date('Y-m-d H:i:s');
+        $this->params['points']     = (int)($this->params['points'] ?? 0);
+        $this->params['approved']   = isset($this->params['approved']) && (int)$this->params['approved'] === 1;
 
-        if (empty($this->params['entry_id'])) {
-            $this->params['entry_id'] = 0;
-        }
-
-        if (empty($this->params['name'])) {
-            $this->params['name'] = 'Anonymous';
-        }
-
-        if (empty($this->params['email'])) {
-            $this->params['email'] = '';
-        }
-
-        if (empty($this->params['url'])) {
-            $this->params['url'] = '';
-        }
-
-        if (empty($this->params['comment'])) {
-            $this->params['comment'] = '';
-        }
-
-        if (empty($this->params['added'])) {
-            $this->params['added'] = date('Y-m-d H:i:s');
-        }
-
-        if (!empty($self)) {
-            $this->params['link_url'] = $self;
-        } else {
-            $this->params['link_url'] = $this->fu->GetCleanSelf();
-        }
-        $this->params['link_url'] .= '?id=' . $this->params['entry_id'] . '#comment' . $this->params['comment_id'];
-
-        if (empty($this->params['points'])) {
-            $this->params['points'] = 0;
-        }
-
-        if (isset($this->params['approved']) && $this->params['approved'] == 1) {
-            $this->params['approved'] = true;
-        } else {
-            $this->params['approved'] = false;
-        }
+        $base = $self ?? $this->fu->getCleanSelf();
+        $this->params['link_url'] = $base . '?id=' . $this->params['entry_id'] . '#comment' . $this->params['comment_id'];
     }
 
-    public function getID()
+    public function getID(): int
     {
-        return $this->params['comment_id'];
+        return (int)$this->params['comment_id'];
     }
 
-    public function getLinkUrl()
+    public function getLinkUrl(): string
     {
-        return $this->params['link_url'];
+        return (string)$this->params['link_url'];
     }
 
-    public function isApproved()
+    public function isApproved(): bool
     {
-        return $this->params['approved'];
+        return (bool)$this->params['approved'];
     }
 
-    public function getPoints()
+    public function getPoints(): int
     {
-        return $this->params['points'];
+        return (int)$this->params['points'];
     }
 
-    public function getName()
+    public function getName(): string
     {
-        return $this->params['name'];
+        return (string)$this->params['name'];
     }
 
-    public function getEmail()
+    public function getEmail(): string
     {
-        return $this->params['email'];
+        return (string)$this->params['email'];
     }
 
-    public function getUrl()
+    public function getUrl(): string
     {
-        return $this->params['url'];
+        return (string)$this->params['url'];
     }
 
-    public function getDate()
+    public function getDate(): string
     {
-        return $this->params['added'];
+        return (string)$this->params['added'];
     }
 
-    public function getDateFormatted($format = false)
+    public function getDateFormatted(string|false $format = false): string
     {
-        if (!$format) {
-            $format = $this->fu->getOpt('date_format');
+        if ($format === false) {
+            $format = (string)$this->fu->getOpt('date_format');
         }
-        return date($format, strtotime($this->params['added']) + ($this->fu->getOpt('timezone_offset') * 3600));
+        return date(
+            $format,
+            strtotime((string)$this->params['added']) + ((int)$this->fu->getOpt('timezone_offset') * 3600)
+        );
     }
 
-    public function getAbstract($words = 10, $doSmile = false)
+    public function getAbstract(int $words = 10, bool $doSmile = false): string
     {
-        $text = truncate_wc(strip_tags($this->params['comment']), $words);
+        $text = truncate_wc(strip_tags((string)$this->params['comment']), $words);
         if ($doSmile) {
             $text = $this->fu->replaceSmilies($text);
         }
         return $text;
     }
 
-    public function getBody()
+    public function getBody(): string
     {
-        return $this->params['comment'];
+        return (string)$this->params['comment'];
     }
 
-    public function getBodyFormatted()
+    public function getBodyFormatted(): string
     {
-        return wpautop($this->fu->replaceSmilies($this->params['comment']));
+        return wpautop($this->fu->replaceSmilies((string)$this->params['comment']));
     }
 
-    public function getCommenterLink()
+    public function getCommenterLink(): string
     {
+        $name = htmlspecialchars((string)$this->params['name'], ENT_QUOTES, 'UTF-8');
 
         if (empty($this->params['url'])) {
-            return '<span class="commenter">' . $this->params['name'] . '</span>';
+            return '<span class="commenter">' . $name . '</span>';
         }
 
-        return '<a class="commenter" href="' . $this->params['url'] . '" title="' . $this->params['name'] . '&#8217;s website">' . $this->params['name'] . '</a>';
+        $url = htmlspecialchars((string)$this->params['url'], ENT_QUOTES, 'UTF-8');
+        return '<a class="commenter" href="' . $url . '" title="' . $name . '&#8217;s website">' . $name . '</a>';
     }
 
-    public function getGravatarUrl($size = 80, $rating = 'G', $default = null)
+    public function getGravatarUrl(int $size = 80, string $rating = 'G', ?string $default = null): string
     {
-
-        if ($this->fu->getOpt('gravatar_on')) {
-
-            if ($default === null) {
-                $default = $this->fu->getOpt('gravatar_default');
-            }
-
-            if (is_email($this->params['email'])) {
-
-                $grav_url = 'http://www.gravatar.com/avatar.php?gravatar_id=' . md5($this->params['email']) .
-                    '&amp;rating=' . $rating .
-                    '&amp;default=' . urlencode($default) .
-                    '&amp;size=' . $size;
-
-            } else {
-                $grav_url = $default;
-            }
-
-            return $grav_url;
-
+        if (!$this->fu->getOpt('gravatar_on')) {
+            return '';
         }
 
-        return '';
-    }
-
-    public function getGravatar($size = 80, $rating = 'G', $default = null)
-    {
-        if ($this->fu->getOpt('gravatar_on')) {
-
-            $grav_url = $this->getGravatarUrl($size, $rating, $default);
-
-            return '<img class="gravatar" src="' . $grav_url . '" alt="' . $this->params['name'] . '&#8217;s gravatar" width="' . $size . '" height="' . $size . '" />';
-
+        if ($default === null) {
+            $default = (string)$this->fu->getOpt('gravatar_default');
         }
 
-        return '';
+        if (is_email((string)$this->params['email'])) {
+            // Use HTTPS Gravatar endpoint (old HTTP URL deprecated)
+            return 'https://www.gravatar.com/avatar/' . md5(strtolower(trim((string)$this->params['email'])))
+                . '?rating=' . urlencode($rating)
+                . '&default=' . urlencode($default)
+                . '&size=' . $size;
+        }
+
+        return $default;
     }
 
-    public function printComment()
+    public function getGravatar(int $size = 80, string $rating = 'G', ?string $default = null): string
     {
-        $gravatar = $this->getGravatar($this->fu->getOpt('gravatar_size'), $this->fu->getOpt('gravatar_rating'));
+        if (!$this->fu->getOpt('gravatar_on')) {
+            return '';
+        }
 
-        $text = str_replace('{{gravatar}}', $gravatar, $this->fu->getOpt('comment_template'));
-        $text = str_replace(array('{{id}}', '{{name}}'), array($this->getID(), $this->getCommenterLink()), $text);
-        $text = str_replace(array('{{date}}', '{{body}}'), array($this->getDateFormatted(), $this->getBodyFormatted()), $text);
+        $grav_url = $this->getGravatarUrl($size, $rating, $default);
+        $name     = htmlspecialchars((string)$this->params['name'], ENT_QUOTES, 'UTF-8');
 
-        echo $text;
+        return '<img class="gravatar" src="' . htmlspecialchars($grav_url, ENT_QUOTES, 'UTF-8')
+             . '" alt="' . $name . '&#8217;s gravatar"'
+             . ' width="' . $size . '" height="' . $size . '" />';
+    }
+
+    public function printComment(): void
+    {
+        $gravatar = $this->getGravatar(
+            (int)$this->fu->getOpt('gravatar_size'),
+            (string)$this->fu->getOpt('gravatar_rating')
+        );
+
+        $text = str_replace('{{gravatar}}', $gravatar,                 (string)$this->fu->getOpt('comment_template'));
+        $text = str_replace('{{id}}',       (string)$this->getID(),    $text);
+        $text = str_replace('{{name}}',     $this->getCommenterLink(), $text);
+        $text = str_replace('{{date}}',     $this->getDateFormatted(), $text);
+        $text = str_replace('{{body}}',     $this->getBodyFormatted(), $text);
+
+        echo $text . "\n";
     }
 }

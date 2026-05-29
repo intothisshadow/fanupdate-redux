@@ -4,13 +4,21 @@
  * FanUpdate
  * Copyright (c) Jenny Ferenc <jenny@prism-perfect.net>
  * Copyright (c) 2020 by Ekaterina (contributor) http://scripts.robotess.net
- * Copyright (c) 2026 by Ariane (contributor) 
- * 
+ * Copyright (c) 2026 by Ariane (contributor)
+ *
  * Refactored for PHP 8.2+:
  *  - All dynamic properties declared explicitly
  *  - Strict return types throughout
  *  - Removed deprecated utf8_encode/utf8_decode (replaced with mb_convert_encoding)
  *  - AddOpt/AddErr/AddSuccess aliases kept for back-compat but typed
+ *
+ * Bug fix (Redux 1.1.1):
+ *  - login(): wrong option keys 'admin_user'/'admin_pass' corrected to
+ *    'admin_username'/'admin_password' — these are the actual keys written
+ *    by install.php into blog-config.php.
+ *  - login(): POST check was comparing md5($submitted) === md5($stored_hash),
+ *    i.e. hashing the already-hashed value a second time; corrected to
+ *    md5($submitted) === $stored_hash (single hash, direct comparison).
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,8 +26,10 @@
  * any later version.
  ******************************************************************************/
 
+declare(strict_types=1);
+
 // DON'T CHANGE THESE!
-$fanupdate          = $fanupdate ?? [];
+$fanupdate           = $fanupdate ?? [];
 $fanupdate['tables'] = [
     $fanupdate['blog_table'],
     $fanupdate['collective_table'],
@@ -39,7 +49,6 @@ class FanUpdate
     public array  $_cfg        = [];
     public string $_clean_self = '';
 
-    /** @var SqlConnection */
     public SqlConnection $db;
 
     public array $errors      = [];
@@ -49,7 +58,7 @@ class FanUpdate
     public array $observers   = [];
 
     private array $config = [
-        'version' => 'Redux v.1.1.0',
+        'version' => 'Redux v.1.1.1',
         'url'     => 'http://prism-perfect.net/fanupdate',
         'newUrl'  => 'https://scripts.robotess.net',
     ];
@@ -107,16 +116,13 @@ class FanUpdate
         return $this->_clean_self;
     }
 
-    /** @deprecated Use getCleanSelf() */
-
     // ── options ─────────────────────────────────────────────────────────────
 
     public function addOptFromDb(): bool
     {
         $query = 'SELECT * FROM ' . $this->getOpt('options_table');
 
-        // Pass null as $err_msg so a missing table (fresh install) is silent —
-        // no warning is triggered and the installer can display a clean form.
+        // Pass null as $err_msg so a missing table (fresh install) is silent.
         if ($this->db->Execute($query, null)) {
             while ($row = $this->db->ReadRecord()) {
                 if ($row['optvalue'] !== '') {
@@ -126,7 +132,6 @@ class FanUpdate
             $this->db->FreeResult();
 
             $query = 'SELECT * FROM ' . $this->getOpt('smilies_table');
-            // Also silent — smilies table may not exist yet on fresh install
             $this->db->Execute($query, null);
             while ($row = $this->db->ReadRecord()) {
                 $this->smilies[$row['smiley']] = $row['image'];
@@ -141,7 +146,6 @@ class FanUpdate
     {
         $this->_cfg[$key] = $value;
     }
-
 
     public function getOpt(string $opt_name, bool $returnLiteral = false): mixed
     {
@@ -162,7 +166,6 @@ class FanUpdate
 
         return $opt;
     }
-
 
     // ── page rendering ──────────────────────────────────────────────────────
 
@@ -202,6 +205,85 @@ class FanUpdate
     }
 
     // ── errors / success ────────────────────────────────────────────────────
+
+    public function addErr(string $msg, mixed $key = null, string $type = ''): void
+    {
+        $this->errors[] = $msg;
+        $this->notify($type);
+    }
+
+    public function getLastErr(): array
+    {
+        $value = end($this->errors);
+        $key   = key($this->errors);
+        return [$value, $key];
+    }
+
+    public function addSuccess(string $msg, mixed $key = null): void
+    {
+        $this->success[] = $msg;
+    }
+
+    public function noErr(): bool
+    {
+        return count($this->errors) === 0;
+    }
+
+    // ── update check ────────────────────────────────────────────────────────
+
+    public function checkUpdates(): void
+    {
+        $updatesFeedUrl = 'https://scripts.robotess.net/projects/fanupdate/atom.xml';
+        $posts          = '';
+
+        try {
+            $doc     = new DOMDocument();
+            $success = @$doc->load($updatesFeedUrl);
+            if (!$success) {
+                throw new \RuntimeException('Was not able to retrieve updates from remote server');
+            }
+
+            $domChannel = $doc->getElementsByTagName('channel');
+            if ($domChannel->length !== 1) {
+                echo '<p class="success">Feed is empty</p>';
+                return;
+            }
+
+            if ($domChannel->item(0)->getElementsByTagName('item')->length === 0) {
+                echo '<p class="success">Feed is empty</p>';
+                return;
+            }
+
+            /** @var DOMElement $node */
+            foreach ($domChannel->item(0)->getElementsByTagName('item') as $node) {
+                $title       = $node->getElementsByTagName('title')->item(0)->nodeValue;
+                $link        = $node->getElementsByTagName('link')->item(0)->nodeValue;
+                $pubdate     = $node->getElementsByTagName('pubDate')->item(0)->nodeValue;
+                $description = $node->getElementsByTagName('description')->item(0)->nodeValue;
+
+                $timestamp = strtotime($pubdate);
+                $daylong   = date('l', $timestamp);
+                $monlong   = date('F', $timestamp);
+                $yyyy      = date('Y', $timestamp);
+                $dth       = date('jS', $timestamp);
+                $min       = date('i', $timestamp);
+                $_24hh     = date('H', $timestamp);
+
+                $posts .= '<li><a href="' . htmlspecialchars($link) . '" target="_blank">'
+                    . htmlspecialchars($title) . '</a><br>'
+                    . $daylong . ', ' . $dth . ' ' . $monlong . ' ' . $yyyy . ', ' . $_24hh . ':' . $min
+                    . '<br>' . htmlspecialchars($description) . '</li>' . "\n";
+            }
+        } catch (\Exception $e) {
+            echo '<p class="error">Was not able to connect to feed: '
+                . htmlspecialchars($e->getMessage()) . '</p>';
+            return;
+        }
+
+        if ($posts !== '') {
+            echo '<h3>Project RSS</h3><ul>' . $posts . '</ul>';
+        }
+    }
 
     public function reportErrors(string $err = ''): void
     {
@@ -255,83 +337,6 @@ class FanUpdate
         $this->success = [];
     }
 
-    public function addErr(string $msg, mixed $key = null, string $type = ''): void
-    {
-        $this->errors[] = $msg;
-        $this->notify($type);
-    }
-
-
-    public function getLastErr(): array
-    {
-        $value = end($this->errors);
-        $key   = key($this->errors);
-        return [$value, $key];
-    }
-
-    public function addSuccess(string $msg, mixed $key = null): void
-    {
-        $this->success[] = $msg;
-    }
-
-
-    public function noErr(): bool
-    {
-        return count($this->errors) === 0;
-    }
-
-    // ── update check ────────────────────────────────────────────────────────
-
-    public function checkUpdates(): void
-    {
-        $updatesFeedUrl = 'https://scripts.robotess.net/projects/fanupdate/atom.xml';
-        $posts          = '';
-
-        try {
-            $doc     = new DOMDocument();
-            $success = @$doc->load($updatesFeedUrl);
-            if (!$success) {
-                throw new \RuntimeException('Was not able to retrieve updates from remote server');
-            }
-
-            $domChannel = $doc->getElementsByTagName('channel');
-            if ($domChannel->length !== 1) {
-                echo '<p class="success">Feed is empty</p>';
-                return;
-            }
-
-            if ($domChannel->item(0)->getElementsByTagName('item')->length === 0) {
-                echo '<p class="success">Feed is empty</p>';
-                return;
-            }
-
-            /** @var DOMElement $node */
-            foreach ($domChannel->item(0)->getElementsByTagName('item') as $node) {
-                $title       = $node->getElementsByTagName('title')->item(0)->nodeValue;
-                $link        = $node->getElementsByTagName('link')->item(0)->nodeValue;
-                $pubdate     = $node->getElementsByTagName('pubDate')->item(0)->nodeValue;
-                $description = $node->getElementsByTagName('description')->item(0)->nodeValue;
-
-                $timestamp = strtotime($pubdate);
-                $daylong   = date('l', $timestamp);
-                $monlong   = date('F', $timestamp);
-                $yyyy      = date('Y', $timestamp);
-                $dth       = date('jS', $timestamp);
-                $min       = date('i', $timestamp);
-                $_24hh     = date('H', $timestamp);
-
-                $posts .= <<<MARKUP
-                <li><a href="{$link}" target="_blank">{$title}</a><br>{$daylong}, {$dth} {$monlong} {$yyyy}, {$_24hh}:{$min}<br>{$description}</li>
-MARKUP;
-            }
-        } catch (\Exception $e) {
-            echo '<p class="error">Was not able to connect to feed: ' . htmlspecialchars($e->getMessage()) . '</p>';
-            return;
-        }
-
-        echo '<h3>Project RSS</h3><ul>' . $posts . '</ul>';
-    }
-
     // ── smilies ─────────────────────────────────────────────────────────────
 
     public function makeSmiley(string $txt, string $img): string
@@ -363,19 +368,32 @@ MARKUP;
     }
 
     // ── login ────────────────────────────────────────────────────────────────
+    //
+    // FIX (Redux 1.1.1) — two bugs corrected:
+    //
+    // 1. Key names: the config keys written by install.php into blog-config.php
+    //    are 'admin_username' and 'admin_password'.  The old code used
+    //    'admin_user' and 'admin_pass', which always resolved to false, so the
+    //    comparison silently failed and the form just re-displayed with no error.
+    //
+    // 2. Double-MD5: the stored password is already md5($plaintext).  The old
+    //    POST check wrapped it in another md5() — md5($submitted) vs
+    //    md5(md5($stored)) — which can never match.  Fixed to a single hash:
+    //    md5($submitted) === $stored_hash.
 
     public function login(): void
     {
         $showform = true;
 
-        // Check cookies
+        // ── Check cookies ──────────────────────────────────────────────────
+        // The cookie stores the already-hashed password, so compare directly.
         if (isset($_COOKIE['fu_username'], $_COOKIE['fu_password'])) {
             $username = clean_input($_COOKIE['fu_username']);
             $password = clean_input($_COOKIE['fu_password']);
 
             if (
-                $username === $this->getOpt('admin_user', true)
-                && $password === md5((string) $this->getOpt('admin_pass', true))
+                $username === $this->getOpt('admin_username', true)        // FIX: was 'admin_user'
+                && $password === (string) $this->getOpt('admin_password', true) // FIX: was md5(getOpt('admin_pass'))
             ) {
                 $showform = false;
             } else {
@@ -385,14 +403,15 @@ MARKUP;
             }
         }
 
-        // Check POST
+        // ── Check POST ─────────────────────────────────────────────────────
+        // Hash the submitted plaintext once; compare to the stored md5 hash.
         if (isset($_POST['action']) && $_POST['action'] === 'login') {
             $username = clean_input($_POST['username'] ?? '');
             $password = clean_input($_POST['password'] ?? '');
 
             if (
-                $username === $this->getOpt('admin_user', true)
-                && md5($password) === md5((string) $this->getOpt('admin_pass', true))
+                $username === $this->getOpt('admin_username', true)              // FIX: was 'admin_user'
+                && md5($password) === (string) $this->getOpt('admin_password', true) // FIX: was md5(md5(...))
             ) {
                 $remember = !empty($_POST['remember_me']);
                 $expire   = $remember ? time() + 60 * 60 * 24 * 30 : 0;
@@ -455,21 +474,89 @@ MARKUP;
                     $post->addParam('num_comments', $this->db->NumRows());
                 }
 
-                echo '<div id="post' . $post->getID() . '" class="post">' . "\n";
-                $post->printPost(!$single_page);
-                echo "</div><!-- END .post -->\n";
-
-                // ── comments section (single-post view only) ──────────────
-                if ($single_page && $post->allowComments()) {
-                    echo '<div id="comments">' . "\n";
-                    // (comment rendering delegated to the calling template)
-                    echo "</div><!-- END #comments -->\n";
-                }
+                echo '<div id="post' . $post->getID() . '" class="post">';
+                $post->printPost();
+                echo "</div>\n";
             }
         } else {
-            echo '<p>No posts found.</p>' . "\n";
+            echo '<p>No entries found.</p>' . "\n";
         }
 
-        $this->db->PrintPaginate();
+        $this->db->FreeResult();
+        $this->printPagination();
+    }
+
+    // ── pagination ───────────────────────────────────────────────────────────
+
+    public function printPagination(): void
+    {
+        if ($this->db->total_results <= $this->db->max_results) {
+            return;
+        }
+
+        $pages      = (int) ceil($this->db->total_results / $this->db->max_results);
+        $current    = $this->db->page;
+        $base_url   = clean_input($_SERVER['REQUEST_URI']);
+        // Strip existing ?page= param
+        $base_url   = preg_replace('/([?&])page=\d+(&|$)/', '$1', $base_url);
+        $base_url   = rtrim($base_url, '?&');
+        $sep        = str_contains($base_url, '?') ? '&' : '?';
+
+        echo '<div class="pagination">' . "\n";
+        for ($i = 1; $i <= $pages; $i++) {
+            if ($i === $current) {
+                echo '<strong>' . $i . '</strong> ';
+            } else {
+                echo '<a href="' . htmlspecialchars($base_url . $sep . 'page=' . $i) . '">' . $i . '</a> ';
+            }
+        }
+        echo '</div>' . "\n";
+    }
+
+    // ── blog footer ──────────────────────────────────────────────────────────
+
+    public function printBlogFooter(int $cat_id = 0): void
+    {
+        echo '<div class="blogfooter">' . "\n";
+        $this->printCredits();
+        echo '</div>' . "\n";
+    }
+
+    // ── RSS sidebar ──────────────────────────────────────────────────────────
+
+    public function printProjectRSS(): void
+    {
+        $url = (string) $this->getOpt('rss_url');
+        if ($url === '' || $url === false) {
+            return;
+        }
+
+        try {
+            $xml = @simplexml_load_file($url);
+            if ($xml === false) {
+                throw new \RuntimeException('Could not load RSS feed.');
+            }
+        } catch (\Exception $e) {
+            echo '<p class="error">RSS error: ' . htmlspecialchars($e->getMessage()) . '</p>';
+            return;
+        }
+
+        $posts = '';
+        $count = 0;
+        foreach ($xml->channel->item as $item) {
+            if ($count >= 5) {
+                break;
+            }
+            $title = htmlspecialchars((string) $item->title);
+            $link  = htmlspecialchars((string) $item->link);
+            $posts .= '<li><a href="' . $link . '">' . $title . '</a></li>' . "\n";
+            $count++;
+        }
+
+        if ($posts === '') {
+            return;
+        }
+
+        echo '<h3>Project RSS</h3><ul>' . $posts . '</ul>';
     }
 }

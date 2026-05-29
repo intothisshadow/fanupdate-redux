@@ -1,7 +1,79 @@
 # Changelog — FanUpdate Redux
 
 All notable changes to this project are documented here.  
-Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
+
+
+---
+
+## [Redux 1.2.1] — May 29, 2026 — Version System & Credits
+
+### Added
+
+- **`version.php`** — single source for all version and release
+  metadata; exports PHP constants `FU_VERSION`, `FU_DB_VERSION`,
+  `FU_RELEASE_DATE`, `FU_RELEASE_NAME`, `FU_URL_ORIGINAL`, `FU_URL_ROBOTESS`,
+  `FU_CONTRIBUTORS`, and `FU_LIBRARIES`; to release a new version, edit only
+  this file
+- **`credits.php`** — admin panel credits page showing version info, full
+  contributor history (Jenny Ferenc, Ekaterina, Redux contributor), and
+  third-party library attributions sourced from the original `readme.txt`
+- **Credits nav link** added to `footer.php` between Password and Logout
+
+### Changed
+
+- `functions.php` — `require_once('version.php')` added at the top so all
+  constants are available to every admin page and class file
+- `class/FanUpdate.php` — hardcoded version/URL strings in `$config` replaced
+  with `FU_VERSION`, `FU_URL_ORIGINAL`, `FU_URL_ROBOTESS` constants
+- `install.php` — hardcoded `$installer_version` string replaced with
+  `FU_DB_VERSION` constant
+
+---
+
+## [Redux 1.2.0] — May 29, 2026 — bcrypt Password Security
+
+### Security
+
+- **MD5 → bcrypt password storage** — `FanUpdate::login()` now uses
+  `password_verify($password, $storedHash)` instead of MD5 comparison;
+  passwords are stored as bcrypt hashes via `password_hash(PASSWORD_BCRYPT)`
+- **MD5 legacy upgrade path** — if `admin_password` in `blog-config.php` still
+  contains a 32-char MD5 hex string, login is permitted once and the hash is
+  silently upgraded to bcrypt in `blog-config.php` automatically; requires the
+  file to be writable; the fallback never fires again after the first login
+- **HMAC session token replaces MD5 cookie** — `fu_password` cookie (MD5 hash
+  of password) replaced by `fu_token`, a `hash_hmac('sha256', $username,
+  $storedBcryptHash)` value; stateless, no session table required; token
+  auto-invalidates the moment `admin_password` changes in `blog-config.php`
+- **`HttpOnly` flag** added to both `fu_username` and `fu_token` cookies
+- **`addslashes()` → `addcslashes(..., '\\$')` bug fix** — bcrypt hashes
+  contain literal `$` characters which `preg_replace()` treats as backreference
+  markers; using `addslashes()` silently corrupted `blog-config.php` on any
+  config rewrite; fixed in `install.php`, `FanUpdate::login()` (legacy upgrade
+  path), and `change-password.php`
+
+### New Feature
+
+- **`change-password.php`** — new admin panel page for changing the admin
+  password without manually editing `blog-config.php`; requires current
+  password (verified with `password_verify()`), new password (minimum 8
+  characters), and confirmation; rewrites `blog-config.php` with a fresh bcrypt
+  hash and immediately reissues a new HMAC session token so the admin stays
+  logged in; if `blog-config.php` is not writable, the error message includes
+  the ready-to-paste bcrypt hash
+- **Password nav link** added to `footer.php`
+- **`blog-config.sample.php`** updated — `md5('pass')` replaced with
+  `password_hash('changeme', PASSWORD_BCRYPT)`; comment block added explaining
+  how to generate a hash manually from the command line
+
+### Changed
+
+- `install.php` credential-writing block — now writes `password_hash(PASSWORD_BCRYPT)`
+  instead of `md5()`; `preg_replace` pattern broadened to match all three
+  possible existing formats (`md5('...')` wrapper, bare 32-char MD5 hex,
+  already-bcrypt `$2y$...`) so the installer is safe to re-run; if
+  `blog-config.php` is not writable, error message includes the bcrypt hash
+  ready to paste manually
 
 ---
 
@@ -45,7 +117,7 @@ Post-release patch addressing issues found during live installation testing.
   this is a defensive backstop for table-not-found warnings that may originate
   from older class files during the install sequence
 
-### Added
+### New Feature
 
 - **Admin credentials collected during install** — `install.php` now presents
   `admin_username`, `admin_password`, and `admin_password (confirm)` fields
@@ -117,9 +189,6 @@ includes a security audit pass.
 - `mail()` header injection risk reviewed — the `From:` header is built from
   the admin-controlled `admin_email` option; recommended: validate with
   `filter_var($v, FILTER_VALIDATE_EMAIL)` before saving to the database
-- **Note:** password storage still uses MD5 (`login()`) to preserve
-  compatibility with existing installs. New installations should migrate to
-  `password_hash()` / `password_verify()`.
 
 ### Added
 

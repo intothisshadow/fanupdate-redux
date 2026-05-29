@@ -6,7 +6,7 @@ collective of fan websites. Works equally well as a standalone blog.
 Originally written by **Jenny Ferenc** in 2005. Ported to PHP 7 by **Ekaterina**
 (scripts.robotess.net) in 2020. 
 
-This Redux release updates the codebase to **PHP 8.2+** (current patch: Redux 1.1.1).
+This Redux release updates the codebase to **PHP 8.2+** (current patch: Redux 1.2.1).
 
 ---
 
@@ -52,7 +52,7 @@ Copy `blog-config.sample.php` to `blog-config.php` and open it in a text editor.
 ```php
 // Admin credentials — can also be set via the installer (see step 3)
 $fanupdate['admin_username'] = 'admin';
-$fanupdate['admin_password'] = md5('your-password-here');
+$fanupdate['admin_password'] = password_hash('changeme', PASSWORD_BCRYPT);
 
 // Database
 $fanupdate['dbhost'] = 'localhost';
@@ -70,6 +70,12 @@ collective management script (see [Collective integration](#collective-integrati
 > **Tip:** If you want the installer to write your credentials automatically,
 > make `blog-config.php` writable before running it (`chmod 666 blog-config.php`
 > on most shared hosts), then tighten permissions afterward (`chmod 644`).
+
+> **Password format:** Since Redux 1.2.0 passwords are stored as bcrypt hashes.
+> Do **not** use `md5()` here. To generate a hash manually:
+> `php -r "echo password_hash('yourpassword', PASSWORD_BCRYPT);"`
+> If you have an existing MD5 hash in `blog-config.php`, simply log in once
+> and it will be upgraded to bcrypt automatically.
 
 ### 2. Upload files
 
@@ -89,8 +95,9 @@ https://yoursite.com/fanupdate/install.php
 
 Fill in the site options (site name, blog URL, install path, etc.). On a fresh
 install, **admin username and password fields** appear at the bottom of the form
-— fill these in and they will be saved to `blog-config.php` automatically.
-Click the install button and the script will create the required database tables.
+— fill these in and they will be saved to `blog-config.php` automatically as a
+bcrypt hash. Click the install button and the script will create the required
+database tables.
 
 ### 4. Delete the installer
 
@@ -129,6 +136,16 @@ To show only "Whole Collective" entries, set `$listingid = 0`.
 
 ## Upgrading
 
+### From Redux 1.1.x
+
+1. Back up your database and all files.
+2. Upload all new files, overwriting existing ones — **except `blog-config.php`**,
+   which you can keep.
+3. If your `admin_password` in `blog-config.php` is still an MD5 hash (32 hex
+   characters), simply log in once — the hash will be upgraded to bcrypt
+   automatically. No manual step required as long as `blog-config.php` is
+   writable.
+
 ### From Robotess Fork 1.0 (PHP 7 port)
 
 1. Back up your database and all files.
@@ -136,6 +153,7 @@ To show only "Whole Collective" entries, set `$listingid = 0`.
    which you can keep.
 3. Run `install.php` again to apply any database changes.
 4. Delete `install.php`.
+5. Log in once to trigger the automatic MD5 → bcrypt password upgrade.
 
 ### From original FanUpdate 2.1 or higher
 
@@ -145,6 +163,17 @@ Same steps as above — keep your existing `blog-config.php`.
 
 You must copy your settings into the **new** `blog-config.php` format before
 running the installer. The old format is not compatible.
+
+---
+
+## Changing your admin password
+
+Use **Admin → Password** in the admin panel. You will be asked for your current
+password before the change is accepted. The new hash is written to
+`blog-config.php` automatically and your session stays active.
+
+If `blog-config.php` is not writable, the page will display the ready-to-paste
+bcrypt hash so you can update the file manually in a text editor.
 
 ---
 
@@ -294,11 +323,6 @@ This release resolves all PHP 8.2 deprecation warnings:
 - **Curly-brace string indexing** (`$str{0}`) — replaced with `$str[0]`
 - **`srand()` / `rand()`** in `antispambot()` — replaced with `random_int()`
 
-> **Password security note:** Admin passwords are currently stored as MD5 hashes
-> to preserve compatibility with existing installs. For new installations it is
-> strongly recommended to migrate the `login()` method to use
-> `password_hash()` / `password_verify()`.
-
 ---
 
 ## File structure
@@ -307,6 +331,7 @@ This release resolves all PHP 8.2 deprecation warnings:
 fanupdate/
 ├── blog-config.php          # Your configuration (copy from .sample)
 ├── blog-config.sample.php   # Configuration template
+├── version.php              # Single source for version metadata
 ├── functions.php            # Shared helper functions
 ├── index.php                # Admin dashboard
 ├── blog.php                 # Admin: entries list
@@ -316,6 +341,8 @@ fanupdate/
 ├── templates.php            # Admin: template editor
 ├── smilies.php              # Admin: smilies
 ├── blacklist.php            # Admin: spam blacklist
+├── change-password.php      # Admin: change admin password
+├── credits.php              # Admin: version info and credits
 ├── install.php              # Installer (DELETE after use)
 ├── process.php              # Comment submission handler
 ├── show-blog.php            # Public blog display (all categories)
@@ -343,6 +370,23 @@ fanupdate/
     ├── readme.txt           # Original readme
     └── changelog.txt        # Original changelog
 ```
+
+---
+
+## Releasing a new version
+
+Edit only `version.php`:
+
+```php
+const FU_VERSION      = 'Redux 1.x.y';
+const FU_DB_VERSION   = '2.2.1b2';   // update only if install.php adds DB changes
+const FU_RELEASE_DATE = 'YYYY-MM-DD';
+const FU_RELEASE_NAME = 'codename';
+```
+
+Everything else — the admin panel footer, header title, RSS generator string,
+install version check, and credits page — reads from these constants
+automatically.
 
 ---
 
@@ -389,13 +433,26 @@ installed with an older version, open `blog-config.php` and set:
 
 ```php
 $fanupdate['admin_username'] = 'your-username';
-$fanupdate['admin_password'] = md5('your-password');
+$fanupdate['admin_password'] = password_hash('your-password', PASSWORD_BCRYPT);
 ```
+
+### I upgraded from Redux 1.1.x and can't log in
+
+Your `admin_password` in `blog-config.php` may still be an MD5 hash. Redux 1.2.0+
+handles this automatically — as long as `blog-config.php` is writable, the hash
+is upgraded to bcrypt on your first successful login. If `blog-config.php` is
+read-only, update it manually:
+
+```php
+$fanupdate['admin_password'] = password_hash('your-password', PASSWORD_BCRYPT);
+```
+
+Or run: `php -r "echo password_hash('your-password', PASSWORD_BCRYPT);"` and
+paste the result.
 
 ---
 
 ## License
-
 
 GNU General Public License v2 or later.  
 See <https://www.gnu.org/licenses/gpl.html> for details.

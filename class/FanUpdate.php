@@ -58,9 +58,9 @@ class FanUpdate
     public array $observers   = [];
 
     private array $config = [
-        'version' => 'Redux v.1.1.1',
-        'url'     => 'http://prism-perfect.net/fanupdate',
-        'newUrl'  => 'https://scripts.robotess.net',
+        'version' => FU_VERSION,
+        'url'     => FU_URL_ORIGINAL,
+        'newUrl'  => FU_URL_ROBOTESS,
     ];
 
     private static FanUpdate $instance;
@@ -359,69 +359,136 @@ class FanUpdate
 
     public function printCredits(): void
     {
-        $newUrl  = htmlspecialchars((string) $this->getOpt('newUrl'));
-        $version = htmlspecialchars((string) $this->getOpt('version'));
-        $url     = htmlspecialchars((string) $this->getOpt('url'));
-        echo 'Powered by <a href="' . $newUrl . '" target="_blank" title="PHP Scripts">'
-            . 'FanUpdate ' . $version . '</a> '
-            . '(original author: <a href="' . $url . '" target="_blank">Jenny</a>)';
+        $version  = htmlspecialchars((string) $this->getOpt('version'), ENT_QUOTES, 'UTF-8');
+        $reduxUrl = htmlspecialchars(FU_URL_REDUX, ENT_QUOTES, 'UTF-8');
+
+        echo 'Powered by <a href="' . $reduxUrl . '" target="_blank" title="FanUpdate Redux">'
+            . 'FanUpdate ' . $version . '</a>'
+            . ' &mdash; <a href="credits.php">credits</a>';
     }
 
     // ── login ────────────────────────────────────────────────────────────────
     //
-    // FIX (Redux 1.1.1) — two bugs corrected:
+    // Security model (Redux 1.2.0+):
     //
-    // 1. Key names: the config keys written by install.php into blog-config.php
-    //    are 'admin_username' and 'admin_password'.  The old code used
-    //    'admin_user' and 'admin_pass', which always resolved to false, so the
-    //    comparison silently failed and the form just re-displayed with no error.
+    //  • Passwords are stored as bcrypt hashes via password_hash(PASSWORD_BCRYPT).
+    //  • The old MD5 cookie (fu_password) is replaced by fu_token, a
+    //    HMAC-SHA256 value keyed on the stored bcrypt hash itself.
+    //    This means the token auto-invalidates the moment the password is
+    //    changed in blog-config.php — no session table required.
     //
-    // 2. Double-MD5: the stored password is already md5($plaintext).  The old
-    //    POST check wrapped it in another md5() — md5($submitted) vs
-    //    md5(md5($stored)) — which can never match.  Fixed to a single hash:
-    //    md5($submitted) === $stored_hash.
+    //  Token derivation:
+    //    $token = hash_hmac('sha256', $username, $stored_bcrypt_hash)
+    //
+    //  On every page load the token is re-derived from the current stored hash
+    //  and compared with the cookie using hash_equals() (timing-safe).
+    //
+    //  Logout: both fu_username and fu_token are expired.
+    //
+    // Backward-compatibility note:
+    //   If admin_password still contains an MD5 hash (32 hex chars) this method
+    //   falls back to md5() comparison for ONE login cycle, then rewrites the
+    //   hash to bcrypt before the session token is issued.  This allows existing
+    //   installs to upgrade transparently — the user logs in once and the hash
+    //   is silently upgraded in blog-config.php.
+    //   The fallback is deliberately narrow: it only fires when the stored value
+    //   matches /^[0-9a-f]{32}$/ (classic MD5 hex string).
+    // ────────────────────────────────────────────────────────────────────────
 
     public function login(): void
     {
-        $showform = true;
+        // ── logout ──────────────────────────────────────────────────────────
+        if (isset($_GET['action']) && $_GET['action'] === 'logout') {
+            setcookie('fu_username', '', time() - 36000, '/', '', false, true);
+            setcookie('fu_token',    '', time() - 36000, '/', '', false, true);
+            header('Location: ' . clean_input($_SERVER['PHP_SELF']));
+            exit;
+        }
 
-        // ── Check cookies ──────────────────────────────────────────────────
-        // The cookie stores the already-hashed password, so compare directly.
-        if (isset($_COOKIE['fu_username'], $_COOKIE['fu_password'])) {
-            $username = clean_input($_COOKIE['fu_username']);
-            $password = clean_input($_COOKIE['fu_password']);
+        $storedHash = (string) $this->getOpt('admin_password', true);
+        $showform   = true;
+
+        // ── cookie check ─────────────────────────────────────────────────────
+        if (isset($_COOKIE['fu_username'], $_COOKIE['fu_token'])) {
+            $cookieUser  = clean_input($_COOKIE['fu_username']);
+            $cookieToken = clean_input($_COOKIE['fu_token']);
+
+            $expectedToken = hash_hmac('sha256', $cookieUser, $storedHash);
 
             if (
-                $username === $this->getOpt('admin_username', true)        // FIX: was 'admin_user'
-                && $password === (string) $this->getOpt('admin_password', true) // FIX: was md5(getOpt('admin_pass'))
+                $cookieUser === (string) $this->getOpt('admin_username', true)
+                && hash_equals($expectedToken, $cookieToken)
             ) {
                 $showform = false;
             } else {
-                $this->addErr('Cookies expired or invalid. Please log in again.');
-                setcookie('fu_username', '', time() - 36000, '/');
-                setcookie('fu_password', '', time() - 36000, '/');
+                $this->addErr('Session expired or invalid. Please log in again.');
+                setcookie('fu_username', '', time() - 36000, '/', '', false, true);
+                setcookie('fu_token',    '', time() - 36000, '/', '', false, true);
             }
         }
 
-        // ── Check POST ─────────────────────────────────────────────────────
-        // Hash the submitted plaintext once; compare to the stored md5 hash.
-        if (isset($_POST['action']) && $_POST['action'] === 'login') {
+        // ── POST check ───────────────────────────────────────────────────────
+        if ($showform && isset($_POST['action']) && $_POST['action'] === 'login') {
             $username = clean_input($_POST['username'] ?? '');
             $password = clean_input($_POST['password'] ?? '');
 
-            if (
-                $username === $this->getOpt('admin_username', true)              // FIX: was 'admin_user'
-                && md5($password) === (string) $this->getOpt('admin_password', true) // FIX: was md5(md5(...))
-            ) {
+            $usernameOk = ($username === (string) $this->getOpt('admin_username', true));
+            $passwordOk = false;
+
+            if ($usernameOk) {
+                // ── bcrypt path (normal) ────────────────────────────────────
+                if (str_starts_with($storedHash, '$2')) {
+                    $passwordOk = password_verify($password, $storedHash);
+
+                    // ── MD5 legacy fallback ─────────────────────────────────────
+                    // Fires only when the stored value is a raw 32-char MD5 hex.
+                    // Upgrades the hash to bcrypt in blog-config.php automatically.
+                } elseif (preg_match('/^[0-9a-f]{32}$/', $storedHash) && md5($password) === $storedHash) {
+                    $passwordOk = true;
+
+                    // Upgrade stored hash to bcrypt
+                    $newHash     = password_hash($password, PASSWORD_BCRYPT);
+                    $configFile  = __DIR__ . '/../blog-config.php';
+
+                    if (is_writable($configFile)) {
+                        $configContent = (string) file_get_contents($configFile);
+
+                        // Match both:
+                        //   $fanupdate['admin_password'] = md5('...');
+                        //   $fanupdate['admin_password'] = 'abc123...';  (plain MD5 stored without md5() call)
+                        $newContent = preg_replace(
+                            "/(\\\$fanupdate\['admin_password'\]\s*=\s*)(?:md5\('[^']*'\)|'[0-9a-f]{32}')/",
+                            "\$1'" . addcslashes($newHash, '\\$') . "'",
+                            $configContent
+                        );
+
+                        if ($newContent !== null) {
+                            file_put_contents($configFile, $newContent);
+                            // Update in-memory copy so the token below uses the new hash
+                            $this->addOpt('admin_password', $newHash);
+                            $storedHash = $newHash;
+                        }
+                    }
+                    // If the file isn't writable the login still succeeds this
+                    // cycle; the user will be asked to log in again next visit
+                    // (the token will be wrong because storedHash is still MD5).
+                }
+            }
+
+            if ($usernameOk && $passwordOk) {
                 $remember = !empty($_POST['remember_me']);
                 $expire   = $remember ? time() + 60 * 60 * 24 * 30 : 0;
-                setcookie('fu_username', $username, $expire, '/');
-                setcookie('fu_password', md5($password), $expire, '/');
+
+                $token = hash_hmac('sha256', $username, $storedHash);
+
+                setcookie('fu_username', $username, $expire, '/', '', false, true);
+                setcookie('fu_token',    $token,    $expire, '/', '', false, true);
+
                 $showform = false;
             } else {
                 $this->addErr('Invalid username or password. Please try again.');
-                setcookie('fu_username', '', time() - 36000, '/');
-                setcookie('fu_password', '', time() - 36000, '/');
+                setcookie('fu_username', '', time() - 36000, '/', '', false, true);
+                setcookie('fu_token',    '', time() - 36000, '/', '', false, true);
             }
         }
 
@@ -452,6 +519,7 @@ class FanUpdate
             exit;
         }
     }
+
 
     // ── blog rendering ──────────────────────────────────────────────────────
 

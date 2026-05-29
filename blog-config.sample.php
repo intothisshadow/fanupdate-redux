@@ -19,9 +19,20 @@
  ******************************************************************************/
 
 // ------------->ADMIN VARIABLES
+//
+// admin_password must be a bcrypt hash produced by password_hash().
+// The installer (install.php) generates and writes this for you automatically.
+//
+// To set it manually, run this in a temporary PHP file or the command line:
+//   echo password_hash('your-password', PASSWORD_BCRYPT);
+// then paste the result (starting with $2y$) as the value below.
+//
+// DO NOT use md5() here — MD5 is not a secure password hashing algorithm.
+// If you have an existing MD5 hash, simply log in once and FanUpdate will
+// upgrade it to bcrypt automatically (blog-config.php must be writable).
 
 $fanupdate['admin_username']	= 'admin';
-$fanupdate['admin_password']	= md5('pass');
+$fanupdate['admin_password']	= password_hash('changeme', PASSWORD_BCRYPT);
 
 // ------------->DATABASE VARIABLES
 
@@ -47,10 +58,10 @@ $fanupdate['collective_script']	= 'n';
 
 // Enthusiast			'owned'
 // Flinx Collective		'flinxcol_link'
-// Fan Admin			'fa_fls'
+// Fan Admin			'fa_fl'
 
 // Or else enter your custom table name.
-// If using FanUpdate as a standard blog, this is you categories table.
+// If using FanUpdate as a standard blog, this is your categories table.
 
 $fanupdate['collective_table']	= 'blog_category';
 

@@ -1,4 +1,5 @@
 <?php
+
 /*****************************************************************************
  * FanUpdate
  * Copyright (c) Jenny Ferenc <jenny@prism-perfect.net>
@@ -17,7 +18,7 @@
  * the Free Software Foundation, either version 2 of the License, or
  * any later version.
  ******************************************************************************/
-
+require_once(__DIR__ . '/version.php');
 require_once('class/SqlConnection.php');
 require_once('class/FanUpdate.php');
 require_once('class/FanUpdate_Post.php');
@@ -181,13 +182,28 @@ function wptexturize(string $text): string
     $textarr = preg_split('/(<.*>)/Us', $text, -1, PREG_SPLIT_DELIM_CAPTURE);
 
     $cockney = [
-        "'tain't", "'twere", "'twas", "'tis", "'twill", "'til",
-        "'bout", "'nuff", "'round", "'cause",
+        "'tain't",
+        "'twere",
+        "'twas",
+        "'tis",
+        "'twill",
+        "'til",
+        "'bout",
+        "'nuff",
+        "'round",
+        "'cause",
     ];
     $cockneyreplace = [
-        '&#8217;tain&#8217;t', '&#8217;twere', '&#8217;twas', '&#8217;tis',
-        '&#8217;twill', '&#8217;til', '&#8217;bout', '&#8217;nuff',
-        '&#8217;round', '&#8217;cause',
+        '&#8217;tain&#8217;t',
+        '&#8217;twere',
+        '&#8217;twas',
+        '&#8217;tis',
+        '&#8217;twill',
+        '&#8217;til',
+        '&#8217;bout',
+        '&#8217;nuff',
+        '&#8217;round',
+        '&#8217;cause',
     ];
 
     $static_characters = array_merge(
@@ -211,8 +227,15 @@ function wptexturize(string $text): string
         '/(\d+)x(\d+)/',
     ];
     $dynamic_replacements = [
-        '&#8217;$1', '$1&#8216;', '$1&#8243;', '$1&#8242;',
-        '$1&#8217;$2', '$1&#8220;$2', '&#8221;$1', '&#8217;$1', '$1&#215;$2',
+        '&#8217;$1',
+        '$1&#8216;',
+        '$1&#8243;',
+        '$1&#8242;',
+        '$1&#8217;$2',
+        '$1&#8220;$2',
+        '&#8221;$1',
+        '&#8217;$1',
+        '$1&#215;$2',
     ];
 
     foreach ($textarr as $curl) {
@@ -241,8 +264,8 @@ function wptexturize(string $text): string
         static function (array $matches): string {
             return stripslashes(
                 $matches[1]
-                . fancyamp($matches[2] . $matches[3] . $matches[4])
-                . $matches[5]
+                    . fancyamp($matches[2] . $matches[3] . $matches[4])
+                    . $matches[5]
             );
         },
         $output

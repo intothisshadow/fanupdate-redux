@@ -1,4 +1,5 @@
 <?php
+
 /*****************************************************************************
  * FanUpdate — install.php
  *
@@ -39,7 +40,7 @@ $clean = array();
 $fu->db->Connect();
 
 $version_installed = 0;
-$installer_version = '2.2.1b2'; // may be less than script version if no db changes needed
+$installer_version = FU_DB_VERSION;
 
 // ── detect currently installed version ──────────────────────────────────────
 
@@ -337,7 +338,6 @@ if (version_compare((string) $version_installed, $installer_version, '>=')) {
 if (!$fu->noErr()) {
 
     $fu->reportErrors();
-
 } elseif (isset($_POST['upgrade']) || isset($_POST['fresh_install'])) {
 
     // ── validate admin credentials on fresh install ───────────────────────
@@ -361,7 +361,7 @@ if (!$fu->noErr()) {
         }
     }
 
-// _____________________________________________ FRESH INSTALL
+    // _____________________________________________ FRESH INSTALL
 
     if ($version_installed == 0) {
 
@@ -515,10 +515,9 @@ if (!$fu->noErr()) {
         } else {
             $fu->addErr('Default smilies not added!');
         }
-
     } // end fresh install
 
-// _______________________________________________ UPGRADE FROM < 2.2b
+    // _______________________________________________ UPGRADE FROM < 2.2b
 
     if ($version_installed > 0 && version_compare((string) $version_installed, '2.2b', '<')) {
 
@@ -570,7 +569,7 @@ if (!$fu->noErr()) {
         }
     }
 
-// _______________________________________________ UPGRADE FROM < 2.2b3
+    // _______________________________________________ UPGRADE FROM < 2.2b3
 
     if ($version_installed > 0 && version_compare((string) $version_installed, '2.2b3', '<')) {
 
@@ -593,7 +592,7 @@ if (!$fu->noErr()) {
         }
     }
 
-// _______________________________________________ UPGRADE FROM < 2.2.1b2
+    // _______________________________________________ UPGRADE FROM < 2.2.1b2
 
     if ($version_installed > 0 && version_compare((string) $version_installed, '2.2.1b2', '<')) {
 
@@ -606,7 +605,7 @@ if (!$fu->noErr()) {
         }
     }
 
-// _______________________________________________ UPGRADE FROM ANY VERSION
+    // _______________________________________________ UPGRADE FROM ANY VERSION
 
     if ($version_installed > 0 && version_compare((string) $version_installed, $installer_version, '<')) {
 
@@ -667,7 +666,7 @@ if (!$fu->noErr()) {
         }
     }
 
-// _______________________________________________ FRESH INSTALL OR UPGRADE FROM ANY VERSION
+    // _______________________________________________ FRESH INSTALL OR UPGRADE FROM ANY VERSION
 
     if (version_compare((string) $version_installed, $installer_version, '<')) {
 
@@ -701,60 +700,76 @@ if (!$fu->noErr()) {
     }
 
     // ── write admin credentials into blog-config.php ─────────────────────────
-    // Credentials are stored in blog-config.php (not the DB), so we update it here.
+    // Passwords are stored as bcrypt hashes (password_hash PASSWORD_BCRYPT).
+    // The admin_password line in blog-config.php is written as a plain quoted
+    // string containing the hash, e.g.:
+    //   $fanupdate['admin_password'] = '$2y$12$...';
+    // No md5() wrapper — password_verify() handles the comparison at login.
+
     if (!empty($clean['admin_username']) && !empty($clean['admin_password'])) {
 
         $config_file = __DIR__ . '/blog-config.php';
 
         if (is_writable($config_file)) {
-            $config_content = file_get_contents($config_file);
+            $config_content = (string) file_get_contents($config_file);
 
-            // Update credentials in blog-config.php using simple string replacement
-            $safe_user = addslashes($clean['admin_username']);
-            $safe_pass = addslashes($clean['admin_password']);
+            $safe_user  = addslashes($clean['admin_username']);
+            $bcrypt     = password_hash($clean['admin_password'], PASSWORD_BCRYPT);
 
-            // Replace admin_username line
+            // Update username — matches:  $fanupdate['admin_username'] = '...';
             $new_content = preg_replace(
-                "/\\\$fanupdate\\['admin_username'\\]\\s*=\\s*'[^']*'/",
-                "\$fanupdate['admin_username'] = '" . $safe_user . "'",
+                "/(\\\$fanupdate\['admin_username'\]\s*=\s*)'[^']*'/",
+                "\$1'" . $safe_user . "'",
                 $config_content
             );
-            // Replace admin_password line
+
+            // Update password — matches any of the three possible existing formats:
+            //   $fanupdate['admin_password'] = md5('...');        ← original
+            //   $fanupdate['admin_password'] = '[0-9a-f]{32}';   ← bare MD5
+            //   $fanupdate['admin_password'] = '$2y$...';         ← already bcrypt
+            //
+            // addcslashes(..., '\\$') is required: bcrypt hashes contain literal
+            // '$' signs which preg_replace() treats as backreference markers.
             $new_content = preg_replace(
-                "/\\\$fanupdate\\['admin_password'\\]\\s*=\\s*md5\\('[^']*'\\)/",
-                "\$fanupdate['admin_password'] = md5('" . $safe_pass . "')",
-                $new_content
+                "/(\\\$fanupdate\['admin_password'\]\s*=\s*)(?:md5\('[^']*'\)|'[^']*')/",
+                "\$1'" . addcslashes($bcrypt, '\\$') . "'",
+                (string) $new_content
             );
 
             if ($new_content !== null && file_put_contents($config_file, $new_content) !== false) {
-                $fu->addSuccess('Admin credentials saved to <strong>blog-config.php</strong>.');
+                $fu->addSuccess('Admin credentials saved to <strong>blog-config.php</strong> (bcrypt hash).');
             } else {
-                $fu->addErr('Could not write to <strong>blog-config.php</strong>. Please set your username and password manually in that file.');
+                $fu->addErr('Could not write to <strong>blog-config.php</strong>. Please set your credentials manually.');
             }
         } else {
-            $fu->addErr('<strong>blog-config.php</strong> is not writable. Please set your admin credentials manually in that file.');
+            // Provide a ready-to-paste bcrypt hash so the user can set it manually
+            $bcrypt_manual = password_hash($clean['admin_password'], PASSWORD_BCRYPT);
+            $fu->addErr(
+                '<strong>blog-config.php</strong> is not writable. Set your credentials manually:<br>'
+                    . '<code>$fanupdate[\'admin_username\'] = \'' . htmlspecialchars($clean['admin_username']) . '\';</code><br>'
+                    . '<code>$fanupdate[\'admin_password\'] = \'' . htmlspecialchars($bcrypt_manual) . '\';</code>'
+            );
         }
     }
 
-// _____________________________________________ REPORT SUCCESS
+    // _____________________________________________ REPORT SUCCESS
 
     $fu->reportSuccess();
 
-// _____________________________________________ REPORT ERRORS
+    // _____________________________________________ REPORT ERRORS
 
     $fu->reportErrors();
 
     echo '<p>Now <strong>DELETE</strong> this file from your server and start posting!</p>' . "\n";
     echo '<p><a href="index.php">To the ADMIN panel.</a></p>' . "\n";
-
 } else {
 
-    ?>
+?>
 
     <p>To install FanUpdate <?php echo htmlspecialchars((string) $fu->getOpt('version')); ?>, edit these options for your site, then click the
         button below. <?php if (version_compare((string) $version_installed, (string) $setting[3]['version'], '<')) {
-            echo ' The auto-detected path settings should be correct, but please double-check them.';
-        } ?></p>
+                            echo ' The auto-detected path settings should be correct, but please double-check them.';
+                        } ?></p>
 
     <form id="options" action="install.php" method="post">
         <?php
@@ -766,68 +781,70 @@ if (!$fu->noErr()) {
                 // PHP 8.2: use === 0 (strict) — == 0 was a bug that hid too many fields
                 if (strpos($row['optkey'], '_') === 0) { // hide private vars
 
-                    ?>
+        ?>
                     <input type="hidden" id="<?php echo $row['optkey']; ?>" name="value[]"
-                           value="<?php echo htmlspecialchars((string) $row['optvalue']); ?>"/>
-                    <input type="hidden" name="key[]" value="<?php echo $id; ?>"/>
-                    <?php
+                        value="<?php echo htmlspecialchars((string) $row['optvalue']); ?>" />
+                    <input type="hidden" name="key[]" value="<?php echo $id; ?>" />
+                <?php
 
                 } else {
 
                     $class = (isset($class) && $class === 'even') ? 'odd' : 'even';
 
-                    ?>
+                ?>
                     <div class="option <?php echo $class; ?>">
                         <p><label for="<?php echo $row['optkey']; ?>"><?php echo htmlspecialchars($row['optkey']); ?>:
                                 <span class="help"><?php echo htmlspecialchars($row['optdesc']); ?></span></label>
                             <?php if (strpos($row['optkey'], 'template') !== false) { ?>
                                 <textarea id="<?php echo $row['optkey']; ?>" name="value[]" cols="80"
-                                          rows="15"><?php echo htmlspecialchars((string) $row['optvalue']); ?></textarea>
+                                    rows="15"><?php echo htmlspecialchars((string) $row['optvalue']); ?></textarea>
                             <?php } else { ?>
                                 <input type="<?php echo $row['optkey'] === 'admin_pass' ? 'password' : 'text'; ?>"
-                                       id="<?php echo $row['optkey']; ?>" name="value[]" size="50"
-                                       maxlength="255"
-                                       value="<?php echo htmlspecialchars((string) $row['optvalue']); ?>"/>
+                                    id="<?php echo $row['optkey']; ?>" name="value[]" size="50"
+                                    maxlength="255"
+                                    value="<?php echo htmlspecialchars((string) $row['optvalue']); ?>" />
                             <?php } ?>
-                            <input type="hidden" name="key[]" value="<?php echo $id; ?>"/></p>
+                            <input type="hidden" name="key[]" value="<?php echo $id; ?>" />
+                        </p>
                     </div><!-- END .option -->
-                    <?php
+        <?php
 
                 }
-
             }
-
         }
 
         ?>
 
         <?php if ($version_installed == 0) { ?>
-        <div class="option odd">
-            <p><label for="admin_username">admin_username:
-                    <span class="help">Your admin login username.</span></label>
-                <input type="text" id="admin_username" name="admin_username" size="50"
-                       maxlength="50" value="<?php echo htmlspecialchars($current_admin_username); ?>"/></p>
-        </div>
-        <div class="option even">
-            <p><label for="admin_password">admin_password:
-                    <span class="help">Your admin login password. Choose something secure.</span></label>
-                <input type="password" id="admin_password" name="admin_password" size="50"
-                       maxlength="100" value=""/></p>
-        </div>
-        <div class="option odd">
-            <p><label for="admin_password_confirm">admin_password (confirm):
-                    <span class="help">Re-enter your password to confirm.</span></label>
-                <input type="password" id="admin_password_confirm" name="admin_password_confirm" size="50"
-                       maxlength="100" value=""/></p>
-        </div>
+            <div class="option odd">
+                <p><label for="admin_username">admin_username:
+                        <span class="help">Your admin login username.</span></label>
+                    <input type="text" id="admin_username" name="admin_username" size="50"
+                        maxlength="50" value="<?php echo htmlspecialchars($current_admin_username); ?>" />
+                </p>
+            </div>
+            <div class="option even">
+                <p><label for="admin_password">admin_password:
+                        <span class="help">Your admin login password. Choose something secure.</span></label>
+                    <input type="password" id="admin_password" name="admin_password" size="50"
+                        maxlength="100" value="" />
+                </p>
+            </div>
+            <div class="option odd">
+                <p><label for="admin_password_confirm">admin_password (confirm):
+                        <span class="help">Re-enter your password to confirm.</span></label>
+                    <input type="password" id="admin_password_confirm" name="admin_password_confirm" size="50"
+                        maxlength="100" value="" />
+                </p>
+            </div>
         <?php } ?>
 
         <p id="new-button">
             <?php if ($version_installed > 0) { ?>
                 <input type="submit" name="upgrade" value="Upgrade from version <?php echo htmlspecialchars((string) $version_installed); ?>"
-                       class="update"/>
+                    class="update" />
             <?php } else { ?>
-                <input type="submit" name="fresh_install" value="Create fresh installation" class="update"/>
+                <input type="submit" name="fresh_install" value="Create fresh installation" class="update" />
             <?php } ?>
         </p>
 
@@ -842,7 +859,7 @@ if (!$fu->noErr()) {
         }
     </script>
 
-    <?php
+<?php
 
 }
 

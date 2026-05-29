@@ -1,10 +1,9 @@
 <?php
-
 declare(strict_types=1);
 /*****************************************************************************
  * FanUpdate — version.php
  *
- * Single source for all version and release metadata.
+ * Single source of truth for all version and release metadata.
  *
  * HOW TO UPDATE FOR A NEW RELEASE:
  *   1. Change FU_VERSION         — the human-readable version shown in the UI
@@ -16,15 +15,14 @@ declare(strict_types=1);
  *   4. Change FU_RELEASE_NAME    — short codename shown in the admin panel
  *   That's it. Nothing else needs editing across the codebase.
  *
- * This file is required by:
- *   functions.php  →  which is included by every admin page and class file
- *   install.php    →  directly, before FanUpdate::instance() is called
+ * GNU General Public License v3 or later.
+ * See <https://www.gnu.org/licenses/gpl-3.0.html> for details.
  ******************************************************************************/
 
 // ── release identity ─────────────────────────────────────────────────────────
 
 /** Human-readable version string displayed in the UI, footer, and RSS feeds. */
-const FU_VERSION      = 'Redux 1.2.1';
+const FU_VERSION      = 'Redux 1.2.2';
 
 /** Database schema version — update only when install.php adds/alters tables. */
 const FU_DB_VERSION   = '2.2.1b2';
@@ -33,7 +31,7 @@ const FU_DB_VERSION   = '2.2.1b2';
 const FU_RELEASE_DATE = '2026-05-29';
 
 /** Short release codename (shown on the Dashboard and Credits page). */
-const FU_RELEASE_NAME = 'bcrypt';
+const FU_RELEASE_NAME = 'gplv3';
 
 // ── project URLs (rarely change) ─────────────────────────────────────────────
 
@@ -43,8 +41,16 @@ const FU_URL_ORIGINAL = 'http://prism-perfect.net/fanupdate';
 /** URL of the Robotess Fork (Ekaterina's PHP 7 port). */
 const FU_URL_ROBOTESS = 'https://scripts.robotess.net';
 
-/** URL of this Redux release (repo, release page, or your own site). */
+/**
+ * URL of this Redux release.
+ * Update this to your repo, release page, or distribution site.
+ */
 const FU_URL_REDUX = 'https://github.com/intothisshadow/fanupdateredux';
+
+// ── licence ──────────────────────────────────────────────────────────────────
+
+const FU_LICENCE     = 'GNU General Public License v3 or later';
+const FU_LICENCE_URL = 'https://www.gnu.org/licenses/gpl-3.0.html';
 
 // ── contributor roster ───────────────────────────────────────────────────────
 // Used by credits.php. Add entries here when a new contributor is credited.
@@ -57,8 +63,8 @@ const FU_CONTRIBUTORS = [
         'url'          => 'http://prism-perfect.net/',
         'email'        => 'jenny@prism-perfect.net',
         'contribution' => 'Created FanUpdate from scratch. Wrote the core engine, '
-            . 'admin panel, comment system, RSS feeds, CAPTCHA, smilies, '
-            . 'blacklist, and collective script integration.',
+                        . 'admin panel, comment system, RSS feeds, CAPTCHA, smilies, '
+                        . 'blacklist, and collective script integration.',
     ],
     [
         'name'         => 'Ekaterina',
@@ -67,19 +73,20 @@ const FU_CONTRIBUTORS = [
         'url'          => 'https://scripts.robotess.net',
         'email'        => null,
         'contribution' => 'Ported the codebase to PHP 7.2+. Introduced the class/'
-            . ' directory structure, OOP mysqli, and the Robotess Fork '
-            . 'release series. Maintained the GitLab repository.',
+                        . ' directory structure, OOP mysqli, and the Robotess Fork '
+                        . 'release series. Maintained the GitLab repository.',
     ],
     [
-        'name'         => 'Ariane',
+        'name'         => 'Redux contributor',
         'role'         => 'PHP 8.2+ refactor (Redux)',
         'years'        => '2026',
         'url'          => null,
         'email'        => null,
         'contribution' => 'Full PHP 8.2+ compatibility pass: explicit property '
-            . 'declarations, strict return types, utf8_encode() removal, '
-            . 'bcrypt password storage, HMAC session tokens, '
-            . 'change-password admin page, and this version system.',
+                        . 'declarations, strict return types, utf8_encode() removal, '
+                        . 'bcrypt password storage, HMAC session tokens, '
+                        . 'change-password admin page, version system, credits page, '
+                        . 'and GPLv3 licence upgrade.',
     ],
 ];
 

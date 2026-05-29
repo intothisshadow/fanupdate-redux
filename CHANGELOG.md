@@ -1,7 +1,35 @@
 # Changelog — FanUpdate Redux
 
 All notable changes to this project are documented here.  
+Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+---
+
+## [Redux 1.2.2] — May 29, 2026 — GPLv3 Licence Upgrade
+
+### Changed
+
+- **Licence upgraded from GPLv2-or-later to GPLv3-or-later** — all original
+  FanUpdate files carry a "version 2 or later" clause which explicitly permits
+  this upgrade; third-party class files (`SqlConnection`, `FeedWriter`,
+  `FeedItem`, `FileHandler`) retain their original authors' licence
+  declarations and are unaffected
+- All owned PHP file headers updated: "version 2 of the License" →
+  "version 3 of the License"; bare `http://www.gnu.org/licenses/` URL →
+  `https://www.gnu.org/licenses/gpl-3.0.html`
+- `version.php` — added `FU_LICENCE` and `FU_LICENCE_URL` constants;
+  added `FU_URL_REDUX` constant for the Redux release URL; updated
+  `FU_RELEASE_NAME` to `'gplv3'`
+- `credits.php` — licence section now reads from `FU_LICENCE` / `FU_LICENCE_URL`
+  constants; note added clarifying that third-party class files are unaffected
+- `README.md` and `CHANGELOG.md` — licence footer updated to GPLv3
+
+### Added
+
+- **`upgrade-licence-gplv3.sh`** — idempotent shell script that performs the
+  header substitutions across all owned `.php` files in one shot; safe to
+  re-run; skips files already on GPLv3 and files missing from disk;
+  explicitly excludes third-party class files
 
 ---
 
@@ -9,7 +37,7 @@ All notable changes to this project are documented here.
 
 ### Added
 
-- **`version.php`** — single source for all version and release
+- **`version.php`** — single source of truth for all version and release
   metadata; exports PHP constants `FU_VERSION`, `FU_DB_VERSION`,
   `FU_RELEASE_DATE`, `FU_RELEASE_NAME`, `FU_URL_ORIGINAL`, `FU_URL_ROBOTESS`,
   `FU_CONTRIBUTORS`, and `FU_LIBRARIES`; to release a new version, edit only
@@ -52,7 +80,7 @@ All notable changes to this project are documented here.
   config rewrite; fixed in `install.php`, `FanUpdate::login()` (legacy upgrade
   path), and `change-password.php`
 
-### New Feature
+### Added
 
 - **`change-password.php`** — new admin panel page for changing the admin
   password without manually editing `blog-config.php`; requires current
@@ -117,7 +145,7 @@ Post-release patch addressing issues found during live installation testing.
   this is a defensive backstop for table-not-found warnings that may originate
   from older class files during the install sequence
 
-### New Feature
+### Added
 
 - **Admin credentials collected during install** — `install.php` now presents
   `admin_username`, `admin_password`, and `admin_password (confirm)` fields

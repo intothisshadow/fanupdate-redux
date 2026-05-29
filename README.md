@@ -6,7 +6,7 @@ collective of fan websites. Works equally well as a standalone blog.
 Originally written by **Jenny Ferenc** in 2005. Ported to PHP 7 by **Ekaterina**
 (scripts.robotess.net) in 2020. 
 
-This Redux release updates the codebase to **PHP 8.2+** (current patch: Redux 1.2.1).
+This Redux release updates the codebase to **PHP 8.2+** (current patch: Redux 1.2.2).
 
 ---
 
@@ -331,7 +331,7 @@ This release resolves all PHP 8.2 deprecation warnings:
 fanupdate/
 ├── blog-config.php          # Your configuration (copy from .sample)
 ├── blog-config.sample.php   # Configuration template
-├── version.php              # Single source for version metadata
+├── version.php              # Single source of truth for version metadata
 ├── functions.php            # Shared helper functions
 ├── index.php                # Admin dashboard
 ├── blog.php                 # Admin: entries list
@@ -454,9 +454,9 @@ paste the result.
 
 ## License
 
-GNU General Public License v2 or later.  
-See <https://www.gnu.org/licenses/gpl.html> for details.
+GNU General Public License v3 or later.  
+See <https://www.gnu.org/licenses/gpl-3.0.html> for details.
 
 Original script by Jenny Ferenc — <http://prism-perfect.net/fanupdate>  
 PHP 7 port by Ekaterina — <https://scripts.robotess.net>  
-PHP 8.2 Redux by intothisshadow
+PHP 8.2 Redux by Ariane

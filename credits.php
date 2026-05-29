@@ -7,13 +7,8 @@ declare(strict_types=1);
  * Copyright (c) 2020 by Ekaterina (contributor) http://scripts.robotess.net
  * Copyright (c) 2026 Redux contributor
  *
- * Admin panel credits page. Displays contributor history and third-party
- * library attributions sourced from version.php.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 2 of the License, or
- * any later version.
+ * GNU General Public License v3 or later.
+ * See <https://www.gnu.org/licenses/gpl-3.0.html> for details.
  ******************************************************************************/
 
 require_once('blog-config.php');
@@ -117,8 +112,14 @@ $fu->getHeader('Credits');
 
     <p>
         FanUpdate is free software released under the
-        <a href="https://www.gnu.org/licenses/gpl-2.0.html" target="_blank">GNU General
-        Public Licence v2</a> or later.
+        <a href="<?php echo htmlspecialchars(FU_LICENCE_URL, ENT_QUOTES, 'UTF-8'); ?>"
+           target="_blank"><?php echo htmlspecialchars(FU_LICENCE, ENT_QUOTES, 'UTF-8'); ?></a>.
+    </p>
+
+    <p style="font-size: 0.9em; color: #666;">
+        Third-party class files (SqlConnection, FeedWriter, FeedItem) retain
+        their original authors' licence declarations and are not affected by
+        this project's licence upgrade.
     </p>
 
 </div><!-- END .col22 -->

@@ -2,10 +2,10 @@
 
 *
 {
-	margin: 0;
-	outline: 0;
 	font-family: Arial, sans-serif;
 	font-size: 1em;
+	margin: 0;
+	outline: 0;
 }
 
 table,
@@ -18,9 +18,9 @@ caption,
 legend,
 img
 {
-	padding: 0;
-	border: 0;
 	background: transparent;
+	border: 0;
+	padding: 0;
 }
 
 table
@@ -44,12 +44,12 @@ code
 
 body
 {
-	font-size: 14px;
-	color: #333;
 	background-color: #fff;
-	text-align: center;
+	color: #333;
+	font-size: 14px;
 	margin: 0;
 	padding: 0;
+	text-align: center;
 }
 
 /*	====	structure	====	*/
@@ -58,8 +58,8 @@ body
 {
 	margin: 0;
 	padding: 1.5em 4.5em;
-	text-align: left;
 	position: relative;
+	text-align: left;
 }
 
 #header
@@ -80,10 +80,10 @@ body
 #preview div:after,
 ul.catlist:after
 {
+	clear: both;
 	content: ".";
 	display: block;
 	height: 0;
-	clear: both;
 	visibility: hidden;
 }
 
@@ -109,9 +109,9 @@ html ul.catlist
 
 #login #wrap
 {
+	background-color: #fff;
 	margin: 1.5em auto;
 	width: 30em;
-	background-color: #fff;
 }
 
 #login #header
@@ -140,34 +140,34 @@ html ul.catlist
 #nav
 {
 	position: absolute;
-	top: 50px;
 	right: 0;
+	top: 50px;
 	width: 50%;
 }
 
 #nav ul
 {
+	list-style-type: none;
 	margin: 0;
 	padding: 0;
-	list-style-type: none;
 }
 
 #nav li
 {
-	padding: 0;
 	display: inline;
+	padding: 0;
 }
 
 #nav a
 {
+	border-bottom: 2px solid #fff;
 	display: block;
 	float: left;
-	width: auto;
-	text-decoration: none;
-	margin-left: 1em;
-	line-height: 28px;
-	border-bottom: 2px solid #fff;
 	height: 28px;
+	line-height: 28px;
+	margin-left: 1em;
+	text-decoration: none;
+	width: auto;
 }
 
 #nav a:hover,
@@ -184,52 +184,46 @@ html ul.catlist
 #blacklist a.options,
 * #smilies a.options,
 #templates a.options,
-#change-password a.password,
+#account a.account,
 #credits a.credits
 {
-	* color: #0c0;
-	* border-color: #0c0;
-	*
-}
-
-{
-	color: #0c0;
 	border-color: #0c0;
+	color: #0c0;
 }
 
 /*	====	uneven columns	====	*/
 
 .col1
 {
-	width: 65%;
-	float: left;
 	clear: left;
+	float: left;
+	width: 65%;
 }
 
 .col2
 {
-	width: 33%;
-	float: right;
 	clear: right;
+	float: right;
+	width: 33%;
 }
 
 /*	====	2 columns	====	*/
 
 .col12
 {
-	width: 47.5%;
-	margin-right: 2.4%;
 	border-right: 1px solid #ddd;
-	padding-right: 2.4%;
-	float: left;
 	clear: both;
+	float: left;
+	margin-right: 2.4%;
+	padding-right: 2.4%;
+	width: 47.5%;
 }
 
 .col22
 {
-	width: 47.5%;
-	float: right;
 	clear: right;
+	float: right;
+	width: 47.5%;
 }
 
 /*	====	3 columns	====	*/
@@ -237,9 +231,9 @@ html ul.catlist
 .col13,
 .col23
 {
-	width: 30%;
-	margin-right: 2.4%;
 	float: left;
+	margin-right: 2.4%;
+	width: 30%;
 }
 
 .col13
@@ -257,8 +251,8 @@ html ul.catlist
 
 .col33
 {
-	width: 30%;
 	float: right;
+	width: 30%;
 }
 
 .col23,
@@ -270,8 +264,8 @@ html ul.catlist
 .col23 ul,
 .col33 ul
 {
-	padding: 0;
 	list-style-type: none;
+	padding: 0;
 }
 
 .col23 li,
@@ -284,8 +278,8 @@ html ul.catlist
 .col23 .gravatar,
 .col33 .gravatar
 {
-	float: left;
 	clear: left;
+	float: left;
 	margin-right: 0.5em;
 }
 
@@ -293,8 +287,8 @@ html ul.catlist
 
 .option
 {
-	padding: 0.5em;
 	border-bottom: 1px solid #ddd;
+	padding: 0.5em;
 }
 
 .option p
@@ -318,9 +312,9 @@ form .option:first-child
 .amp
 {
 	font-family: "Times New Roman", serif;
-	font-weight: normal;
-	font-style: italic;
 	font-size: 1.2em;
+	font-style: italic;
+	font-weight: normal;
 	line-height: 0.9em;
 }
 
@@ -355,20 +349,20 @@ a:focus
 
 h1
 {
-	margin: 0;
+	background: url(fanupdate.png) left center no-repeat;
 	font-size: 2em;
 	font-weight: normal;
-	text-transform: lowercase;
-	text-align: right;
-	background: url(fanupdate.png) left center no-repeat;
 	height: 72px;
+	margin: 0;
+	text-align: right;
+	text-transform: lowercase;
 }
 
 h1 a
 {
 	display: block;
-	width: 300px;
 	height: 72px;
+	width: 300px;
 }
 
 h1 span
@@ -378,50 +372,50 @@ h1 span
 
 h2
 {
-	padding: 0.33em;
-	margin: 0 0 1em 0;
-	font-size: 1.5em;
-	line-height: 1em;
-	font-weight: bold;
 	background-color: #f9f9f9;
 	border: 1px solid #ddd;
 	border-top: 0;
+	font-size: 1.5em;
+	font-weight: bold;
+	line-height: 1em;
+	margin: 0 0 1em 0;
+	padding: 0.33em;
 }
 
 #preview h2
 {
-	padding: 0;
-	border: 0;
 	background-color: transparent;
+	border: 0;
 	margin: 0;
+	padding: 0;
 }
 
 h3,
 caption
 {
 	color: #333;
-	margin: 0;
-	font-weight: bold;
 	font-size: 1.5em;
+	font-weight: bold;
 	line-height: 1em;
+	margin: 0;
 	text-align: left;
 }
 
 h4
 {
-	margin: 0;
 	font-size: 1.2em;
-	line-height: 1.25em;
 	font-weight: bold;
+	line-height: 1.25em;
+	margin: 0;
 }
 
 legend
 {
 	color: #333;
-	margin: 0;
 	font-size: 1em;
-	line-height: 1.5em;
 	font-weight: bold;
+	line-height: 1.5em;
+	margin: 0;
 	text-align: left;
 }
 
@@ -432,8 +426,8 @@ pre,
 table
 {
 	font-size: 1em;
-	margin: 0 0 1.5em 0;
 	line-height: 1.5em;
+	margin: 0 0 1.5em 0;
 }
 
 ul,
@@ -463,9 +457,9 @@ ul.catlist
 
 ul.catlist li
 {
-	width: 50%;
 	float: left;
 	margin: 0 0 0.5em 0;
+	width: 50%;
 }
 
 ul.catlist input.new
@@ -503,12 +497,12 @@ img.gravatar
 
 h3 .feed
 {
-	width: 16px;
 	height: 16px;
 	padding: 0;
-	text-indent: -9000px;
 	position: absolute;
 	right: 0;
+	text-indent: -9000px;
+	width: 16px;
 }
 
 h3
@@ -568,18 +562,18 @@ tr.odd td
 
 ul.subnav
 {
-	list-style-type: none;
-	padding: 0;
-	margin: -3.55em 1% 0 0;
 	float: right;
+	list-style-type: none;
+	margin: -3.55em 1% 0 0;
+	padding: 0;
 	width: 47.4%;
 }
 
 ul.subnav li
 {
 	display: inline;
-	margin-left: 1em;
 	float: left;
+	margin-left: 1em;
 }
 
 ul.subnav li:first-child
@@ -633,9 +627,9 @@ form p
 
 fieldset
 {
-	clear: both;
 	border: 0;
 	border-top: 1px solid #ddd;
+	clear: both;
 	margin: 0 0 1em 0;
 	padding: 0.5em 0 0 0;
 }
@@ -659,47 +653,47 @@ fieldset ul
 
 label
 {
-	position: relative;
-	float: left;
 	clear: left;
 	display: block;
+	float: left;
 	line-height: 1.5em;
-	width: 9em;
-	text-align: right;
 	margin: 0 1.5em 0 0;
+	position: relative;
+	text-align: right;
+	width: 9em;
 }
 
 label em
 {
-	display: block;
-	position: absolute;
-	left: 6.375em;
-	top: 0;
 	color: #C00;
-	font-weight: bold;
+	display: block;
 	font-size: 1.5em;
+	font-weight: bold;
+	left: 6.375em;
 	line-height: 1em;
+	position: absolute;
+	top: 0;
 	vertical-align: middle;
 }
 
 label strong
 {
-	display: block;
-	position: absolute;
-	left: 17.5em;
-	width: 20em;
 	color: #C00;
+	display: block;
 	font-weight: normal;
+	left: 17.5em;
+	position: absolute;
+	width: 20em;
 }
 
 label .help
 {
-	font-size: 0.857em;
 	display: block;
-	width: 30em;
-	text-align: left;
+	font-size: 0.857em;
 	line-height: 1.5em;
 	margin: 1.25em 0 0 12.25em;
+	text-align: left;
+	width: 30em;
 }
 
 div.col2 label
@@ -735,9 +729,9 @@ div.col2 label
 
 #templates label .help
 {
-	width: 40em;
 	font-weight: normal;
 	margin: -1.5em 0 0 15.75em;
+	width: 40em;
 }
 
 #templates .update
@@ -752,11 +746,11 @@ td label,
 #templates label,
 #comments .col2 label
 {
-	float: none;
-	width: auto;
-	text-align: left;
 	display: inline;
+	float: none;
 	margin: 0;
+	text-align: left;
+	width: auto;
 }
 
 td label
@@ -774,8 +768,8 @@ label.checkbox em,
 
 textarea
 {
-	width: 100%;
 	line-height: 1.5em;
+	width: 100%;
 }
 
 .title label
@@ -798,8 +792,8 @@ textarea
 #action .secondary
 {
 	float: right;
-	width: 50%;
 	text-align: right;
+	width: 50%;
 }
 
 input[type=submit]
@@ -848,8 +842,8 @@ tfoot td
 
 thead th
 {
-	text-align: left;
 	font-weight: bold;
+	text-align: left;
 }
 
 thead th a
@@ -902,9 +896,9 @@ tbody tr:hover td.highlight
 
 .paginate a
 {
+	border: 1px solid #ddd;
 	padding: 0.125em 0.25em;
 	text-decoration: none;
-	border: 1px solid #ddd;
 }
 
 .paginate a:hover,
@@ -929,15 +923,15 @@ tbody tr:hover td.highlight
 .button,
 .submit
 {
-	color: #fff !important;
-	padding: 0 0.25em;
-	border-width: 1px;
-	border-style: solid;
 	background-position: top left;
 	background-repeat: repeat-x;
-	text-transform: capitalize;
+	border-style: solid;
+	border-width: 1px;
+	color: #fff !important;
 	font-weight: bold;
+	padding: 0 0.25em;
 	text-decoration: none;
+	text-transform: capitalize;
 }
 
 .edit,
@@ -1007,22 +1001,22 @@ tbody tr:hover td.highlight
 
 div.archivelink
 {
-	text-align: right;
 	margin: 3em 0 0 0;
+	text-align: right;
 }
 
 div.credit
 {
 	clear: both;
-	text-align: center;
 	margin: 1.5em 0;
 	padding: 0;
+	text-align: center;
 }
 
 div.credit p
 {
-	margin: 0;
 	font-size: 0.857em;
+	margin: 0;
 }
 
 p.catfile
@@ -1063,8 +1057,8 @@ div.comment p.commenter
 {
 	background: url(new-entry-button.png) top left no-repeat;
 	display: block;
-	width: 253px;
 	height: 44px;
+	width: 253px;
 }
 
 #newUpdate a:active,

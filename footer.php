@@ -31,8 +31,8 @@
 <li><a href="blog.php" class="entries">Entries</a></li>
 <li><a href="comment.php" class="comments">Comments</a></li>
 <li><a href="category.php" class="categories">Categories</a></li>
+<li><a href="account.php" class="account">Account</a></li>
 <li><a href="options.php" class="options">Options</a></li>
-<li><a href="change-password.php" class="password">Password</a></li>
 <li><a href="credits.php" class="credits">Credits</a></li>
 <li><a href="index.php?action=logout">Logout</a></li>
 </ul>

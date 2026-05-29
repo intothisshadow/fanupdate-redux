@@ -1,21 +1,22 @@
 <?php
 declare(strict_types=1);
 /*****************************************************************************
- * FanUpdate — change-password.php
+ * FanUpdate — account.php
  *
  * Copyright (c) Jenny Ferenc <jenny@prism-perfect.net>
  * Copyright (c) 2020 by Ekaterina (contributor) http://scripts.robotess.net
  * Copyright (c) 2026 Redux contributor
  *
- * Allows the logged-in admin to change their password without manually
- * editing blog-config.php.
+ * Allows the logged-in admin to change their username and/or password without
+ * manually editing blog-config.php.
  *
  * Security model:
- *  - Current password is verified with password_verify() before any change
- *  - New hash is written to blog-config.php via preg_replace with addcslashes
- *    to safely handle bcrypt's literal '$' signs in the replacement string
- *  - A fresh HMAC token is issued immediately so the session remains valid
- *    (the old cookie token would be stale as soon as the stored hash changes)
+ *  - Password change requires current password (password_verify()) before any write
+ *  - New hashes/values are written to blog-config.php via preg_replace
+ *  - addcslashes(..., '\\$') prevents bcrypt '$' from being misread as
+ *    backreference markers by preg_replace
+ *  - A fresh HMAC token is issued after either change so the session cookie
+ *    remains valid (token = HMAC(username, storedHash))
  *  - HttpOnly flag set on both cookies
  *
  * This program is free software: you can redistribute it and/or modify
@@ -31,7 +32,73 @@ $fu = FanUpdate::instance();
 $fu->addOptFromDb();
 $fu->login();
 
-// ── handle form submission ───────────────────────────────────────────────────
+// ── handle username change ───────────────────────────────────────────────────
+
+if (isset($_POST['action']) && $_POST['action'] === 'change_username') {
+
+    $clean = clean_input($_POST);
+
+    $newUsername     = trim((string) ($clean['new_username']     ?? ''));
+    $confirmUsername = trim((string) ($clean['confirm_username'] ?? ''));
+
+    if ($newUsername === '') {
+        $fu->addErr('Please enter a new username.');
+    } elseif (strlen($newUsername) > 50) {
+        $fu->addErr('Username must be 50 characters or fewer.');
+    } elseif (!preg_match('/^[A-Za-z0-9_]+$/', $newUsername)) {
+        $fu->addErr('Username may only contain letters, numbers, and underscores.');
+    }
+
+    if ($newUsername !== '' && $newUsername !== $confirmUsername) {
+        $fu->addErr('Usernames do not match.');
+    }
+
+    if ($fu->noErr()) {
+
+        $configFile = __DIR__ . '/blog-config.php';
+
+        if (!is_writable($configFile)) {
+            $fu->addErr(
+                '<strong>blog-config.php</strong> is not writable. '
+                . 'Please <code>chmod 644</code> (or temporarily <code>chmod 666</code>) the file and try again, '
+                . 'or update the username manually:<br>'
+                . '<code>$fanupdate[\'admin_username\'] = \''
+                . htmlspecialchars($newUsername, ENT_QUOTES, 'UTF-8')
+                . '\';</code>'
+            );
+        } else {
+            $configContent = (string) file_get_contents($configFile);
+
+            // Matches:  $fanupdate['admin_username'] = '...';
+            $newContent = preg_replace(
+                "/(\\\$fanupdate\['admin_username'\]\s*=\s*)'[^']*'/",
+                "\$1'" . addslashes($newUsername) . "'",
+                $configContent
+            );
+
+            if ($newContent === null || file_put_contents($configFile, $newContent) === false) {
+                $fu->addErr('Failed to write to <strong>blog-config.php</strong>. Username not changed.');
+            } else {
+                // Reissue cookie pair — token is HMAC(username, storedHash),
+                // so changing the username key invalidates the old token.
+                $fu->addOpt('admin_username', $newUsername);
+
+                $storedHash = (string) $fu->getOpt('admin_password', true);
+                $newToken   = hash_hmac('sha256', $newUsername, $storedHash);
+
+                $remember = isset($_COOKIE['fu_username']);
+                $expire   = $remember ? time() + 60 * 60 * 24 * 30 : 0;
+
+                setcookie('fu_username', $newUsername, $expire, '/', '', false, true);
+                setcookie('fu_token',    $newToken,    $expire, '/', '', false, true);
+
+                $fu->addSuccess('Username changed successfully.');
+            }
+        }
+    }
+}
+
+// ── handle password change ───────────────────────────────────────────────────
 
 if (isset($_POST['action']) && $_POST['action'] === 'change_password') {
 
@@ -42,8 +109,6 @@ if (isset($_POST['action']) && $_POST['action'] === 'change_password') {
     $confirmPassword = $clean['confirm_password'] ?? '';
 
     $storedHash = (string) $fu->getOpt('admin_password', true);
-
-    // ── validate ─────────────────────────────────────────────────────────────
 
     if ($currentPassword === '') {
         $fu->addErr('Please enter your current password.');
@@ -60,8 +125,6 @@ if (isset($_POST['action']) && $_POST['action'] === 'change_password') {
     if ($newPassword !== '' && $newPassword !== $confirmPassword) {
         $fu->addErr('New passwords do not match.');
     }
-
-    // ── write new hash if valid ───────────────────────────────────────────────
 
     if ($fu->noErr()) {
 
@@ -96,17 +159,14 @@ if (isset($_POST['action']) && $_POST['action'] === 'change_password') {
             if ($newContent === null || file_put_contents($configFile, $newContent) === false) {
                 $fu->addErr('Failed to write to <strong>blog-config.php</strong>. Password not changed.');
             } else {
-                // ── update in-memory config and reissue session token ─────────
-                // The HMAC token in the browser cookie is keyed on the stored
-                // hash.  Now that the hash has changed, the old cookie is stale.
-                // Derive a fresh token from the new hash and rewrite the cookie
-                // so the admin is not immediately kicked to the login form.
+                // Reissue cookie pair — the HMAC token is keyed on the stored
+                // hash, so it becomes stale the moment the hash changes.
                 $fu->addOpt('admin_password', $newHash);
 
                 $username = (string) $fu->getOpt('admin_username', true);
                 $newToken = hash_hmac('sha256', $username, $newHash);
 
-                $remember = isset($_COOKIE['fu_username']); // preserve "remember me" state
+                $remember = isset($_COOKIE['fu_username']);
                 $expire   = $remember ? time() + 60 * 60 * 24 * 30 : 0;
 
                 setcookie('fu_username', $username, $expire, '/', '', false, true);
@@ -120,19 +180,11 @@ if (isset($_POST['action']) && $_POST['action'] === 'change_password') {
 
 // ── render page ──────────────────────────────────────────────────────────────
 
-$fu->getHeader('Change Password');
+$fu->getHeader('Account');
 
 ?>
 
-<h2>Change Password</h2>
-
-<ul class="subnav">
-    <li><a href="options.php">Main</a></li>
-    <li><a href="blacklist.php">Blacklist</a></li>
-    <li><a href="smilies.php">Smilies</a></li>
-    <li><a href="templates.php">Templates</a></li>
-    <li><a href="change-password.php">Password</a></li>
-</ul>
+<h2>Account</h2>
 
 <?php
 
@@ -142,7 +194,52 @@ $fu->reportErrors();
 ?>
 
 <div id="options">
-<form action="change-password.php" method="post">
+
+<h3>Change Username</h3>
+
+<form action="account.php" method="post">
+    <input type="hidden" name="action" value="change_username" />
+
+    <div class="option odd">
+        <p>
+            <label for="new_username">New username:
+                <span class="help">Letters, numbers, and underscores only. Maximum 50 characters.</span>
+            </label>
+            <input type="text"
+                   id="new_username"
+                   name="new_username"
+                   size="30"
+                   maxlength="50"
+                   autocomplete="username" />
+        </p>
+    </div>
+
+    <div class="option even">
+        <p>
+            <label for="confirm_username">Confirm new username:
+                <span class="help">Re-enter the new username.</span>
+            </label>
+            <input type="text"
+                   id="confirm_username"
+                   name="confirm_username"
+                   size="30"
+                   maxlength="50"
+                   autocomplete="username" />
+        </p>
+    </div>
+
+    <p style="margin-top: 1em;">
+        <input type="submit"
+               name="submit_username"
+               value="Change Username"
+               class="update" />
+    </p>
+
+</form>
+
+<h3>Change Password</h3>
+
+<form action="account.php" method="post">
     <input type="hidden" name="action" value="change_password" />
 
     <div class="option odd">
@@ -196,6 +293,7 @@ $fu->reportErrors();
     </p>
 
 </form>
+
 </div><!-- END #options -->
 
 <?php $fu->getFooter(); ?>

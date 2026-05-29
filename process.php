@@ -1,4 +1,5 @@
 <?php
+
 /*****************************************************************************
  * FanUpdate
  * Copyright (c) Jenny Ferenc <jenny@prism-perfect.net>
@@ -32,7 +33,7 @@ if (isset($_POST['submit_comment'])) {
     require_once('blog-config.php');
     require_once('functions.php');
 
-    $fu =& FanUpdate::instance();
+    $fu = &FanUpdate::instance();
 
     $clean = clean_input($_POST);
 
@@ -45,7 +46,6 @@ if (isset($_POST['submit_comment'])) {
     } elseif (empty($clean['comment'])) {
 
         $fu->addErr('Your comment is blank. You must have something to say!');
-
     } else {
 
         $fu->AddOptFromDb();
@@ -180,7 +180,6 @@ if (isset($_POST['submit_comment'])) {
                             } else {
                                 $points -= 2; // no email, penalize
                             }
-
                         } // end if use points
 
                         $clean['approved'] = 1;
@@ -202,14 +201,30 @@ if (isset($_POST['submit_comment'])) {
                         $clean['comment'] = preg_replace("!\[URL=([\w]+?://[\w#$%&~/.\-;:=,?@\[\]+]+)](.*?)\[/URL]!", "<a href=\"\\1\">\\2</a>", $clean['comment']);
                         $clean['comment'] = preg_replace("!\[URL]([\w]+?://[\w#$%&~/.\-;:=,?@\[\]+]+)\[/URL]!", "<a href=\"\\1\">\\1</a>", $clean['comment']);
 
+                        // Notes:
+                        //  secure   = true   — site is HTTPS-only
+                        //  httponly = false  — must stay JS-readable so the comment form can pre-fill
+                        //                      name/email/url fields on return visits
+                        //  samesite = Lax    — Lax not Strict: Strict would clear the cookies after
+                        //                      any cross-page navigation, breaking the pre-fill feature
+
                         if ($clean['remember_me'] == 'y') {
 
                             $cookie_life = time() + 31536000; // Life of one year
 
-                            setcookie('fanuname', $clean['name'], $cookie_life, '/');
-                            setcookie('fanuemail', $clean['email'], $cookie_life, '/');
-                            setcookie('fanuurl', $clean['url'], $cookie_life, '/');
+                            $commenter_opts = [
+                                'expires'  => $cookie_life,
+                                'path'     => '/',
+                                'secure'   => true,
+                                'httponly' => false,
+                                'samesite' => 'Lax',
+                            ];
+
+                            setcookie('fanuname',  $clean['name'],  $commenter_opts);
+                            setcookie('fanuemail', $clean['email'], $commenter_opts);
+                            setcookie('fanuurl',   $clean['url'],   $commenter_opts);
                         }
+
 
                         $clean['added'] = gmdate('Y-m-d H:i:s');
 
@@ -283,7 +298,6 @@ if (isset($_POST['submit_comment'])) {
 
                             $result_string .= "<h3>Thank You</h3>\n";
                             $result_string .= '<p>Thank you for your comment. In an effort to reduce spam, your comment has been held for moderation and will not appear on the site until it has been approved.</p>' . "\n";
-
                         } else {
 
                             $show_comment = true;
@@ -292,7 +306,6 @@ if (isset($_POST['submit_comment'])) {
 
                             $result_string .= "<h3>Thank you for your comment:</h3>\n";
                         }
-
                     } // end pass_blacklist
 
                 } // end pass_captcha
@@ -327,5 +340,4 @@ if (isset($_POST['submit_comment'])) {
         echo '<p><a href="' . $clean['returnto'] . '">Return to the previous page</a>.</p>' . "\n";
         $fu->getFooter(false);
     }
-
 }

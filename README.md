@@ -347,7 +347,6 @@ fanupdate/
 ├── process.php              # Comment submission handler
 ├── show-blog.php            # Public blog display (all categories)
 ├── show-cat.php             # Public blog display (single category)
-├── show-post.php            # Public single-post / comments page
 ├── rss.php                  # RSS feed
 ├── rss-comments.php         # RSS comments feed
 ├── captcha.php              # CAPTCHA image generator

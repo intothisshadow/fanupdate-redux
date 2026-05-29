@@ -1,4 +1,5 @@
 <?php
+
 /*****************************************************************************
  * FanUpdate
  * Copyright (c) Jenny Ferenc <jenny@prism-perfect.net>
@@ -33,7 +34,6 @@ $showform = false;
 if (isset($_GET['action']) && $_GET['action'] == 'new') {
 
     $showform = true;
-
 } elseif (isset($_GET['action']) && $_GET['action'] == 'edit') {
 
     $sql_id = (int)$_GET['id'];
@@ -49,13 +49,23 @@ if (isset($_GET['action']) && $_GET['action'] == 'new') {
 
     $showform = true;
 
-// _____________________________________________ CLEAN POST DATA
+    // _____________________________________________ CLEAN POST DATA
 
 } elseif (isset($_POST['action'])) {
 
     $clean = clean_input($_POST);
     $clean['comment_template'] = clean_input($_POST['comment_template'], true);
-    $clean['entry_template'] = clean_input($_POST['entry_template'], true);
+    $clean['entry_template']   = clean_input($_POST['entry_template'], true);
+
+    // PHP 8.2: default all optional POST fields to avoid undefined key warnings
+    $clean['cat_name']         = $clean['cat_name']         ?? '';
+    $clean['cat_id']           = $clean['cat_id']           ?? '';
+    $clean['date_format']      = $clean['date_format']       ?? '';
+    $clean['gravatar_default'] = $clean['gravatar_default']  ?? '';
+    $clean['gravatar_size']    = $clean['gravatar_size']     ?? '';
+    $clean['gravatar_rating']  = $clean['gravatar_rating']   ?? '';
+    $clean['entry_template']   = $clean['entry_template']    ?? '';
+    $clean['comment_template'] = $clean['comment_template']  ?? '';
 
     if (!isset($clean['gravatar_on'])) {
         $clean['gravatar_on'] = 0;
@@ -64,7 +74,7 @@ if (isset($_GET['action']) && $_GET['action'] == 'new') {
         $clean['comments_on'] = 0;
     }
 
-// _____________________________________________ VALIDATE POST DATA
+    // _____________________________________________ VALIDATE POST DATA
 
     if ($_POST['action'] == 'add' || $_POST['action'] == 'update' || $_POST['action'] == 'preview') {
 
@@ -106,7 +116,7 @@ if (isset($_GET['action']) && $_GET['action'] == 'new') {
             $sql_gravatar_on = ($clean['gravatar_on'] == 1) ? 1 : 0;
             $sql_comments_on = ($clean['comments_on'] == 1) ? 1 : 0;
 
-// _____________________________________________ ADD QUERY
+            // _____________________________________________ ADD QUERY
 
             if ($_POST['action'] == 'add') {
 
@@ -133,7 +143,7 @@ if (isset($_GET['action']) && $_GET['action'] == 'new') {
                     $clean = array();
                 }
 
-// _____________________________________________ UPDATE QUERY
+                // _____________________________________________ UPDATE QUERY
 
             } elseif ($_POST['action'] == 'update') {
 
@@ -166,7 +176,7 @@ if (isset($_GET['action']) && $_GET['action'] == 'new') {
         }
 
 
-// _____________________________________________ DELETE QUERY
+        // _____________________________________________ DELETE QUERY
 
     } elseif ($_POST['action'] == 'delete') {
 
@@ -211,7 +221,7 @@ if (!$fu->getOpt('collective_script')) { ?>
     <ul class="subnav">
         <li><a href="category.php?action=new" title="new category, accesskey n" accesskey="n">New Category</a></li>
     </ul>
-    <?php
+<?php
 
 }
 
@@ -227,7 +237,7 @@ $fu->reportErrors();
 
 if ($showform) {
 
-    ?>
+?>
 
     <form action="category.php" method="post">
 
@@ -235,12 +245,13 @@ if ($showform) {
             <p class="title"><label for="name">Category name:</label>
                 <?php if (!$fu->getOpt('collective_script')) { ?>
                     <input type="text" id="name" name="cat_name" size="40" maxlength="50"
-                           value="<?php if (!empty($clean['cat_name'])) {
-                               echo $clean['cat_name'];
-                           } ?>"/>
+                        value="<?php if (!empty($clean['cat_name'])) {
+                                    echo $clean['cat_name'];
+                                } ?>" />
                 <?php } else {
                     echo '<strong>' . $clean['cat_name'] . '</strong> (visit collective script admin panel to rename)';
-                } ?></p>
+                } ?>
+            </p>
         </div><!-- END .col1 -->
 
         <div class="col2">
@@ -256,13 +267,15 @@ if ($showform) {
                     <input type="checkbox" id="comments_on" name="comments_on" value="1"
                         <?php if (!isset($clean['comments_on']) || $clean['comments_on'] == 1) {
                             echo 'checked="checked"';
-                        } ?> /></p>
+                        } ?> />
+                </p>
 
                 <p><label for="date_format">Date format:</label>
                     <input type="text" id="date_format" name="date_format" size="10" maxlength="30"
-                           value="<?php if (!empty($clean['date_format'])) {
-                               echo $clean['date_format'];
-                           } ?>"/></p>
+                        value="<?php if (!empty($clean['date_format'])) {
+                                    echo $clean['date_format'];
+                                } ?>" />
+                </p>
 
             </fieldset>
 
@@ -273,25 +286,29 @@ if ($showform) {
                     <input type="checkbox" id="gravatar_on" name="gravatar_on" value="1"
                         <?php if (!isset($clean['gravatar_on']) || $clean['gravatar_on'] == 1) {
                             echo 'checked="checked"';
-                        } ?> /></p>
+                        } ?> />
+                </p>
 
                 <p><label for="gravatar_default">Default img:</label>
                     <input type="text" id="gravatar_default" name="gravatar_default" size="20" maxlength="100"
-                           value="<?php if (!empty($clean['gravatar_default'])) {
-                               echo $clean['gravatar_default'];
-                           } ?>"/></p>
+                        value="<?php if (!empty($clean['gravatar_default'])) {
+                                    echo $clean['gravatar_default'];
+                                } ?>" />
+                </p>
 
                 <p><label for="gravatar_size">Size:</label>
                     <input type="text" id="gravatar_size" name="gravatar_size" size="2" maxlength="2"
-                           value="<?php if (!empty($clean['gravatar_size'])) {
-                               echo $clean['gravatar_size'];
-                           } ?>"/></p>
+                        value="<?php if (!empty($clean['gravatar_size'])) {
+                                    echo $clean['gravatar_size'];
+                                } ?>" />
+                </p>
 
                 <p><label for="gravatar_rating">Rating:</label>
                     <input type="text" id="gravatar_rating" name="gravatar_rating" size="2" maxlength="2"
-                           value="<?php if (!empty($clean['gravatar_rating'])) {
-                               echo $clean['gravatar_rating'];
-                           } ?>"/></p>
+                        value="<?php if (!empty($clean['gravatar_rating'])) {
+                                    echo $clean['gravatar_rating'];
+                                } ?>" />
+                </p>
 
             </fieldset>
 
@@ -301,17 +318,17 @@ if ($showform) {
             <fieldset>
                 <legend>Entry Template</legend>
                 <p><textarea id="template" name="entry_template" cols="80"
-                             rows="6"><?php if (!empty($clean['entry_template'])) {
-                            echo htmlspecialchars($clean['entry_template']);
-                        } ?></textarea></p>
+                        rows="6"><?php if (!empty($clean['entry_template'])) {
+                                        echo htmlspecialchars($clean['entry_template']);
+                                    } ?></textarea></p>
             </fieldset>
 
             <fieldset>
                 <legend>Comment Template</legend>
                 <p><textarea id="template_c" name="comment_template" cols="80"
-                             rows="6"><?php if (!empty($clean['comment_template'])) {
-                            echo htmlspecialchars($clean['comment_template']);
-                        } ?></textarea></p>
+                        rows="6"><?php if (!empty($clean['comment_template'])) {
+                                        echo htmlspecialchars($clean['comment_template']);
+                                    } ?></textarea></p>
             </fieldset>
         </div><!-- End .col1 -->
 
@@ -320,19 +337,19 @@ if ($showform) {
                 <legend>Action</legend>
                 <div class="primary">
                     <?php if (isset($clean['cat_id'])) { ?>
-                    <input type="hidden" name="cat_id" value="<?php echo $clean['cat_id']; ?>"/>
-                    <input type="submit" name="action" value="update" class="update" title="Save changes, accesskey s"
-                           accesskey="s"/>
-                    <?php if (!$fu->getOpt('collective_script')) { ?>
+                        <input type="hidden" name="cat_id" value="<?php echo $clean['cat_id']; ?>" />
+                        <input type="submit" name="action" value="update" class="update" title="Save changes, accesskey s"
+                            accesskey="s" />
+                        <?php if (!$fu->getOpt('collective_script')) { ?>
                 </div>
                 <div class="secondary">
                     <input type="submit" name="action" value="delete" class="delete"
-                           title="Delete this category, accesskey x" accesskey="x"/>
-                    <?php } ?>
-                    <?php } else { ?>
-                        <input type="submit" name="action" value="add" class="add"
-                               title="Add this category, accesskey s" accesskey="s"/>
-                    <?php } ?>
+                        title="Delete this category, accesskey x" accesskey="x" />
+                <?php } ?>
+            <?php } else { ?>
+                <input type="submit" name="action" value="add" class="add"
+                    title="Add this category, accesskey s" accesskey="s" />
+            <?php } ?>
                 </div>
             </fieldset>
         </div><!-- END .col1 -->
@@ -343,7 +360,7 @@ if ($showform) {
 
 } else {
 
-// ____________________________________________________________ LIST Categories
+    // ____________________________________________________________ LIST Categories
 
     $query = 'SELECT ' . $fu->getOpt('collective_table') . '.*,
   ' . $fu->getOpt('col_subj') . ' AS cname, ' . $fu->getOpt('col_id') . ' AS cid, COUNT(cat_id) AS num
@@ -358,65 +375,65 @@ if ($showform) {
 
     if ($num_cat > 0) {
 
-        ?>
+    ?>
 
         <table class="sortable" summary="Table of blog entry categories, sorted alphabetically.">
 
             <thead>
-            <tr>
-                <th scope="col">Name</th>
-                <th scope="col">Entries</th>
-                <th scope="col">Get Code</th>
-                <th scope="col">Edit</th>
-                <?php if (!$fu->getOpt('collective_script')) { ?>
-                    <th scope="col">Delete</th>
-                <?php } ?>
-            </tr>
+                <tr>
+                    <th scope="col">Name</th>
+                    <th scope="col">Entries</th>
+                    <th scope="col">Get Code</th>
+                    <th scope="col">Edit</th>
+                    <?php if (!$fu->getOpt('collective_script')) { ?>
+                        <th scope="col">Delete</th>
+                    <?php } ?>
+                </tr>
             </thead>
 
             <tbody>
-            <?php
-
-            $i = 0;
-
-            while ($clean = $fu->db->ReadRecord()) {
-
-                $class = (isset($class) && $class == 'even') ? 'odd' : 'even';
-
-                ?>
-                <tr class="<?php echo $class; ?>">
-                    <td><?php echo $clean['cname']; ?></td>
-                    <td class="number"><a href="blog.php?cat=<?php echo $clean['cid']; ?>"
-                                          title="see entries"><?php echo $clean['num']; ?></a></td>
-                    <td><a href="get-code.php?id=<?php echo $clean['cid']; ?>">Get display code?</a></td>
-                    <td class="form">
-                        <form action="category.php" method="get">
-                            <input type="submit" name="action" value="edit" class="edit"
-                                   title="Edit category &#8216;<?php echo $clean['cname']; ?>&#8217;"/>
-                            <input type="hidden" name="id" value="<?php echo $clean['cid']; ?>"/>
-                        </form>
-                    </td>
-                    <?php if (!$fu->getOpt('collective_script')) { ?>
-                        <td class="form">
-                            <form action="category.php" method="post">
-                                <input type="submit" name="action" value="delete" class="delete"
-                                       title="Delete category &#8216;<?php echo $clean['cname']; ?>&#8217;"/>
-                                <input type="hidden" name="cat_id" value="<?php echo $clean['cid']; ?>"/>
-                            </form>
-                        </td>
-                    <?php } ?>
-                </tr>
                 <?php
 
-                $i++;
-            }
+                $i = 0;
 
-            ?>
+                while ($clean = $fu->db->ReadRecord()) {
+
+                    $class = (isset($class) && $class == 'even') ? 'odd' : 'even';
+
+                ?>
+                    <tr class="<?php echo $class; ?>">
+                        <td><?php echo $clean['cname']; ?></td>
+                        <td class="number"><a href="blog.php?cat=<?php echo $clean['cid']; ?>"
+                                title="see entries"><?php echo $clean['num']; ?></a></td>
+                        <td><a href="get-code.php?id=<?php echo $clean['cid']; ?>">Get display code?</a></td>
+                        <td class="form">
+                            <form action="category.php" method="get">
+                                <input type="submit" name="action" value="edit" class="edit"
+                                    title="Edit category &#8216;<?php echo $clean['cname']; ?>&#8217;" />
+                                <input type="hidden" name="id" value="<?php echo $clean['cid']; ?>" />
+                            </form>
+                        </td>
+                        <?php if (!$fu->getOpt('collective_script')) { ?>
+                            <td class="form">
+                                <form action="category.php" method="post">
+                                    <input type="submit" name="action" value="delete" class="delete"
+                                        title="Delete category &#8216;<?php echo $clean['cname']; ?>&#8217;" />
+                                    <input type="hidden" name="cat_id" value="<?php echo $clean['cid']; ?>" />
+                                </form>
+                            </td>
+                        <?php } ?>
+                    </tr>
+                <?php
+
+                    $i++;
+                }
+
+                ?>
             </tbody>
 
         </table>
 
-        <?php
+<?php
 
     }
 
@@ -429,7 +446,6 @@ if ($showform) {
   WHERE co.cat_id IS NULL';
 
     $fu->db->Execute($query);
-
 }
 
 $fu->getFooter();

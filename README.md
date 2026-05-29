@@ -372,7 +372,7 @@ This release resolves all PHP 8.2 deprecation warnings:
 fanupdate/
 ├── blog-config.php          # Your configuration (copy from .sample)
 ├── blog-config.sample.php   # Configuration template
-├── version.php              # Single source of truth for version metadata
+├── version.php              # Single source for all version metadata
 ├── functions.php            # Shared helper functions
 ├── index.php                # Admin dashboard
 ├── blog.php                 # Admin: entries list
@@ -521,4 +521,4 @@ See <https://www.gnu.org/licenses/gpl-3.0.html> for details.
 
 Original script by Jenny Ferenc — <http://prism-perfect.net/fanupdate>  
 PHP 7 port by Ekaterina — <https://scripts.robotess.net>  
-PHP 8.2 Redux by Ariane
+PHP 8.2 Redux by Ariane  —  https://www.unloved-heart.net

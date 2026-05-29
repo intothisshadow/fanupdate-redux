@@ -321,11 +321,14 @@ if ($version_installed == 0) {
 // ── check collective_table is configured correctly ───────────────────────────
 
 if ($fu->getOpt('collective_script')) {
+    // Using an external collective script — table must already exist
     $query = "SHOW TABLES LIKE '" . $fu->getOpt('collective_table') . "'";
     if (!$fu->db->GetFirstCell($query)) {
         $fu->addErr('Could not find collective_table <strong>' . $fu->getOpt('collective_table') . '</strong>. Please check your settings in blog-config.php');
     }
 }
+// Standalone mode: table will be created below on fresh install;
+// on upgrades it must already exist from a prior install.
 
 // ── already up to date ───────────────────────────────────────────────────────
 
@@ -405,7 +408,23 @@ if (!$fu->noErr()) {
         } else {
             $fu->addErr('Table <strong>' . $fu->getOpt('comments_table') . '</strong> not created!');
         }
+        // collective/category table — only created in standalone mode ('n')
+        // When using an external collective script, that table already exists.
+        if (!$fu->getOpt('collective_script')) {
+            $col_id   = $coltable['n']['id'];
+            $col_subj = $coltable['n']['subject'];
+            $query = 'CREATE TABLE ' . $fu->getOpt('collective_table') . " (
+      `$col_id` int(6) unsigned NOT NULL AUTO_INCREMENT,
+      `$col_subj` varchar(50) NOT NULL DEFAULT '',
+      PRIMARY KEY (`$col_id`)
+    ) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4";
 
+            if ($fu->db->Execute($query)) {
+                $fu->addSuccess('Table <strong>' . $fu->getOpt('collective_table') . '</strong> created.');
+            } else {
+                $fu->addErr('Table <strong>' . $fu->getOpt('collective_table') . '</strong> not created!');
+            }
+        }
         // catjoin table
         $query = 'CREATE TABLE ' . $fu->getOpt('catjoin_table') . " (
       `entry_id` int(6) unsigned NOT NULL DEFAULT '0',
@@ -760,7 +779,13 @@ if (!$fu->noErr()) {
 
     $fu->reportErrors();
 
-    echo '<p>Now <strong>DELETE</strong> this file from your server and start posting!</p>' . "\n";
+    // ── auto-delete install.php ───────────────────────────────────────────
+    $install_file = __FILE__;
+    if ($fu->noErr() && @unlink($install_file)) {
+        echo '<p class="success"><strong>install.php has been automatically deleted</strong> from your server.</p>' . "\n";
+    } else {
+        echo '<p class="error"><strong>Could not auto-delete install.php</strong> — please delete it from your server manually before using the admin panel.</p>' . "\n";
+    }
     echo '<p><a href="index.php">To the ADMIN panel.</a></p>' . "\n";
 } else {
 

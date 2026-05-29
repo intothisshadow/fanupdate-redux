@@ -1,4 +1,5 @@
 <?php
+
 /*****************************************************************************
  * FanUpdate
  *
@@ -37,7 +38,6 @@ if (isset($_GET['action']) && $_GET['action'] == 'new') {
     $post = new FanUpdate_Post(array(), $fu, $fu->getOpt('blog_page'));
 
     $showform = true;
-
 } elseif (!empty($_GET['id'])) {
 
     $sql_id = (int)$_GET['id'];
@@ -52,7 +52,7 @@ if (isset($_GET['action']) && $_GET['action'] == 'new') {
 
     $showform = true;
 
-// _____________________________________________ CLEAN POST DATA
+    // _____________________________________________ CLEAN POST DATA
 
 } elseif (isset($_POST['action'])) {
 
@@ -60,6 +60,10 @@ if (isset($_GET['action']) && $_GET['action'] == 'new') {
     $clean['body'] = clean_input($_POST['body'], true);
 
     if (isset($clean['date_to_now']) || empty($clean['added'])) {
+        // PHP 8.2: default optional POST fields to avoid undefined key warnings
+        $clean['id']      = $clean['id']      ?? '';
+        $clean['cat']     = isset($clean['cat'])     && is_array($clean['cat'])     ? $clean['cat']     : [];
+        $clean['new_cat'] = isset($clean['new_cat']) && is_array($clean['new_cat']) ? $clean['new_cat'] : [];
         $clean['added'] = gmdate('Y-m-d H:i:s');
     } else {
         $clean['added'] = gmdate('Y-m-d H:i:s', strtotime($clean['added']));
@@ -76,7 +80,7 @@ if (isset($_GET['action']) && $_GET['action'] == 'new') {
 
     $post = new FanUpdate_Post($clean, $fu, $fu->getOpt('blog_page'));
 
-// _____________________________________________ VALIDATE POST DATA
+    // _____________________________________________ VALIDATE POST DATA
 
     if ($_POST['action'] == 'add' || $_POST['action'] == 'update' || $_POST['action'] == 'preview') {
 
@@ -133,7 +137,7 @@ if (isset($_GET['action']) && $_GET['action'] == 'new') {
             $sql_is_public = ($clean['is_public'] == 1) ? 1 : 0;
             $sql_comments_on = ($clean['comments_on'] == 1) ? 1 : 0;
 
-// _____________________________________________ ADD QUERY
+            // _____________________________________________ ADD QUERY
 
             if ($_POST['action'] == 'add') {
 
@@ -165,7 +169,7 @@ if (isset($_GET['action']) && $_GET['action'] == 'new') {
                     $clean = array();
                 }
 
-// _____________________________________________ UPDATE QUERY
+                // _____________________________________________ UPDATE QUERY
 
             } elseif ($_POST['action'] == 'update') {
 
@@ -208,7 +212,6 @@ if (isset($_GET['action']) && $_GET['action'] == 'new') {
                                 if ($fu->db->Execute($query_delete_cat)) {
                                     $num_success++;
                                 }
-
                             } else {
                                 $preserve_cat[] = $row_old_cat['cat_id'];
                             }
@@ -219,7 +222,6 @@ if (isset($_GET['action']) && $_GET['action'] == 'new') {
                         }
 
                         $cat_array = array_diff($clean['cat'], $preserve_cat);
-
                     } else {
                         $cat_array = $clean['cat'];
                     }
@@ -246,7 +248,7 @@ if (isset($_GET['action']) && $_GET['action'] == 'new') {
             }
         }
 
-// _____________________________________________ DELETE QUERY
+        // _____________________________________________ DELETE QUERY
 
     } elseif ($_POST['action'] == 'delete') {
 
@@ -279,21 +281,21 @@ $fu->getHeader('Entries');
 
 <h2>Entries<?php
 
-    if ($showform && $post->getID()) {
-        echo ': Edit';
-    } elseif ($showform) {
-        echo ': New';
-    }
+            if ($showform && $post->getID()) {
+                echo ': Edit';
+            } elseif ($showform) {
+                echo ': New';
+            }
 
-    ?></h2>
+            ?></h2>
 
 <ul class="subnav">
     <li><a href="blog.php?action=new" accesskey="n" title="new entry, accesskey n">New Entry</a></li>
     <li class="form">
         <form action="blog.php" method="get">
             <input type="text" name="search" value="<?php if (!empty($_GET['search'])) {
-                echo clean_input($_GET['search']);
-            } ?>" accesskey="q"/>
+                                                        echo clean_input($_GET['search']);
+                                                    } ?>" accesskey="q" />
             <select name="cat">
                 <option value="">All</option>
                 <?php
@@ -317,7 +319,7 @@ $fu->getHeader('Entries');
                 ?>
                 <option value="0">Whole Collective</option>
             </select>
-            <input type="submit" value="Search" class="button" title="seach entries, accesskey q"/>
+            <input type="submit" value="Search" class="button" title="seach entries, accesskey q" />
         </form>
     </li>
 </ul>
@@ -336,7 +338,7 @@ $fu->reportErrors();
 
 if (isset($_POST['action']) && $_POST['action'] == 'preview') {
 
-    ?>
+?>
 
     <div id="preview">
         <h3>Preview</h3>
@@ -345,7 +347,7 @@ if (isset($_POST['action']) && $_POST['action'] == 'preview') {
         </div>
     </div><!-- END #preview -->
 
-    <?php
+<?php
 
 }
 
@@ -353,7 +355,7 @@ if (isset($_POST['action']) && $_POST['action'] == 'preview') {
 
 if ($showform) {
 
-    ?>
+?>
 
     <form action="blog.php" method="post">
 
@@ -361,10 +363,11 @@ if ($showform) {
 
             <p class="title"><label for="title">Title:</label>
                 <input type="text" id="title" name="title" size="35" maxlength="50"
-                       value="<?php echo $post->getTitle(); ?>"/></p>
+                    value="<?php echo $post->getTitle(); ?>" />
+            </p>
 
             <p><textarea id="body" class="wysiwyg" name="body" cols="80"
-                         rows="18"><?php echo htmlspecialchars($post->getBody()); ?></textarea></p>
+                    rows="18"><?php echo htmlspecialchars($post->getBody()); ?></textarea></p>
 
         </div><!-- END .col1 -->
 
@@ -374,25 +377,28 @@ if ($showform) {
 
                 <p><label for="added">Date:</label>
                     <input type="text" id="added" name="added" maxlength="50" size="18"
-                           value="<?php echo $post->getDateFormatted('Y-m-d g:i a'); ?>"/>
+                        value="<?php echo $post->getDateFormatted('Y-m-d g:i a'); ?>" />
 
                     <span><input type="checkbox" id="now" name="date_to_now" value="y"
-<?php if (!$post->getID() || (!empty($clean['date_to_now']) && $clean['date_to_now'] == 'y')) {
-    echo ' checked="checked"';
-} ?> />
-<label for="now" class="checkbox">NOW</label></span></p>
+                            <?php if (!$post->getID() || (!empty($clean['date_to_now']) && $clean['date_to_now'] == 'y')) {
+                                echo ' checked="checked"';
+                            } ?> />
+                        <label for="now" class="checkbox">NOW</label></span>
+                </p>
 
                 <p><input type="checkbox" id="is_public" name="is_public" value="1"
                         <?php if ($post->isPublic()) {
                             echo ' checked="checked"';
                         } ?> />
-                    <label for="is_public" class="checkbox">Published</label></p>
+                    <label for="is_public" class="checkbox">Published</label>
+                </p>
 
                 <p><input type="checkbox" id="comments_on" name="comments_on" value="1"
                         <?php if ($post->commentsOn()) {
                             echo ' checked="checked"';
                         } ?> />
-                    <label for="comments_on" class="checkbox">Comments allowed</label></p>
+                    <label for="comments_on" class="checkbox">Comments allowed</label>
+                </p>
 
             </fieldset>
 
@@ -405,7 +411,8 @@ if ($showform) {
                                 <?php if (isset($clean['cat']) && in_array(0, $clean['cat'], true)) {
                                     echo ' checked="checked"';
                                 } ?> />
-                            <label for="cat0" class="checkbox">Collective</label></li>
+                            <label for="cat0" class="checkbox">Collective</label>
+                        </li>
                     <?php }
 
                     $query_cat = 'SELECT ' . $fu->getOpt('col_id') . ' AS cat_id, ' . $fu->getOpt('col_subj') . ' AS cat_name
@@ -449,149 +456,147 @@ if ($showform) {
                 <legend>Action</legend>
                 <div class="primary">
                     <input type="submit" name="action" value="preview" class="button"
-                           title="Preview changes, accesskey p" accesskey="p"/>
+                        title="Preview changes, accesskey p" accesskey="p" />
                     <?php if ($post->getID()) { ?>
-                    <input type="hidden" name="id" value="<?php echo $post->getID(); ?>"/>
-                    <input type="submit" name="action" value="update" class="update" title="Save changes, accesskey s"
-                           accesskey="s"/>
+                        <input type="hidden" name="id" value="<?php echo $post->getID(); ?>" />
+                        <input type="submit" name="action" value="update" class="update" title="Save changes, accesskey s"
+                            accesskey="s" />
                 </div>
                 <div class="secondary">
                     <input type="submit" name="action" value="delete" class="delete"
-                           title="Delete this entry, accesskey x" accesskey="x"/>
-                    <?php } else { ?>
-                        <input type="submit" name="action" value="add" class="add" title="Add this entry, accesskey s"
-                               accesskey="s"/>
-                    <?php } ?>
+                        title="Delete this entry, accesskey x" accesskey="x" />
+                <?php } else { ?>
+                    <input type="submit" name="action" value="add" class="add" title="Add this entry, accesskey s"
+                        accesskey="s" />
+                <?php } ?>
                 </div>
             </fieldset>
         </div>
 
     </form>
 
-    <?php
+<?php
 
-// _____________________________________________ LIST ALL
+    // _____________________________________________ LIST ALL
 
 } else {
 
 ?>
 
-<script type="text/javascript" src="js/fanupdate-post-admin.js"></script>
+    <script type="text/javascript" src="js/fanupdate-post-admin.js"></script>
 
-<?php
+    <?php
 
-$query = 'SELECT b.entry_id, b.title, b.is_public, b.comments_on, b.added, COUNT(DISTINCT com.comment_id) AS num_comments
+    $query = 'SELECT b.entry_id, b.title, b.is_public, b.comments_on, b.added, COUNT(DISTINCT com.comment_id) AS num_comments
 FROM ' . $fu->getOpt('blog_table') . ' b
 LEFT JOIN ' . $fu->getOpt('catjoin_table') . ' j ON b.entry_id=j.entry_id
 LEFT JOIN ' . $fu->getOpt('comments_table') . ' com ON b.entry_id=com.entry_id';
 
-if (isset($_GET['search'])) {
-    $q = $fu->db->Escape(clean_input($_GET['search']));
-}
-unset($cat);
-if (isset($_GET['cat']) && $_GET['cat'] !== '') {
-    $cat = (int)$_GET['cat'];
-}
-if (isset($cat)) {
-    $query .= ' JOIN ' . $fu->getOpt('catjoin_table') . ' cat ON b.entry_id=cat.entry_id';
-}
-if (!empty($q) || isset($cat)) {
-    $query .= ' WHERE ';
-    if (!empty($q)) {
-        $query .= " MATCH (title,body) AGAINST ('$q' IN BOOLEAN MODE)";
-        if (isset($cat)) {
-            $query .= ' AND';
-        }
+    if (isset($_GET['search'])) {
+        $q = $fu->db->Escape(clean_input($_GET['search']));
+    }
+    unset($cat);
+    if (isset($_GET['cat']) && $_GET['cat'] !== '') {
+        $cat = (int)$_GET['cat'];
     }
     if (isset($cat)) {
-        $query .= " j.cat_id=$cat";
+        $query .= ' JOIN ' . $fu->getOpt('catjoin_table') . ' cat ON b.entry_id=cat.entry_id';
     }
-}
-
-$query .= ' GROUP BY b.entry_id ORDER BY b.added DESC';
-
-$fu->db->ExecutePaginate($query, $fu->getOpt('num_per_page'));
-
-if ($fu->db->NumRows() > 0) {
-
-?>
-
-<table class="sortable" summary="Table of blog entries, newest first.">
-
-    <thead>
-    <tr>
-        <th scope="col">Date</th>
-        <th scope="col">Title</th>
-        <th scope="col">Category</th>
-        <th scope="col" colspan="2">Comments</th>
-        <th scope="col">Published</th>
-        <th scope="col">Edit</th>
-        <th scope="col">Delete</th>
-    </tr>
-    </thead>
-
-    <tbody>
-    <?php
-
-    while ($row = $fu->db->ReadRecordPaginate()) {
-
-        $post = new FanUpdate_Post($row, $fu);
-        $post->getCatFromDb();
-
-        $class = (isset($class) && $class == 'even') ? 'odd' : 'even';
-
-        echo '<tr class="' . $class . '">';
-        echo '<td class="date">' . $post->getDateFormatted() . '</td>';
-        echo '<td>' . $post->getTitle() . '</td>';
-        echo '<td>' . $post->getCategoryString() . '</td>';
-        if ($post->commentsOn()) {
-            $img = 'tick.png';
-            $alt = 'Yes';
-            $img_title = 'Comments allowed';
-        } else {
-            $img = 'cross.png';
-            $alt = 'No';
-            $img_title = 'Comments not allowed';
+    if (!empty($q) || isset($cat)) {
+        $query .= ' WHERE ';
+        if (!empty($q)) {
+            $query .= " MATCH (title,body) AGAINST ('$q' IN BOOLEAN MODE)";
+            if (isset($cat)) {
+                $query .= ' AND';
+            }
         }
-        echo '<td class="number"><a href="comment.php?entry=' . $post->getID() . '" title="see comments">' . $row['num_comments'] . '</a></td>';
-        echo '<td><img src="css/' . $img . '" alt="' . $alt . '" title="' . $img_title . '" /></td>';
-        if ($post->isPublic()) {
-            $img = 'tick.png';
-            $alt = 'Yes';
-            $img_title = 'Published';
-        } else {
-            $img = 'cross.png';
-            $alt = 'No';
-            $img_title = 'Draft';
+        if (isset($cat)) {
+            $query .= " j.cat_id=$cat";
         }
-        echo '<td><img src="css/' . $img . '" alt="' . $alt . '" title="' . $img_title . '" /></td>';
-        echo '<td class="form"><form action="blog.php" method="get">';
-        echo '<input type="submit" value="edit" class="edit" title="Edit entry &#8216;' . $post->getTitle() . '&#8217;" />';
-        echo '<input type="hidden" name="id" value="' . $post->getID() . '" />';
-        echo '</form></td>';
-        echo '<td class="form"><form action="blog.php" method="post">';
-        echo '<input type="submit" name="action" value="delete" class="delete" title="Delete entry &#8216;' . $post->getTitle() . '&#8217;" />';
-        echo '<input type="hidden" name="id" value="' . $post->getID() . '" />';
-        echo '</form></td>';
-        echo "</tr>\n";
     }
 
-    $fu->db->FreeResult();
+    $query .= ' GROUP BY b.entry_id ORDER BY b.added DESC';
 
-    echo "</tbody>\n";
+    $fu->db->ExecutePaginate($query, $fu->getOpt('num_per_page'));
 
-    echo "</table>\n";
+    if ($fu->db->NumRows() > 0) {
 
-    echo '<p class="paginate">';
-    $fu->db->PrintPaginate();
-    echo "</p><!-- END .paginate -->\n";
+    ?>
 
+        <table class="sortable" summary="Table of blog entries, newest first.">
+
+            <thead>
+                <tr>
+                    <th scope="col">Date</th>
+                    <th scope="col">Title</th>
+                    <th scope="col">Category</th>
+                    <th scope="col" colspan="2">Comments</th>
+                    <th scope="col">Published</th>
+                    <th scope="col">Edit</th>
+                    <th scope="col">Delete</th>
+                </tr>
+            </thead>
+
+            <tbody>
+        <?php
+
+        while ($row = $fu->db->ReadRecordPaginate()) {
+
+            $post = new FanUpdate_Post($row, $fu);
+            $post->getCatFromDb();
+
+            $class = (isset($class) && $class == 'even') ? 'odd' : 'even';
+
+            echo '<tr class="' . $class . '">';
+            echo '<td class="date">' . $post->getDateFormatted() . '</td>';
+            echo '<td>' . $post->getTitle() . '</td>';
+            echo '<td>' . $post->getCategoryString() . '</td>';
+            if ($post->commentsOn()) {
+                $img = 'tick.png';
+                $alt = 'Yes';
+                $img_title = 'Comments allowed';
+            } else {
+                $img = 'cross.png';
+                $alt = 'No';
+                $img_title = 'Comments not allowed';
+            }
+            echo '<td class="number"><a href="comment.php?entry=' . $post->getID() . '" title="see comments">' . $row['num_comments'] . '</a></td>';
+            echo '<td><img src="css/' . $img . '" alt="' . $alt . '" title="' . $img_title . '" /></td>';
+            if ($post->isPublic()) {
+                $img = 'tick.png';
+                $alt = 'Yes';
+                $img_title = 'Published';
+            } else {
+                $img = 'cross.png';
+                $alt = 'No';
+                $img_title = 'Draft';
+            }
+            echo '<td><img src="css/' . $img . '" alt="' . $alt . '" title="' . $img_title . '" /></td>';
+            echo '<td class="form"><form action="blog.php" method="get">';
+            echo '<input type="submit" value="edit" class="edit" title="Edit entry &#8216;' . $post->getTitle() . '&#8217;" />';
+            echo '<input type="hidden" name="id" value="' . $post->getID() . '" />';
+            echo '</form></td>';
+            echo '<td class="form"><form action="blog.php" method="post">';
+            echo '<input type="submit" name="action" value="delete" class="delete" title="Delete entry &#8216;' . $post->getTitle() . '&#8217;" />';
+            echo '<input type="hidden" name="id" value="' . $post->getID() . '" />';
+            echo '</form></td>';
+            echo "</tr>\n";
+        }
+
+        $fu->db->FreeResult();
+
+        echo "</tbody>\n";
+
+        echo "</table>\n";
+
+        echo '<p class="paginate">';
+        $fu->db->PrintPaginate();
+        echo "</p><!-- END .paginate -->\n";
     } else {
         echo "<p>No entries found.</p>\n";
     }
+}
 
-    }
+$fu->getFooter();
 
-    $fu->getFooter();
-
-    ?>
+        ?>

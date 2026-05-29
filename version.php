@@ -46,7 +46,7 @@ const FU_URL_ROBOTESS = 'https://scripts.robotess.net';
  * URL of this Redux release.
  * Update this to your repo, release page, or distribution site.
  */
-const FU_URL_REDUX = 'https://github.com/intothisshadow/fanupdateredux';
+const FU_URL_REDUX = 'https://www.unloved-heart.net';
 
 // ── licence ──────────────────────────────────────────────────────────────────
 
@@ -78,15 +78,15 @@ const FU_CONTRIBUTORS = [
             . 'release series. Maintained the GitLab repository.',
     ],
     [
-        'name'         => 'Redux contributor',
+        'name'         => 'Ariane',
         'role'         => 'PHP 8.2+ refactor (Redux)',
         'years'        => '2026',
-        'url'          => null,
+        'url'          => 'https://www.unloved-heart.net',
         'email'        => null,
         'contribution' => 'Full PHP 8.2+ compatibility pass: explicit property '
             . 'declarations, strict return types, utf8_encode() removal, '
             . 'bcrypt password storage, HMAC session tokens, '
-            . 'change-password admin page, version system, credits page, '
+            . 'account management, version system, credits page, '
             . 'and GPLv3 licence upgrade.',
     ],
 ];

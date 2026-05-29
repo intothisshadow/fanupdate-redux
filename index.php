@@ -1,4 +1,5 @@
 <?php
+
 /*****************************************************************************
  * FanUpdate
  * Copyright (c) Jenny Ferenc <jenny@prism-perfect.net>
@@ -31,10 +32,15 @@ $fu->getHeader('Dashboard');
 
 <div class="col13">
     <p id="newUpdate"><a href="blog.php?action=new" title="New entry, accesskey n"
-                         accesskey="n"><span>Post a New Entry</span></a></p>
+            accesskey="n"><span>Post a New Entry</span></a></p>
 
     <?php $fu->checkUpdates(); ?>
-
+    <?php
+    if (file_exists(__DIR__ . '/install.php')) {
+        echo '<p class="error"><strong>Security risk:</strong> <code>install.php</code> is still present on your server. '
+            . '<a href="install.php">Delete it now</a> or remove it via FTP/file manager.</p>' . "\n";
+    }
+    ?>
     <?php
 
     // ____________________________________________________________ COMMENTS AWAITING APPROVAL

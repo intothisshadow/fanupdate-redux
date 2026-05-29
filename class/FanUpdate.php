@@ -369,30 +369,27 @@ class FanUpdate
 
     // ── login ────────────────────────────────────────────────────────────────
     //
-    // Security model (Redux 1.2.0+):
+    // Security model (Redux 1.3.0+):
     //
-    //  • Passwords are stored as bcrypt hashes via password_hash(PASSWORD_BCRYPT).
-    //  • The old MD5 cookie (fu_password) is replaced by fu_token, a
-    //    HMAC-SHA256 value keyed on the stored bcrypt hash itself.
-    //    This means the token auto-invalidates the moment the password is
-    //    changed in blog-config.php — no session table required.
+    //  Passwords / session tokens (unchanged from Redux 1.2.0):
+    //  • Passwords stored as bcrypt via password_hash(PASSWORD_BCRYPT).
+    //  • Session cookie is an HMAC-SHA256 token keyed on the stored hash:
+    //      $token = hash_hmac('sha256', $username, $stored_bcrypt_hash)
+    //    Auto-invalidates when the password changes. Compared with
+    //    hash_equals() (timing-safe).
+    //  • MD5 legacy upgrade path fires once on first login if the stored
+    //    value is a 32-char hex string, then upgrades to bcrypt in-place.
     //
-    //  Token derivation:
-    //    $token = hash_hmac('sha256', $username, $stored_bcrypt_hash)
+    //  Rate limiting (Redux 1.3.0):
+    //  • LoginRateLimiter tracks failed attempts per IP in flat JSON files
+    //    stored in data/login_attempts/ (not web-accessible).
+    //  • After 5 failures the IP is locked for 15 minutes.
+    //  • Each subsequent lockout doubles the window (exponential backoff),
+    //    capped at 24 hours.
+    //  • A successful login clears the counter immediately.
+    //  • REMOTE_ADDR is used as the key — X-Forwarded-For is never trusted
+    //    because it is trivially spoofable.
     //
-    //  On every page load the token is re-derived from the current stored hash
-    //  and compared with the cookie using hash_equals() (timing-safe).
-    //
-    //  Logout: both fu_username and fu_token are expired.
-    //
-    // Backward-compatibility note:
-    //   If admin_password still contains an MD5 hash (32 hex chars) this method
-    //   falls back to md5() comparison for ONE login cycle, then rewrites the
-    //   hash to bcrypt before the session token is issued.  This allows existing
-    //   installs to upgrade transparently — the user logs in once and the hash
-    //   is silently upgraded in blog-config.php.
-    //   The fallback is deliberately narrow: it only fires when the stored value
-    //   matches /^[0-9a-f]{32}$/ (classic MD5 hex string).
     // ────────────────────────────────────────────────────────────────────────
 
     public function login(): void
@@ -405,8 +402,9 @@ class FanUpdate
             exit;
         }
 
-        $storedHash = (string) $this->getOpt('admin_password', true);
-        $showform   = true;
+        $storedHash  = (string) $this->getOpt('admin_password', true);
+        $showform    = true;
+        $rateLimiter = new LoginRateLimiter();
 
         // ── cookie check ─────────────────────────────────────────────────────
         if (isset($_COOKIE['fu_username'], $_COOKIE['fu_token'])) {
@@ -429,67 +427,79 @@ class FanUpdate
 
         // ── POST check ───────────────────────────────────────────────────────
         if ($showform && isset($_POST['action']) && $_POST['action'] === 'login') {
-            $username = clean_input($_POST['username'] ?? '');
-            $password = clean_input($_POST['password'] ?? '');
 
-            $usernameOk = ($username === (string) $this->getOpt('admin_username', true));
-            $passwordOk = false;
+            // ── rate limit check ─────────────────────────────────────────────
+            if ($rateLimiter->isLockedOut()) {
+                $this->addErr(
+                    'Too many failed login attempts. '
+                        . 'Please try again in ' . $rateLimiter->humanTimeRemaining() . '.'
+                );
+                // Fall through to render the login form with the error; do not
+                // process the submitted credentials at all.
+            } else {
 
-            if ($usernameOk) {
-                // ── bcrypt path (normal) ────────────────────────────────────
-                if (str_starts_with($storedHash, '$2')) {
-                    $passwordOk = password_verify($password, $storedHash);
+                $username = clean_input($_POST['username'] ?? '');
+                $password = clean_input($_POST['password'] ?? '');
 
-                    // ── MD5 legacy fallback ─────────────────────────────────────
-                    // Fires only when the stored value is a raw 32-char MD5 hex.
-                    // Upgrades the hash to bcrypt in blog-config.php automatically.
-                } elseif (preg_match('/^[0-9a-f]{32}$/', $storedHash) && md5($password) === $storedHash) {
-                    $passwordOk = true;
+                $usernameOk = ($username === (string) $this->getOpt('admin_username', true));
+                $passwordOk = false;
 
-                    // Upgrade stored hash to bcrypt
-                    $newHash     = password_hash($password, PASSWORD_BCRYPT);
-                    $configFile  = __DIR__ . '/../blog-config.php';
+                if ($usernameOk) {
+                    // ── bcrypt path (normal) ──────────────────────────────────
+                    if (str_starts_with($storedHash, '$2')) {
+                        $passwordOk = password_verify($password, $storedHash);
 
-                    if (is_writable($configFile)) {
-                        $configContent = (string) file_get_contents($configFile);
+                        // ── MD5 legacy fallback ───────────────────────────────────
+                        // Fires only when the stored value is a raw 32-char MD5 hex.
+                        // Upgrades the hash to bcrypt in blog-config.php automatically.
+                    } elseif (preg_match('/^[0-9a-f]{32}$/', $storedHash) && md5($password) === $storedHash) {
+                        $passwordOk = true;
 
-                        // Match both:
-                        //   $fanupdate['admin_password'] = md5('...');
-                        //   $fanupdate['admin_password'] = 'abc123...';  (plain MD5 stored without md5() call)
-                        $newContent = preg_replace(
-                            "/(\\\$fanupdate\['admin_password'\]\s*=\s*)(?:md5\('[^']*'\)|'[0-9a-f]{32}')/",
-                            "\$1'" . addcslashes($newHash, '\\$') . "'",
-                            $configContent
-                        );
+                        $newHash    = password_hash($password, PASSWORD_BCRYPT);
+                        $configFile = __DIR__ . '/../blog-config.php';
 
-                        if ($newContent !== null) {
-                            file_put_contents($configFile, $newContent);
-                            // Update in-memory copy so the token below uses the new hash
-                            $this->addOpt('admin_password', $newHash);
-                            $storedHash = $newHash;
+                        if (is_writable($configFile)) {
+                            $configContent = (string) file_get_contents($configFile);
+
+                            $newContent = preg_replace(
+                                "/(\\\$fanupdate\['admin_password'\]\s*=\s*)(?:md5\('[^']*'\)|'[0-9a-f]{32}')/",
+                                "\$1'" . addcslashes($newHash, '\\$') . "'",
+                                $configContent
+                            );
+
+                            if ($newContent !== null) {
+                                file_put_contents($configFile, $newContent);
+                                $this->addOpt('admin_password', $newHash);
+                                $storedHash = $newHash;
+                            }
                         }
                     }
-                    // If the file isn't writable the login still succeeds this
-                    // cycle; the user will be asked to log in again next visit
-                    // (the token will be wrong because storedHash is still MD5).
                 }
-            }
 
-            if ($usernameOk && $passwordOk) {
-                $remember = !empty($_POST['remember_me']);
-                $expire   = $remember ? time() + 60 * 60 * 24 * 30 : 0;
+                if ($usernameOk && $passwordOk) {
+                    // ── success ───────────────────────────────────────────────
+                    $rateLimiter->recordSuccess();
 
-                $token = hash_hmac('sha256', $username, $storedHash);
+                    $remember = !empty($_POST['remember_me']);
+                    $expire   = $remember ? time() + 60 * 60 * 24 * 30 : 0;
 
-                setcookie('fu_username', $username, $expire, '/', '', false, true);
-                setcookie('fu_token',    $token,    $expire, '/', '', false, true);
+                    $token = hash_hmac('sha256', $username, $storedHash);
 
-                $showform = false;
-            } else {
-                $this->addErr('Invalid username or password. Please try again.');
-                setcookie('fu_username', '', time() - 36000, '/', '', false, true);
-                setcookie('fu_token',    '', time() - 36000, '/', '', false, true);
-            }
+                    setcookie('fu_username', $username, $expire, '/', '', false, true);
+                    setcookie('fu_token',    $token,    $expire, '/', '', false, true);
+
+                    $showform = false;
+                } else {
+                    // ── failure ───────────────────────────────────────────────
+                    $rateLimiter->recordFailure();
+
+                    // Deliberate: same message for wrong username and wrong
+                    // password — do not leak which one was incorrect.
+                    $this->addErr('Invalid username or password. Please try again.');
+                    setcookie('fu_username', '', time() - 36000, '/', '', false, true);
+                    setcookie('fu_token',    '', time() - 36000, '/', '', false, true);
+                }
+            } // end rate-limit else
         }
 
         if ($showform) {

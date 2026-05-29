@@ -19,10 +19,11 @@
  * any later version.
  ******************************************************************************/
 require_once(__DIR__ . '/version.php');
-require_once('class/SqlConnection.php');
-require_once('class/FanUpdate.php');
-require_once('class/FanUpdate_Post.php');
-require_once('class/FanUpdate_Comment.php');
+require_once(__DIR__ . '/class/LoginRateLimiter.php');
+require_once(__DIR__ . '/class/SqlConnection.php');
+require_once(__DIR__ . '/class/FanUpdate.php');
+require_once(__DIR__ . '/class/FanUpdate_Post.php');
+require_once(__DIR__ . '/class/FanUpdate_Comment.php');
 
 
 // _____________________________________________ ERROR REPORTING

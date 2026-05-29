@@ -5,6 +5,78 @@ All notable changes to this project are documented here.
 
 ---
 
+## [Redux 1.5.0] — May 29, 2026 — Post-Install Hardening & Bug Fixes
+
+### Security
+
+- **`install.php` auto-deletes itself on successful install** — after all tables
+  are created and options written without errors, `install.php` calls
+  `unlink(__FILE__)` on itself; success or failure is reported on the completion
+  page so the admin knows whether manual deletion is still required
+- **Dashboard warning if `install.php` still exists** — `index.php` checks for
+  the presence of `install.php` on every admin login and displays a prominent
+  error banner with a direct link until the file is removed; provides a safety
+  net when auto-delete fails due to file permissions
+
+### Fixed
+
+- **`blog_category` table not created on fresh standalone install** — `install.php`
+  now creates the `collective_table` (`blog_category` by default) when
+  `collective_script` is not set; previously the table was assumed to be
+  provided by an external collective script and was silently never created,
+  causing a fatal `#1146 Table doesn't exist` error the first time categories
+  were used
+- **`blog.php` undefined array key warnings on new post** — `$clean['id']`,
+  `$clean['cat']`, and `$clean['new_cat']` are now defaulted immediately after
+  `clean_input($_POST)`; when posting a new entry the browser does not send an
+  `id` field, and when no category checkboxes are checked `cat[]` is absent
+  entirely; PHP 8.2 promotes these silent notices to visible warnings that
+  disrupted the form flow
+- **`category.php` — nothing saved, form appeared to submit silently** —
+  `$clean['cat_name']`, `$clean['cat_id']`, `$clean['date_format']`,
+  `$clean['gravatar_default']`, `$clean['gravatar_size']`,
+  `$clean['gravatar_rating']`, `$clean['entry_template']`, and
+  `$clean['comment_template']` are now defaulted to `''` immediately after
+  `clean_input()`; the undefined-key warnings were emitted before `getHeader()`
+  ran, corrupting the output buffer and preventing the save query from executing
+- **`FanUpdate_Post.php` — fatal error on all post-rendering pages** — the stored
+  class was a stub missing every rendering method; `getTitle()`, `getBody()`,
+  `getBodyFormatted()`, `getAbstract()`, `getDate()`, `getDateFormatted()`,
+  `getYear()`, `isPublic()`, `commentsOn()`, `allowComments()`, `getUrl()`,
+  `getCommentsUrl()`, `getCommentsFeedUrl()`, `getCatFromDb()`, `addCategory()`,
+  `getCategoryArray()`, `getCategoryString()`, `getCategoryLinks()`, and
+  `printPost()` are now fully implemented; recovered from all call sites across
+  `blog.php`, `rss.php`, `show-blog.php`, `show-cat.php`, and `index.php`
+- **`FanUpdate_Comment.php` — fatal error on dashboard and all comment pages** —
+  the stored class was similarly stubbed; `getName()`, `getEmail()`, `getUrl()`,
+  `getBody()`, `getBodyFormatted()`, `getAbstract()`, `getDate()`,
+  `getDateFormatted()`, `isApproved()`, `getLinkUrl()`, `getGravatarUrl()`,
+  `getGravatar()`, `getCommenterLink()`, and `printComment()` are now fully
+  implemented; recovered from call sites in `index.php`, `comment.php`,
+  `rss-comments.php`, and `process.php`
+- **`FanUpdate_Post.php` — `Cannot redeclare` fatal on PHP** — `getDateForMatted()`
+  (historical typo alias) and `getURL()` (capitalisation alias) were declared as
+  separate methods; PHP method names are case-insensitive so both were treated as
+  redeclarations of `getDateFormatted()` and `getUrl()`; aliases removed — PHP's
+  own case-insensitive dispatch handles callers using either spelling natively
+
+### Changed
+
+- `install.php` — standalone `blog_category` table creation block added inside
+  the `$version_installed == 0` branch, conditional on `!$fu->getOpt('collective_script')`;
+  uses `$coltable['n']['id']` and `$coltable['n']['subject']` column names
+  (`fl_id`, `fl_subject`) to match the values `FanUpdate` reads back via `col_id`
+  and `col_subj`
+- `install.php` — pre-install duplicate-table check already correctly skips
+  `collective_table` only when `collective_script` is set; no change needed
+- `install.php` — completion message updated: "Now DELETE this file" replaced
+  with auto-delete result; manual deletion instruction shown only if `unlink()`
+  failed
+- `index.php` — `install.php` existence check added immediately after
+  `$fu->checkUpdates()` call
+
+---
+
 ## [Redux 1.4.0] — May 29, 2026 — Cookie Security
 
 ### Security

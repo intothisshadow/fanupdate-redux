@@ -6,7 +6,7 @@ collective of fan websites. Works equally well as a standalone blog.
 Originally written by **Jenny Ferenc** in 2005. Ported to PHP 7 by **Ekaterina**
 (scripts.robotess.net) in 2020. 
 
-This Redux release updates the codebase to **PHP 8.2+** (current patch: Redux 1.4.0).
+This Redux release updates the codebase to **PHP 8.2+** (current patch: Redux 1.5.0).
 
 ---
 
@@ -101,8 +101,15 @@ database tables.
 
 ### 4. Delete the installer
 
-Once installation completes successfully, **delete `install.php` from your
-server.** It is not needed again and should not be left accessible.
+`install.php` will **attempt to delete itself automatically** on successful
+completion. The completion page will confirm whether this succeeded.
+
+If auto-delete fails (usually a file permissions issue), a prominent warning
+will appear on the admin dashboard every time you log in until the file is
+removed. Delete it manually via FTP or your hosting file manager.
+
+> **Why this matters:** `install.php` is unauthenticated and can overwrite your
+> database settings. It must not remain accessible after installation.
 
 ### 5. Add the display snippet to your site
 
@@ -135,6 +142,16 @@ To show only "Whole Collective" entries, set `$listingid = 0`.
 ---
 
 ## Upgrading
+
+### From Redux 1.4.x
+
+1. Back up your database and all files.
+2. Upload all new files, overwriting existing ones — **except `blog-config.php`**,
+   which you can keep.
+3. Run `install.php` to apply the `blog_category` table creation if you are
+   using standalone mode and the table does not yet exist (see
+   [Troubleshooting](#blog_category-table-doesnt-exist-categories-page-is-empty)).
+4. `install.php` will delete itself automatically on success.
 
 ### From Redux 1.3.x
 
@@ -372,7 +389,7 @@ This release resolves all PHP 8.2 deprecation warnings:
 fanupdate/
 ├── blog-config.php          # Your configuration (copy from .sample)
 ├── blog-config.sample.php   # Configuration template
-├── version.php              # Single source for all version metadata
+├── version.php              # Single source of truth for version metadata
 ├── functions.php            # Shared helper functions
 ├── index.php                # Admin dashboard
 ├── blog.php                 # Admin: entries list
@@ -384,7 +401,7 @@ fanupdate/
 ├── blacklist.php            # Admin: spam blacklist
 ├── account.php              # Admin: change username and password
 ├── credits.php              # Admin: version info and credits
-├── install.php              # Installer (DELETE after use)
+├── install.php              # Installer (auto-deletes on success)
 ├── process.php              # Comment submission handler
 ├── show-blog.php            # Public blog display (all categories)
 ├── show-cat.php             # Public blog display (single category)
@@ -512,6 +529,32 @@ rather than `https://`, the cookies will never arrive and every page load will
 show the login form. The fix is to ensure the site runs on HTTPS and access the
 admin panel via `https://`.
 
+### `blog_category` table doesn't exist — categories page is empty
+
+On a fresh standalone install with Redux 1.4.x or earlier, the `blog_category`
+table was never created by the installer. Fix it by running this query in
+phpMyAdmin (or any MySQL client):
+
+```sql
+CREATE TABLE `blog_category` (
+  `fl_id` int(6) unsigned NOT NULL AUTO_INCREMENT,
+  `fl_subject` varchar(50) NOT NULL DEFAULT '',
+  PRIMARY KEY (`fl_id`)
+) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4;
+```
+
+Redux 1.5.0+ creates this table automatically during fresh installation.
+If you are upgrading from 1.4.x and the table is missing, run either the SQL
+above or re-run `install.php` (it will skip existing tables and only create
+missing ones).
+
+### The dashboard shows a warning about install.php still being present
+
+`install.php` auto-deletes itself on success (Redux 1.5.0+), but deletion can
+fail if the file is not writable by the web server process. Delete it manually
+via FTP or your hosting file manager. The warning will disappear on the next
+login once the file is gone.
+
 ---
 
 ## License
@@ -521,4 +564,4 @@ See <https://www.gnu.org/licenses/gpl-3.0.html> for details.
 
 Original script by Jenny Ferenc — <http://prism-perfect.net/fanupdate>  
 PHP 7 port by Ekaterina — <https://scripts.robotess.net>  
-PHP 8.2 Redux by Ariane  —  https://www.unloved-heart.net
+PHP 8.2 Redux by Ariane

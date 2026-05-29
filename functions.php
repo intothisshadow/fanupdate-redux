@@ -1,64 +1,104 @@
 <?php
 /*****************************************************************************
- * FanUpdate functions.php — PHP 8.2+ refactor
- * Various helper functions. Originally based on WordPress source.
+ * FanUpdate
+ * Copyright (c) Jenny Ferenc <jenny@prism-perfect.net>
+ * Copyright (c) 2020 by Ekaterina (contributor) http://scripts.robotess.net
  *
- * PHP 8.2 changes applied:
- *   - declare(strict_types=1) added
- *   - Explicit return types on all functions
- *   - Curly-brace string-index access ($str{0}) replaced with $str[0]
- *     (curly-brace syntax was deprecated in PHP 7.4, removed in PHP 8.0)
- *   - utf8_encode() / utf8_decode() replaced with mb_convert_encoding()
- *   - get_magic_quotes_gpc() usage removed (PHP 8.0+)
- *   - clean_input() now handles nested arrays safely
- *   - No eval(), no system(), no base64_decode() on executable paths (backdoor clean)
+ * Refactored for PHP 8.2+:
+ *  - Curly-brace string offsets ($str{0}) replaced with square-bracket ($str[0])
+ *  - utf8_encode() / utf8_decode() removed (deprecated in 8.2);
+ *    use mb_convert_encoding() where encoding conversion is needed
+ *  - Strict type hints added to all functions
+ *  - Return types declared throughout
+ *  - PHP 8.0 removed: get_magic_quotes_gpc() — removed from clean_input
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 2 of the License, or
+ * any later version.
  ******************************************************************************/
 
-declare(strict_types=1);
+require_once('class/SqlConnection.php');
+require_once('class/FanUpdate.php');
+require_once('class/FanUpdate_Post.php');
+require_once('class/FanUpdate_Comment.php');
 
-// ____________________________________________________________ INPUT SANITIZING
 
-/**
- * Recursively sanitise $_GET / $_POST / $_COOKIE values.
- * Pass $allowArrays = true when the input is expected to contain sub-arrays
- * (e.g. forms with key[] / value[] pairs).
- */
-function clean_input(mixed $data, bool $allowArrays = false): mixed
+// _____________________________________________ ERROR REPORTING
+
+function myErrorHandler(int $errno, string $errstr, string $errfile, int $errline): bool
 {
-    if (is_array($data)) {
-        $clean = [];
-        foreach ($data as $k => $v) {
-            $clean_key = htmlspecialchars(strip_tags((string)$k), ENT_QUOTES, 'UTF-8');
-            if (is_array($v) && $allowArrays) {
-                $clean[$clean_key] = clean_input($v, true);
-            } else {
-                $clean[$clean_key] = htmlspecialchars(strip_tags((string)$v), ENT_QUOTES, 'UTF-8');
-            }
-        }
-        return $clean;
+    if (error_reporting() === 0) {
+        return false;
     }
 
-    return htmlspecialchars(strip_tags((string)$data), ENT_QUOTES, 'UTF-8');
+    switch ($errno) {
+        case E_USER_ERROR:
+            echo '<p class="error"><strong>ERROR:</strong> ' . $errstr . "</p>\n";
+            exit(1);
+
+        case E_WARNING:
+        case E_USER_WARNING:
+            // Suppress "table doesn't exist" warnings silently during install/version-detection.
+            // These are expected on a fresh install and must not appear above the page header.
+            if (str_contains($errstr, "doesn't exist") || str_contains($errstr, "does not exist")) {
+                return true; // swallow silently
+            }
+            echo '<p class="error"><strong>WARNING:</strong> ' . $errstr . '</p>' . "\n";
+            break;
+
+        case E_NOTICE:
+        case E_USER_NOTICE:
+            // Suppressed by default
+            break;
+    }
+
+    return true; // suppress PHP internal handler
 }
 
-// ____________________________________________________________ VALIDATION
+set_error_handler('myErrorHandler');
+
+
+// _____________________________________________ VALIDATION
+
+function clean_input(mixed $str, bool $allowtags = false): mixed
+{
+    if (is_array($str)) {
+        array_walk($str, 'clean_walk', $allowtags);
+        return $str;
+    }
+
+    $str = stripslashes((string) $str);
+
+    if (!$allowtags) {
+        $str = strip_tags($str);
+    }
+
+    return trim($str);
+}
+
+function clean_walk(mixed &$item, mixed $key, bool $allowtags): void
+{
+    $item = clean_input($item, $allowtags);
+}
 
 function is_email(string $email): bool
 {
-    return (bool)filter_var($email, FILTER_VALIDATE_EMAIL);
+    return (bool) preg_match('!^([_a-z0-9-]+)(\.[_a-z0-9-]+)*@([a-z0-9-]+)(\.[a-z0-9-]+)*(\.[a-z]{2,4})$!i', $email);
 }
 
 function is_url(string $url): bool
 {
-    return (bool)filter_var($url, FILTER_VALIDATE_URL);
+    return (bool) preg_match('!^[\w]+?://[\w\#$%&~/.\-;:=,?@\[\]+]+$!', $url);
 }
 
-// ____________________________________________________________ TEXT PARSING
+
+// _____________________________________________ TEXT PARSING
 
 function truncate_wc(string $phrase, int $max_words): string
 {
     $phrase_array = preg_split('/[\n ]/', $phrase);
-    if (count($phrase_array) > $max_words && $max_words > 0) {
+    if (is_array($phrase_array) && count($phrase_array) > $max_words && $max_words > 0) {
         $phrase = implode(' ', array_slice($phrase_array, 0, $max_words)) . '&#8230;';
     }
     return $phrase;
@@ -73,7 +113,9 @@ function fancyamp(string $text): string
     );
 }
 
-function zeroise(int|string $number, int $threshold): string
+// ── WordPress-derived text functions (modified) ─────────────────────────────
+
+function zeroise(int $number, int $threshold): string
 {
     return sprintf('%0' . $threshold . 's', $number);
 }
@@ -82,13 +124,13 @@ function antispambot(string $emailaddy, int $mailto = 0): string
 {
     $emailNOSPAMaddy = '';
     for ($i = 0, $iMax = strlen($emailaddy); $i < $iMax; ++$i) {
-        $j = random_int(0, 1 + $mailto); // random_int() replaces srand/rand (PHP 7+)
+        $j = random_int(0, 1 + $mailto); // random_int replaces the deprecated srand/rand pattern
         if ($j === 0) {
             $emailNOSPAMaddy .= '&#' . ord($emailaddy[$i]) . ';';
         } elseif ($j === 1) {
             $emailNOSPAMaddy .= $emailaddy[$i];
-        } elseif ($j === 2) {
-            $emailNOSPAMaddy .= '%' . zeroise(dechex(ord($emailaddy[$i])), 2);
+        } else {
+            $emailNOSPAMaddy .= '%' . zeroise((int) dechex(ord($emailaddy[$i])), 2);
         }
     }
     return str_replace('@', '&#64;', $emailNOSPAMaddy);
@@ -127,18 +169,21 @@ function make_clickable(string $ret): string
         $ret
     );
 
+    // Clean up accidental links-within-links
     $ret = preg_replace('#(<a( [^>]+?>|>))(<a [^>]+?>)([^>]+?)</a></a>#i', '$3$4</a>', $ret);
     return trim($ret);
 }
 
 function wptexturize(string $text): string
 {
-    $next   = true;
-    $output = '';
-
+    $next    = true;
+    $output  = '';
     $textarr = preg_split('/(<.*>)/Us', $text, -1, PREG_SPLIT_DELIM_CAPTURE);
 
-    $cockney = ["'tain't", "'twere", "'twas", "'tis", "'twill", "'til", "'bout", "'nuff", "'round", "'cause"];
+    $cockney = [
+        "'tain't", "'twere", "'twas", "'tis", "'twill", "'til",
+        "'bout", "'nuff", "'round", "'cause",
+    ];
     $cockneyreplace = [
         '&#8217;tain&#8217;t', '&#8217;twere', '&#8217;twas', '&#8217;tis',
         '&#8217;twill', '&#8217;til', '&#8217;bout', '&#8217;nuff',
@@ -159,34 +204,25 @@ function wptexturize(string $text): string
         '/(\s|\A|")\'/',
         '/(\d+)"/',
         "/(\d+)'/",
-        "/(\S)'([^'\s])/",
+        '/(\S)\'([^\'\s])/',
         '/(\s|\A)"(?!\s)/',
         '/"(\s|\S|\Z)/',
-        "/('[\s.]|\Z)/",
+        '/\'([\s.]|\Z)/',
         '/(\d+)x(\d+)/',
     ];
     $dynamic_replacements = [
-        '&#8217;$1',
-        '$1&#8216;',
-        '$1&#8243;',
-        '$1&#8242;',
-        '$1&#8217;$2',
-        '$1&#8220;$2',
-        '&#8221;$1',
-        '&#8217;$1',
-        '$1&#215;$2',
+        '&#8217;$1', '$1&#8216;', '$1&#8243;', '$1&#8242;',
+        '$1&#8217;$2', '$1&#8220;$2', '&#8221;$1', '&#8217;$1', '$1&#215;$2',
     ];
 
     foreach ($textarr as $curl) {
-        // PHP 8.0: curly-brace string access removed — use $curl[0]
+        // PHP 8.2: use $curl[0] instead of deprecated $curl{0}
         if (isset($curl[0]) && $curl[0] !== '<' && $next) {
             $curl = str_replace($static_characters, $static_replacements, $curl);
             $curl = preg_replace($dynamic_characters, $dynamic_replacements, $curl);
         } elseif (
-            str_contains($curl, '<code') ||
-            str_contains($curl, '<pre')  ||
-            str_contains($curl, '<kbd')  ||
-            str_contains($curl, '<style')||
+            str_contains($curl, '<code')  || str_contains($curl, '<pre') ||
+            str_contains($curl, '<kbd')   || str_contains($curl, '<style') ||
             str_contains($curl, '<script')
         ) {
             $next = false;
@@ -194,17 +230,19 @@ function wptexturize(string $text): string
             $next = true;
         }
 
-        $curl    = preg_replace('/&([^#])(?![a-zA-Z1-4]{1,8};)/', '&amp;$1', $curl);
+        $curl   = preg_replace('/&([^#])(?![a-zA-Z1-4]{1,8};)/', '&amp;$1', $curl);
         $output .= $curl;
     }
 
-    $output = str_replace('&#8212;>', '-->', $output);
+    $output = str_replace('&#8212;>', '-->', $output); // fix HTML comments
 
     $output = preg_replace_callback(
         '!(<h[1-6][^>]*>)(.*)?(&)(.*)?(</h[1-6]>)!',
         static function (array $matches): string {
             return stripslashes(
-                $matches[1] . fancyamp($matches[2] . $matches[3] . $matches[4]) . $matches[5]
+                $matches[1]
+                . fancyamp($matches[2] . $matches[3] . $matches[4])
+                . $matches[5]
             );
         },
         $output
@@ -229,23 +267,11 @@ function clean_pre(array|string $matches): string
     return $text;
 }
 
-function doHeaders(string $text): string
-{
-    // Simple Markdown-style headers — no change needed for PHP 8.2
-    $text = preg_replace('/^(={2,6})\s*(.+?)\s*\1\s*$/m', '<h' . strlen('$1') . '>$2</h' . strlen('$1') . '>', $text);
-    return $text;
-}
-
-function doLists(string $text): string
-{
-    return $text; // Placeholder — original implementation unchanged
-}
-
 function wpautop(string $pee, bool $br = true, bool $allowHeading = false): string
 {
     $pee .= "\n";
-    $pee  = preg_replace('|<br />\s*<br />|', "\n\n", $pee);
-    $pee  = str_replace("\r\n", "\n", $pee);
+    $pee = preg_replace('|<br />\s*<br />|', "\n\n", $pee);
+    $pee = str_replace("\r\n", "\n", $pee);
 
     if ($allowHeading) {
         $pee = doHeaders($pee);
@@ -255,8 +281,8 @@ function wpautop(string $pee, bool $br = true, bool $allowHeading = false): stri
 
     $allblocks = '(?:table|thead|tfoot|caption|colgroup|tbody|tr|td|th|div|dl|dd|dt|ul|ol|li|pre|select|form|map|area|blockquote|address|math|style|script|input|p|h[1-6]|hr)';
 
-    $pee = preg_replace('!(<' . $allblocks . '[^>]*>)!',  "\n$1",    $pee);
-    $pee = preg_replace('!(</' . $allblocks . '>)!',       "$1\n\n",  $pee);
+    $pee = preg_replace('!(<' . $allblocks . '[^>]*>)!', "\n$1", $pee);
+    $pee = preg_replace('!(</' . $allblocks . '>)!', "$1\n\n", $pee);
     $pee = str_replace(["\r\n", "\r"], "\n", $pee);
     $pee = preg_replace("/\n\n+/", "\n\n", $pee);
     $pee = preg_replace('/\n?(.+?)(?:\n\s*\n|\z)/s', "<p>$1</p>\n", $pee);
@@ -274,7 +300,7 @@ function wpautop(string $pee, bool $br = true, bool $allowHeading = false): stri
         $pee = preg_replace_callback(
             '/<(script|style).*?<\/\\1>/s',
             static function (array $m): string {
-                return stripslashes(str_replace("\n", '<WPPreserveNewline />', $m[0]));
+                return str_replace("\n", '<WPPreserveNewline />', $m[0]);
             },
             $pee
         );
@@ -294,22 +320,152 @@ function wpautop(string $pee, bool $br = true, bool $allowHeading = false): stri
     return make_clickable(wptexturize($pee));
 }
 
-// ____________________________________________________________ ENCODING HELPERS
 
-/**
- * PHP 8.2 replacement for deprecated utf8_encode().
- * Converts ISO-8859-1 string to UTF-8.
- */
-function fu_utf8_encode(string $str): string
+// ── PHP Markdown (modified subset) ──────────────────────────────────────────
+// Copyright (c) 2004-2007 Michel Fortin, based on Markdown by John Gruber.
+// BSD licence — see original file header for full terms.
+
+$tab_width  = 4;
+$list_level = 0;
+
+function outdent(string $text): string
 {
-    return mb_convert_encoding($str, 'UTF-8', 'ISO-8859-1');
+    global $tab_width;
+    return preg_replace('/^(\t|[ ]{1,' . $tab_width . '})/m', '', $text);
 }
 
-/**
- * PHP 8.2 replacement for deprecated utf8_decode().
- * Converts UTF-8 string to ISO-8859-1.
- */
-function fu_utf8_decode(string $str): string
+function doHeaders(string $text): string
 {
-    return mb_convert_encoding($str, 'ISO-8859-1', 'UTF-8');
+    // Setext-style
+    $text = preg_replace_callback(
+        '{ ^(.+?)[ ]*\n(=+|-+)[ ]*\n+ }mx',
+        '_doHeaders_callback_setext',
+        $text
+    );
+    // atx-style
+    $text = preg_replace_callback(
+        '{
+            ^(\#{1,6})  # $1 = string of #\'s
+            [ ]*
+            (.+?)       # $2 = header text
+            [ ]*
+            \#*         # optional closing #\'s
+            \n+
+        }xm',
+        '_doHeaders_callback_atx',
+        $text
+    );
+    return $text;
+}
+
+function _doHeaders_callback_setext(array $matches): string
+{
+    // PHP 8.2: use $matches[2][0] instead of deprecated $matches[2]{0}
+    $level = $matches[2][0] === '=' ? 3 : 4;
+    return "\n<h{$level}>" . $matches[1] . "</h{$level}>\n\n";
+}
+
+function _doHeaders_callback_atx(array $matches): string
+{
+    $level = strlen($matches[1]);
+    return "\n<h{$level}>" . $matches[2] . "</h{$level}>\n\n";
+}
+
+function doLists(string $text): string
+{
+    global $tab_width, $list_level;
+
+    $less_than_tab = $tab_width - 1;
+    $marker_ul     = '[*+-]';
+    $marker_ol     = '\d+[.]';
+    $marker_any    = "(?:{$marker_ul}|{$marker_ol})";
+
+    foreach ([$marker_ul, $marker_ol] as $marker) {
+        $whole_list = '
+            (                               # $1 = whole list
+              (                             # $2
+                [ ]{0,' . $less_than_tab . '}
+                (' . $marker . ')           # $3 = first list item marker
+                [ ]+
+              )
+              (?s:.+?)
+              (                             # $4
+                  \z
+                |
+                  \n{2,}
+                  (?=\S)
+                  (?!
+                    [ ]*
+                    ' . $marker . ' [ ]+
+                  )
+              )
+            )
+        ';
+
+        if ($list_level) {
+            $text = preg_replace_callback(
+                '{
+                    ^
+                    ' . $whole_list . '
+                }xm',
+                '_processListItems',
+                $text
+            );
+        } else {
+            $text = preg_replace_callback(
+                '{
+                    (?:(?<=\n\n)|\A\n?)
+                    ' . $whole_list . '
+                }x',
+                '_processListItems',
+                $text
+            );
+        }
+    }
+
+    return $text;
+}
+
+function _processListItems(array $matches): string
+{
+    global $list_level;
+
+    $list_str = $matches[1];
+    $marker   = isset($matches[3]) ? $matches[3] : '';
+
+    $tag = preg_match('/^\d+[.]/', $marker) ? 'ol' : 'ul';
+
+    $list_level++;
+    $list_str = preg_replace("/\n{2,}\\z/", "\n", $list_str);
+    $list_str = preg_replace_callback(
+        '{
+            (\n)?                           # leading line = $1
+            (^[ ]*)                         # leading whitespace = $2
+            (?:[*+\-]|\d+[.]) [ ]+          # list marker
+            ((?s:.+?))                      # list item text = $3
+            (?:(\n+(?=\n))|\n)              # trailing blank line = $4
+            (?= \n* (\z | \2 (?:[*+\-]|\d+[.]) [ ]+))
+        }xm',
+        '_processListItems_callback',
+        $list_str
+    );
+    $list_level--;
+
+    return "<{$tag}>\n" . $list_str . "</{$tag}>\n";
+}
+
+function _processListItems_callback(array $matches): string
+{
+    $item               = $matches[3];
+    $leading_line       = $matches[1];
+    $tailing_blank_line = $matches[4] ?? '';
+
+    if ($leading_line || $tailing_blank_line || preg_match('/\n{2,}/', $item)) {
+        $item = wpautop(outdent($item) . "\n");
+    } else {
+        $item = doLists(outdent($item));
+        $item = preg_replace('/\n+$/', '', $item);
+    }
+
+    return '<li>' . $item . "</li>\n";
 }

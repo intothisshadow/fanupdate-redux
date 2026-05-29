@@ -1,311 +1,164 @@
 <?php
 /*****************************************************************************
- * Universal Feed Writer class
+ * Universal Feed Writer
  *
- * Generate RSS2.0 and ATOM Feed
- *
- * Copyright (c) Anis uddin Ahmad <anisniit@gmail.com> http://www.ajaxray.com/projects/rss
+ * Copyright (c) Anis uddin Ahmad <anisniit@gmail.com>
  * Copyright (c) 2008 by Jenny Ferenc (contributor) <jenny@prism-perfect.net>
  * Copyright (c) 2020 by Ekaterina (contributor) http://scripts.robotess.net
+ *
+ * Refactored for PHP 8.2+:
+ *  - All dynamic properties declared explicitly
+ *  - Strict type hints and return types added
+ *  - utf8_encode() / utf8_decode() removed entirely (use mb_convert_encoding
+ *    via FeedItem::toUtf8() / FeedItem::fromUtf8() if needed by callers)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 2 of the License, or
  * any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  ******************************************************************************/
 
-// RSS 0.91, 0.92, 0.93 and 0.94  Officially obsoleted by 2.0
-// So, define constants for RSS 2.0 and ATOM
+define('RSS2', 'RSS 2.0');
+define('ATOM', 'ATOM');
 
-define('RSS2', 'RSS 2.0', true);
-define('ATOM', 'ATOM', true);
-
-if (!defined(DATE_RSS)) {
-    define('DATE_RSS', 'r', true);
+if (!defined('DATE_RSS')) {
+    define('DATE_RSS', 'r');
 }
-if (!defined(DATE_ATOM)) {
-    define('DATE_ATOM', 'Y-m-d\TH:i:sP', true);
+if (!defined('DATE_ATOM')) {
+    define('DATE_ATOM', 'Y-m-d\TH:i:sP');
 }
-
-// Atom: http://www.w3.org/2005/Atom
-// RSS 2: http://www.rssboard.org/rss-specification
 
 require_once('FeedItem.php');
 
 class FeedWriter
 {
-    public $channels = array();    // Collection of channel elements
-    public $items = array();    // Collection of items as object of FeedItem class.
-    public $namespaces = array();    // used namespaces
-    public $names = array();    // know namespaces
-    public $CDATAEncoding = array();    // The tag names which have to encoded as CDATA
-    public $version;
+    // ── explicitly declared properties ─────────────────────────────────────
+    public array  $channels      = [];
+    public array  $items         = [];
+    public array  $namespaces    = [];
+    public array  $names         = [];
+    public array  $CDATAEncoding = [];
+    public string $version;
 
-    /**
-     * Constructor
-     *
-     * @param string    the version constant (RSS2/ATOM).
-     */
-    public function __construct($version = RSS2)
+    // ── constructor ─────────────────────────────────────────────────────────
+
+    public function __construct(string $version = RSS2)
     {
         $this->version = $version;
 
-        // Setting default value for essential channel elements
         $this->channels['title'] = $version . ' Feed';
-        $this->channels['link'] = 'http://' . $_SERVER['SERVER_NAME'];
+        $this->channels['link']  = 'http://' . ($_SERVER['SERVER_NAME'] ?? 'localhost');
 
-        $this->names['atom'] = 'http://www.w3.org/2005/Atom';
-        $this->names['content'] = 'http://purl.org/rss/1.0/modules/content/';
-        $this->names['itunes'] = 'http://www.itunes.com/dtds/podcast-1.0.dtd';
-        $this->names['slash'] = 'http://purl.org/rss/1.0/modules/slash/';
-        $this->names['wfw'] = 'http://wellformedweb.org/CommentAPI/';
+        $this->names = [
+            'atom'    => 'http://www.w3.org/2005/Atom',
+            'content' => 'http://purl.org/rss/1.0/modules/content/',
+            'itunes'  => 'http://www.itunes.com/dtds/podcast-1.0.dtd',
+            'slash'   => 'http://purl.org/rss/1.0/modules/slash/',
+            'wfw'     => 'http://wellformedweb.org/CommentAPI/',
+        ];
 
-        //Tag names to encode in CDATA
-        $this->CDATAEncoding = array('description', 'content:encoded', 'summary');
+        $this->CDATAEncoding = ['description', 'content:encoded', 'summary'];
 
-        if ($this->version == RSS2) {
+        if ($this->version === RSS2) {
             $this->setChannelElement('docs', 'http://www.rssboard.org/rss-specification');
-        } elseif ($this->version == ATOM) {
+        } elseif ($this->version === ATOM) {
             $this->addNamespace('', $this->names['atom']);
         }
     }
 
-    // Start # functions ---------------------------------------------
+    // ── channel helpers ─────────────────────────────────────────────────────
 
-    /**
-     * Set a channel element
-     * @access    public
-     * @param string    name of the channel tag
-     * @param string    content of the channel tag
-     * @return    void
-     */
-    public function setChannelElement($elementName, $content)
+    public function setChannelElement(string $elementName, string $content): void
     {
         $this->channels[$elementName] = $content;
     }
 
-    /**
-     * Set multiple channel elements from an array. Array elements
-     * should be 'channelName' => 'channelContent' format.
-     *
-     * @access    public
-     * @param array    array of channels
-     * @return    void
-     */
-    public function setChannelElementsFromArray($elementArray)
+    public function setChannelElementsFromArray(array $elementArray): void
     {
-        if (!is_array($elementArray)) {
-            return;
-        }
         foreach ($elementArray as $elementName => $content) {
-            $this->setChannelElement($elementName, $content);
+            $this->setChannelElement((string) $elementName, (string) $content);
         }
     }
 
-    /**
-     * Generate the actual RSS/ATOM file
-     *
-     * @access    public
-     * @return    void
-     */
-    public function generateFeed()
+    public function setTitle(string $title): void
     {
-        header('Content-type: text/xml');
+        $this->setChannelElement('title', $title);
+    }
 
+    public function setDescription(string $description): void
+    {
+        $this->setChannelElement('description', $description);
+    }
+
+    public function setLink(string $link): void
+    {
+        $this->setChannelElement('link', $link);
+    }
+
+    public function setLinkSelf(string $link): void
+    {
+        if ($this->version === RSS2) {
+            $this->setChannelElement('atom:link', $link);
+        } elseif ($this->version === ATOM) {
+            $this->setChannelElement('link', $link);
+        }
+    }
+
+    public function setAuthor(string $email, string $name = ''): void
+    {
+        if ($this->version === RSS2) {
+            $author = $email;
+            if ($name !== '') {
+                $author .= ' (' . $name . ')';
+            }
+            $this->setChannelElement('managingEditor', $author);
+        } elseif ($this->version === ATOM) {
+            // ATOM author is a nested element — handled in printChannels
+            $this->channels['author'] = ['name' => $name, 'email' => $email];
+        }
+    }
+
+    public function addNamespace(string $prefix, string $uri): void
+    {
+        $this->namespaces[$prefix] = $uri;
+    }
+
+    // ── item helpers ────────────────────────────────────────────────────────
+
+    public function createNewItem(): FeedItem
+    {
+        return new FeedItem($this->version);
+    }
+
+    public function addItem(FeedItem $feedItem): void
+    {
+        $this->items[] = $feedItem;
+    }
+
+    // ── feed generation ─────────────────────────────────────────────────────
+
+    public function generateFeed(): void
+    {
+        header('Content-type: text/xml; charset=UTF-8');
         $this->printHead();
         $this->printChannels();
         $this->printItems();
         $this->printTail();
     }
 
-    /**
-     * Create a new FeedItem.
-     *
-     * @access    public
-     * @return    object    instance of FeedItem class
-     */
-    public function createNewItem()
+    public function printHead(): void
     {
-        return new FeedItem($this->version);
-    }
+        $out = '<?xml version="1.0" encoding="UTF-8"?>' . PHP_EOL;
 
-    /**
-     * Add a FeedItem to the main class
-     *
-     * @access    public
-     * @param object    instance of FeedItem class
-     * @return    void
-     */
-    public function addItem($feedItem)
-    {
-        $this->items[] = $feedItem;
-    }
-
-
-    // Wrapper functions -------------------------------------------------------------------
-
-    /**
-     * Set the 'title' channel element
-     *
-     * @access    public
-     * @param string    value of 'title' channel tag
-     * @return    void
-     */
-    public function setTitle($title)
-    {
-        $this->setChannelElement('title', $title);
-    }
-
-    /**
-     * Set the 'description' channel element
-     *
-     * @access    public
-     * @param string    value of 'description' channel tag
-     * @return    void
-     */
-    public function setDescription($desciption)
-    {
-        $this->setChannelElement('description', $desciption);
-    }
-
-    /**
-     * Set the 'link' channel element
-     *
-     * @access    public
-     * @param string    value of 'link' channel tag
-     * @return    void
-     */
-    public function setLink($link)
-    {
-        $this->setChannelElement('link', $link);
-    }
-
-    public function setLinkSelf($link)
-    {
-        if ($this->version == RSS2) {
-            $this->setChannelElement('atom:link', $link);
-        } elseif ($this->version == ATOM) {
-            $this->setChannelElement('link', $link);
-        }
-    }
-
-    public function setAuthor($email, $name = '')
-    {
-        if ($this->version == RSS2) {
-            $author = $email;
-            if (!empty($name)) {
-                $author .= ' (' . $name . ')';
-            }
-            $this->setChannelElement('managingEditor', $author);
-        } elseif ($this->version == ATOM) {
-            $this->setChannelElement('author', array('name' => $name, 'email' => $email));
-        }
-    }
-
-    public function setPubDate($date)
-    {
-        if (!is_numeric($date)) {
-            $date = strtotime($date);
-        }
-
-        if ($this->version == ATOM) {
-            $tag = 'updated';
-            $value = date(DATE_ATOM, $date);
-        } elseif ($this->version == RSS2) {
-            $tag = 'pubDate';
-            $value = date(DATE_RSS, $date);
-        }
-
-        $this->setChannelElement($tag, $value);
-    }
-
-    public function setBuildDate($date)
-    {
-        if (!is_numeric($date)) {
-            $date = strtotime($date);
-        }
-
-        if ($this->version == RSS2) {
-            $tag = 'lastBuildDate';
-            $value = date(DATE_RSS, $date);
-            $this->setChannelElement($tag, $value);
-        }
-    }
-
-    public function addNamespace($name, $url = null)
-    {
-        if (empty($url) && isset($this->names[$name])) {
-            $this->namespaces[$name] = $this->names[$name];
-        } else {
-            $this->namespaces[$name] = $url;
-        }
-    }
-
-    /**
-     * Set the 'image' channel element
-     *
-     * @access    public
-     * @param string    title of image
-     * @param string    link url of the imahe
-     * @param string    path url of the image
-     * @return    void
-     */
-    public function setImage($title, $link, $url)
-    {
-        $this->setChannelElement('image', array('title' => $title, 'link' => $link, 'url' => $url));
-    }
-
-    /**
-     * Genarates an UUID
-     * @param null $key
-     * @param string $prefix
-     * @return        string    the formated uuid
-     * @author        Anis uddin Ahmad <admin@ajaxray.com>
-     */
-    public function uuid($key = null, $prefix = '')
-    {
-        $key = ($key == null) ? uniqid(rand(), true) : $key;
-        $chars = md5($key);
-        $uuid = substr($chars, 0, 8) . '-';
-        $uuid .= substr($chars, 8, 4) . '-';
-        $uuid .= substr($chars, 12, 4) . '-';
-        $uuid .= substr($chars, 16, 4) . '-';
-        $uuid .= substr($chars, 20, 12);
-
-        return $prefix . $uuid;
-    }
-    // End # functions ----------------------------------------------
-
-    // Start # functions ----------------------------------------------
-
-    /**
-     * Prints the xml and rss namespace
-     *
-     * @access    private
-     * @return    void
-     */
-    public function printHead()
-    {
-        header('Content-Type: text/xml; charset=UTF-8');
-        $out = '<?xml version="1.0" encoding="utf-8"?>' . PHP_EOL;
-
-        if ($this->version == RSS2) {
+        if ($this->version === RSS2) {
             $out .= '<rss version="2.0"';
-        } elseif ($this->version == ATOM) {
+        } elseif ($this->version === ATOM) {
             $out .= '<feed';
         }
 
         foreach ($this->namespaces as $key => $val) {
             $out .= ' xmlns';
-            if (!empty($key)) {
+            if ($key !== '') {
                 $out .= ':' . $key;
             }
             $out .= '="' . $val . '"';
@@ -315,87 +168,24 @@ class FeedWriter
         echo $out;
     }
 
-    /**
-     * Closes the open tags at the end of file
-     *
-     * @access    private
-     * @return    void
-     */
-    public function printTail()
+    public function printTail(): void
     {
-        if ($this->version == RSS2) {
+        if ($this->version === RSS2) {
             echo '</channel>' . PHP_EOL . '</rss>';
-        } elseif ($this->version == ATOM) {
+        } elseif ($this->version === ATOM) {
             echo '</feed>';
         }
     }
 
-    /**
-     * Creates a single node as xml format
-     *
-     * @access    private
-     * @param string    name of the tag
-     * @param mixed    tag value as string or array of nested tags in 'tagName' => 'tagValue' format
-     * @param array    Attributes(if any) in 'attrName' => 'attrValue' format
-     * @return    string    formatted xml tag
-     */
-    public function makeNode($tagName, $tagContent, $attributes = null)
+    public function printChannels(): void
     {
-        $nodeText = '';
-        $attrText = '';
-
-        if (is_array($attributes)) {
-            foreach ($attributes as $key => $value) {
-                $attrText .= " $key=\"$value\"";
-            }
-        }
-
-        $attrText .= (in_array($tagName, $this->CDATAEncoding, true) && $this->version == ATOM) ? ' type="html"' : '';
-
-        $doCDATA = false;
-
-        if (in_array($tagName, $this->CDATAEncoding, true) && strpos($tagContent, '<') !== false) {
-            $doCDATA = true;
-        }
-
-        if (empty($tagContent)) {
-            $nodeText .= "<{$tagName}{$attrText} />";
-        } else {
-            $nodeText .= ($doCDATA) ? "<{$tagName}{$attrText}><![CDATA[" : "<{$tagName}{$attrText}>";
-
-            if (is_array($tagContent)) {
-                $nodeText .= PHP_EOL;
-                foreach ($tagContent as $key => $value) {
-                    $nodeText .= $this->makeNode($key, $value);
-                }
-            } else {
-                $nodeText .= ($doCDATA) ? $tagContent : htmlspecialchars($tagContent);
-            }
-
-            $nodeText .= ($doCDATA) ? "]]></$tagName>" : "</$tagName>";
-        }
-
-        return $nodeText . PHP_EOL;
-    }
-
-    /**
-     * @desc        Print channels
-     * @access    private
-     * @return    void
-     */
-    public function printChannels()
-    {
-        //Start channel tag
-        if ($this->version == RSS2) {
+        if ($this->version === RSS2) {
             echo '<channel>' . PHP_EOL;
         }
 
-        //Print Items of channel
         foreach ($this->channels as $key => $value) {
-            if ($this->version == ATOM && $key == 'link') {
-                // ATOM prints link element as href attribute
-                echo $this->makeNode($key, '', array('href' => $value));
-                //Add the id for ATOM
+            if ($this->version === ATOM && $key === 'link') {
+                echo $this->makeNode($key, '', ['href' => $value]);
                 echo $this->makeNode('id', $this->uuid($value, 'urn:uuid:'));
             } else {
                 echo $this->makeNode($key, $value);
@@ -403,55 +193,101 @@ class FeedWriter
         }
     }
 
-    /**
-     * Prints formatted feed items
-     *
-     * @access    private
-     * @return    void
-     */
-    public function printItems()
+    public function printItems(): void
     {
         foreach ($this->items as $item) {
             $thisItems = $item->getElements();
-
-            //the argument is printed as rdf:about attribute of item in rss 1.0
-            echo $this->startItem($thisItems['link']['content']);
+            $this->startItem($thisItems['link']['content'] ?? '');
 
             foreach ($thisItems as $feedItem) {
-                echo $this->makeNode($feedItem['name'], $feedItem['content'], $feedItem['attributes']);
+                echo $this->makeNode(
+                    $feedItem['name'],
+                    $feedItem['content'],
+                    $feedItem['attributes']
+                );
             }
-            echo $this->endItem();
+            $this->endItem();
         }
     }
 
-    /**
-     * Make the starting tag of channels
-     *
-     * @access    private
-     * @param bool $about
-     * @return    void
-     */
-    public function startItem($about = false)
+    public function startItem(string $about = ''): void
     {
-        if ($this->version == RSS2) {
+        if ($this->version === RSS2) {
             echo '<item>' . PHP_EOL;
-        } elseif ($this->version == ATOM) {
+        } elseif ($this->version === ATOM) {
             echo '<entry>' . PHP_EOL;
         }
     }
 
-    /**
-     * Closes feed item tag
-     *
-     * @access    private
-     * @return    void
-     */
-    public function endItem()
+    public function endItem(): void
     {
-        if ($this->version == RSS2) {
+        if ($this->version === RSS2) {
             echo '</item>' . PHP_EOL;
-        } elseif ($this->version == ATOM) {
+        } elseif ($this->version === ATOM) {
             echo '</entry>' . PHP_EOL;
         }
+    }
+
+    // ── node building ────────────────────────────────────────────────────────
+
+    public function makeNode(string $tagName, mixed $tagContent, ?array $attributes = null): string
+    {
+        $nodeText = '';
+        $attrText = '';
+
+        if (is_array($attributes)) {
+            foreach ($attributes as $key => $value) {
+                $attrText .= ' ' . $key . '="' . $value . '"';
+            }
+        }
+
+        if (in_array($tagName, $this->CDATAEncoding, true) && $this->version === ATOM) {
+            $attrText .= ' type="html"';
+        }
+
+        $doCDATA = in_array($tagName, $this->CDATAEncoding, true)
+            && is_string($tagContent)
+            && str_contains($tagContent, '<');
+
+        if (empty($tagContent)) {
+            $nodeText .= "<{$tagName}{$attrText} />";
+        } else {
+            $nodeText .= $doCDATA
+                ? "<{$tagName}{$attrText}><![CDATA["
+                : "<{$tagName}{$attrText}>";
+
+            if (is_array($tagContent)) {
+                $nodeText .= PHP_EOL;
+                foreach ($tagContent as $key => $value) {
+                    $nodeText .= $this->makeNode((string) $key, $value);
+                }
+            } else {
+                $nodeText .= $doCDATA
+                    ? (string) $tagContent
+                    : htmlspecialchars((string) $tagContent, ENT_XML1 | ENT_QUOTES, 'UTF-8');
+            }
+
+            $nodeText .= $doCDATA ? "]]></{$tagName}>" : "</{$tagName}>";
+        }
+
+        return $nodeText . PHP_EOL;
+    }
+
+    // ── UUID helper ─────────────────────────────────────────────────────────
+
+    public function uuid(string $url, string $prefix = ''): string
+    {
+        $parsed = parse_url($url);
+        $host   = $parsed['host']   ?? 'localhost';
+        $path   = $parsed['path']   ?? '/';
+        $query  = isset($parsed['query']) ? '?' . $parsed['query'] : '';
+        $id     = md5($host . $path . $query);
+
+        return $prefix
+            . substr($id, 0, 8) . '-'
+            . substr($id, 8, 4) . '-'
+            . substr($id, 12, 4) . '-'
+            . substr($id, 16, 4) . '-'
+            . substr($id, 20);
     }
 }

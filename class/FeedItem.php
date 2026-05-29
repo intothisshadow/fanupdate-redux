@@ -1,191 +1,148 @@
 <?php
 /*****************************************************************************
- * Universal Feed Writer
+ * Universal Feed Writer — FeedItem
  *
- * FeedItem class - Used as feed element in FeedWriter class
- *
- * Copyright (c) Anis uddin Ahmad <anisniit@gmail.com> http://www.ajaxray.com/projects/rss
+ * Copyright (c) Anis uddin Ahmad <anisniit@gmail.com>
  * Copyright (c) 2008 by Jenny Ferenc (contributor) <jenny@prism-perfect.net>
  * Copyright (c) 2020 by Ekaterina (contributor) http://scripts.robotess.net
+ *
+ * Refactored for PHP 8.2+:
+ *  - All dynamic properties declared explicitly
+ *  - Strict type hints and return types added
+ *  - utf8_encode() removed; mb_convert_encoding() used where needed
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 2 of the License, or
  * any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  ******************************************************************************/
 
 class FeedItem
 {
-    public $elements = array();    //Collection of feed elements
-    public $version;
+    // ── explicitly declared properties ─────────────────────────────────────
+    public array  $elements = [];
+    public string $version;
 
-    /**
-     * Constructor
-     *
-     * @param string        (RSS2/ATOM) RSS2 is default.
-     */
-    public function __construct($version = RSS2)
+    // ── constructor ─────────────────────────────────────────────────────────
+
+    public function __construct(string $version = RSS2)
     {
         $this->version = $version;
     }
 
-    /**
-     * Add an element to elements array
-     *
-     * @access    public
-     * @param string    The tag name of an element
-     * @param string    The content of tag
-     * @param array    Attributes(if any) in 'attrName' => 'attrValue' format
-     * @return    void
-     */
-    public function addElement($elementName, $content, $attributes = null)
+    // ── element management ──────────────────────────────────────────────────
+
+    public function addElement(string $elementName, mixed $content, ?array $attributes = null): void
     {
-        $this->elements[$elementName]['name'] = $elementName;
-        $this->elements[$elementName]['content'] = $content;
+        $this->elements[$elementName]['name']       = $elementName;
+        $this->elements[$elementName]['content']    = $content;
         $this->elements[$elementName]['attributes'] = $attributes;
     }
 
-    /**
-     * Set multiple feed elements from an array.
-     * Elements which have attributes cannot be added by this method
-     *
-     * @access    public
-     * @param array    array of elements in 'tagName' => 'tagContent' format.
-     * @return    void
-     */
-    public function addElementArray($elementArray)
+    public function addElementArray(array $elementArray): void
     {
-        if (!is_array($elementArray)) {
-            return;
-        }
         foreach ($elementArray as $elementName => $content) {
-            $this->addElement($elementName, $content);
+            $this->addElement((string) $elementName, $content);
         }
     }
 
-    /**
-     * Return the collection of elements in this feed item
-     *
-     * @access    public
-     * @return    array
-     */
-    public function getElements()
+    public function getElements(): array
     {
         return $this->elements;
     }
 
-    // Wrapper functions ------------------------------------------------------
+    // ── wrapper helpers ─────────────────────────────────────────────────────
 
-    /**
-     * Set the 'description' element of feed item
-     *
-     * @access    public
-     * @param string    The content of 'description' element
-     * @return    void
-     */
-    public function setDescription($description)
+    public function setDescription(string $description): void
     {
-        $tag = ($this->version == ATOM) ? 'summary' : 'description';
+        $tag = ($this->version === ATOM) ? 'summary' : 'description';
         $this->addElement($tag, $description);
     }
 
-    /**
-     * Set the 'title' element of feed item
-     *
-     * @access    public
-     * @param string    The content of 'title' element
-     * @return    void
-     */
-    public function setTitle($title)
+    public function setTitle(string $title): void
     {
         $this->addElement('title', $title);
     }
 
-    /**
-     * Set the 'date' element of feed item
-     *
-     * @access    public
-     * @param string    The content of 'date' element
-     * @return    void
-     */
-    public function setDate($date)
+    public function setDate(string|int $date): void
     {
         if (!is_numeric($date)) {
-            $date = strtotime($date);
+            $date = strtotime((string) $date);
         }
+        $date = (int) $date;
 
-        if ($this->version == ATOM) {
-            $tag = 'updated';
+        if ($this->version === ATOM) {
+            $tag   = 'updated';
             $value = date(DATE_ATOM, $date);
-        } elseif ($this->version == RSS2) {
-            $tag = 'pubDate';
+        } elseif ($this->version === RSS2) {
+            $tag   = 'pubDate';
             $value = date(DATE_RSS, $date);
         } else {
-            $tag = 'dc:date';
+            $tag   = 'dc:date';
             $value = date('Y-m-d', $date);
         }
 
         $this->addElement($tag, $value);
     }
 
-    /**
-     * Set the 'link' element of feed item
-     *
-     * @access    public
-     * @param string    The content of 'link' element
-     * @param bool $guid
-     * @return    void
-     */
-    public function setLink($link, $guid = false)
+    public function setLink(string $link, bool $guid = false): void
     {
-        if ($this->version == RSS2) {
+        if ($this->version === RSS2) {
             $this->addElement('link', $link);
             if ($guid) {
-                $this->addElement('guid', $link, array('isPermaLink' => 'true'));
+                $this->addElement('guid', $link, ['isPermaLink' => 'true']);
             }
-        } elseif ($this->version == ATOM) {
-            $this->addElement('link', '', array('href' => $link));
-            $this->addElement('id', (new FeedWriter)->uuid($link, 'urn:uuid:'));
+        } elseif ($this->version === ATOM) {
+            $this->addElement('link', '', ['href' => $link]);
+            $this->addElement('id', (new FeedWriter())->uuid($link, 'urn:uuid:'));
         }
     }
 
-    public function setAuthor($email, $name = '')
+    public function setAuthor(string $email, string $name = ''): void
     {
-        if ($this->version == RSS2) {
-            if (empty($email)) {
+        if ($this->version === RSS2) {
+            if ($email === '') {
                 $email = 'nobody@example.com';
             }
             $author = $email;
-            if (!empty($name)) {
+            if ($name !== '') {
                 $author .= ' (' . $name . ')';
             }
             $this->addElement('author', $author);
-        } else {
-            $this->addElement('author', array('name' => $name, 'email' => $email));
+        } elseif ($this->version === ATOM) {
+            $authorArray = ['email' => $email];
+            if ($name !== '') {
+                $authorArray['name'] = $name;
+            }
+            $this->addElement('author', $authorArray);
         }
     }
 
-    /**
-     * Set the 'enclosure' element of feed item
-     * For RSS 2.0 only
-     *
-     * @access    public
-     * @param string    The url attribute of Enclosure tag
-     * @param string    The length attribute of Enclosure tag
-     * @param string    The type attribute of Enclosure tag
-     * @return    void
-     */
-    public function setEnclosure($url, $length, $type)
+    public function setEnclosure(string $url, int $length, string $type): void
     {
-        $attributes = array('url' => $url, 'length' => $length, 'type' => $type);
-        $this->addElement('enclosure', '', $attributes);
+        $this->addElement('enclosure', '', [
+            'url'    => $url,
+            'length' => $length,
+            'type'   => $type,
+        ]);
+    }
+
+    /**
+     * Safely convert a string to UTF-8.
+     * Replaces the deprecated utf8_encode() from PHP 8.2.
+     */
+    public static function toUtf8(string $value): string
+    {
+        // mb_convert_encoding is the recommended replacement for utf8_encode()
+        return mb_convert_encoding($value, 'UTF-8', 'ISO-8859-1');
+    }
+
+    /**
+     * Safely convert a UTF-8 string to ISO-8859-1.
+     * Replaces the deprecated utf8_decode() from PHP 8.2.
+     */
+    public static function fromUtf8(string $value): string
+    {
+        return mb_convert_encoding($value, 'ISO-8859-1', 'UTF-8');
     }
 }

@@ -6,7 +6,7 @@ collective of fan websites. Works equally well as a standalone blog.
 Originally written by **Jenny Ferenc** in 2005. Ported to PHP 7 by **Ekaterina**
 (scripts.robotess.net) in 2020. 
 
-This Redux release updates the codebase to **PHP 8.2+**.
+This Redux release updates the codebase to **PHP 8.2+** (current patch: Redux 1.1.1).
 
 ---
 
@@ -50,7 +50,7 @@ This Redux release updates the codebase to **PHP 8.2+**.
 Copy `blog-config.sample.php` to `blog-config.php` and open it in a text editor.
 
 ```php
-// Admin credentials
+// Admin credentials — can also be set via the installer (see step 3)
 $fanupdate['admin_username'] = 'admin';
 $fanupdate['admin_password'] = md5('your-password-here');
 
@@ -61,9 +61,15 @@ $fanupdate['dbpass'] = 'db_pass';
 $fanupdate['dbname'] = 'db_name';
 ```
 
-You **must** set the database variables and the admin credentials.  
+You **must** set the database variables before running the installer.  
+Admin credentials can be set here manually **or** entered through the install
+form in step 3 — the installer will write them into `blog-config.php` for you.  
 The table name variables only need changing if you are integrating with a
 collective management script (see [Collective integration](#collective-integration)).
+
+> **Tip:** If you want the installer to write your credentials automatically,
+> make `blog-config.php` writable before running it (`chmod 666 blog-config.php`
+> on most shared hosts), then tighten permissions afterward (`chmod 644`).
 
 ### 2. Upload files
 
@@ -81,8 +87,10 @@ Navigate to:
 https://yoursite.com/fanupdate/install.php
 ```
 
-Fill in the remaining site options (site name, blog URL, install path) and click
-the install button. The script will create the required database tables.
+Fill in the site options (site name, blog URL, install path, etc.). On a fresh
+install, **admin username and password fields** appear at the bottom of the form
+— fill these in and they will be saved to `blog-config.php` automatically.
+Click the install button and the script will create the required database tables.
 
 ### 4. Delete the installer
 
@@ -338,7 +346,56 @@ fanupdate/
 
 ---
 
+## Troubleshooting
+
+### install.php shows a blank white page
+
+This means a PHP fatal error is being swallowed by the server. Redux 1.1.1+
+forces `display_errors = On` at the top of `install.php`, so this should no
+longer occur. If you are on an older copy, add these two lines at the very top
+of `install.php` (after `<?php`):
+
+```php
+ini_set('display_errors', '1');
+error_reporting(E_ALL);
+```
+
+### install.php shows no form fields (just the button)
+
+You have a pre-1.1.1 copy of `install.php`. The bug was a loose comparison
+(`strpos(...) == 0`) that hid every visible field. Download the current
+`install.php`.
+
+### Fatal error: Uncaught mysqli_sql_exception … table doesn't exist
+
+PHP 8.0+ changed mysqli's default error reporting mode to throw exceptions
+instead of returning `false`. The `@` operator does not catch exceptions.
+Redux 1.1.1+ wraps all version-detection queries in `try/catch` and temporarily
+disables exception mode inside `SqlConnection::Execute()`. Download the current
+`install.php` and `class/SqlConnection.php`.
+
+### WARNING: Could not execute query. Table '…blog_options' doesn't exist
+
+This warning appeared on the install form in pre-1.1.1 builds because
+`FanUpdate::addOptFromDb()` triggered a visible warning when the options table
+didn't exist yet. Fixed in Redux 1.1.1 — `addOptFromDb()` now passes
+`null` as the error message so missing tables fail silently during install.
+
+### I can't log in after installing — no credentials were set
+
+The admin username and password live in `blog-config.php`, not the database.
+The install form in Redux 1.1.1+ collects them and writes them for you. If you
+installed with an older version, open `blog-config.php` and set:
+
+```php
+$fanupdate['admin_username'] = 'your-username';
+$fanupdate['admin_password'] = md5('your-password');
+```
+
+---
+
 ## License
+
 
 GNU General Public License v2 or later.  
 See <https://www.gnu.org/licenses/gpl.html> for details.

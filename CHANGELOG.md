@@ -5,6 +5,60 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [Redux 1.1.1] — May 29, 2026 — Installer Fixes
+
+Post-release patch addressing issues found during live installation testing.
+
+### Fixed
+
+- **`install.php` blank white page** — `ini_set('display_errors', '1')` and
+  `error_reporting(E_ALL)` added at the very top of `install.php` so fatal
+  errors are never swallowed silently by the server's `php.ini` settings
+- **`install.php` missing form fields** — the `$setting` array comparison used
+  loose `==` (`strpos(...) == 0`) which evaluates `false == 0` as `true` in
+  PHP, causing every visible field to be rendered as `<input type="hidden">`;
+  changed to strict `=== 0`
+- **`install.php` full `$setting` array restored** — the complete set of 29
+  installer options (`$setting[0]` through `$setting[28]`) is now present,
+  matching the original Robotess Fork source; previously only a stub array was
+  included
+- **`mysqli_sql_exception` crash on fresh install** — PHP 8.0 changed mysqli's
+  default error mode to throw `mysqli_sql_exception` instead of returning
+  `false`; the `@` error-suppression operator does not catch exceptions, so
+  version-detection queries against non-existent tables caused an uncaught fatal
+  error; all version-detection queries are now wrapped in `try/catch` blocks
+- **`SqlConnection::Execute()` exception safety** — `Execute()` now temporarily
+  sets `mysqli_report(MYSQLI_REPORT_OFF)` around the query and restores the
+  previous report mode afterward; passing `$err_msg = null` now reliably returns
+  `false` on failure without throwing regardless of the server's global mysqli
+  error mode
+- **`FanUpdate::addOptFromDb()` warning on fresh install** — both `Execute()`
+  calls inside `addOptFromDb()` now pass `null` as `$err_msg`, so a missing
+  options or smilies table (expected on a fresh install) is handled silently
+  rather than triggering a visible WARNING on the page
+- **Installer warning appearing above page header** — `$fu->getHeader()` was
+  called before the version-detection block ran; any triggered warning therefore
+  appeared above the HTML layout; call order corrected so the header renders
+  only after all version-detection queries have completed
+- **`functions.php` error handler** — `myErrorHandler()` now silently discards
+  warnings whose message contains `"doesn't exist"` or `"does not exist"`;
+  this is a defensive backstop for table-not-found warnings that may originate
+  from older class files during the install sequence
+
+### Added
+
+- **Admin credentials collected during install** — `install.php` now presents
+  `admin_username`, `admin_password`, and `admin_password (confirm)` fields
+  at the bottom of the fresh-install form; on submission the values are
+  validated (non-empty, passwords match) and written directly into
+  `blog-config.php` via `preg_replace`; if `blog-config.php` is not writable
+  a clear error message is shown with manual instructions
+- **Password confirmation validation** — installer rejects the form and
+  re-displays errors immediately if the two password fields do not match,
+  before any database writes occur
+
+---
+
 ## [Redux 1.1.0] — May 28, 2026 — PHP 8.2+ Refactor
 
 This release brings full PHP 8.2+ compatibility across the entire codebase and

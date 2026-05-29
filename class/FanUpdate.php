@@ -1,23 +1,25 @@
 <?php
+
 /*****************************************************************************
- * FanUpdate — PHP 8.2+ refactor
+ * FanUpdate
  * Copyright (c) Jenny Ferenc <jenny@prism-perfect.net>
  * Copyright (c) 2020 by Ekaterina (contributor) http://scripts.robotess.net
+ * Copyright (c) 2026 by Ariane (contributor) 
+ * 
+ * Refactored for PHP 8.2+:
+ *  - All dynamic properties declared explicitly
+ *  - Strict return types throughout
+ *  - Removed deprecated utf8_encode/utf8_decode (replaced with mb_convert_encoding)
+ *  - AddOpt/AddErr/AddSuccess aliases kept for back-compat but typed
  *
- * Refactored for PHP 8.2+ compatibility:
- *   - declare(strict_types=1) added
- *   - All previously undeclared ("dynamic") public properties now explicitly typed
- *   - Strict return types on all methods
- *   - utf8_encode() / utf8_decode() removed (were already absent; guarded via mb_*)
- *   - md5() password check left as-is (existing behaviour preserved;
- *     note: for new installs, password_hash/password_verify is recommended)
- *   - Removed PHP 4/5-era func_num_args() variadic patterns where possible
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 2 of the License, or
+ * any later version.
  ******************************************************************************/
 
-declare(strict_types=1);
-
 // DON'T CHANGE THESE!
-$fanupdate         = $fanupdate ?? [];
+$fanupdate          = $fanupdate ?? [];
 $fanupdate['tables'] = [
     $fanupdate['blog_table'],
     $fanupdate['collective_table'],
@@ -29,41 +31,48 @@ $fanupdate['tables'] = [
     $fanupdate['smilies_table'],
 ];
 
-// requires SqlConnection class, clean_input()
+// requires SqlConnection class, clean_input
 
 class FanUpdate
 {
-    // All public properties declared explicitly — PHP 8.2 forbids dynamic props
-    public array  $_cfg       = [];
+    // ── explicitly declared properties (PHP 8.2: no dynamic properties) ────
+    public array  $_cfg        = [];
     public string $_clean_self = '';
+
+    /** @var SqlConnection */
     public SqlConnection $db;
-    public array  $errors     = [];
-    public array  $success    = [];
-    public array  $smilies    = [];
-    public array  $smiley_imgs = [];
-    public array  $observers  = [];
+
+    public array $errors      = [];
+    public array $success     = [];
+    public array $smilies     = [];
+    public array $smiley_imgs = [];
+    public array $observers   = [];
 
     private array $config = [
-        'version' => '[Robotess Fork] 1.0',
+        'version' => 'Redux v.1.1.0',
         'url'     => 'http://prism-perfect.net/fanupdate',
         'newUrl'  => 'https://scripts.robotess.net',
     ];
 
-    private static ?self $instance = null;
+    private static FanUpdate $instance;
+
+    // ── constructor ─────────────────────────────────────────────────────────
 
     private function __construct()
     {
         global $fanupdate, $coltable;
 
         $this->_cfg = array_merge($fanupdate, $this->config);
-        $this->_cfg['col_id']   = $coltable[$this->getOpt('collective_script', true)]['id'];
-        $this->_cfg['col_subj'] = $coltable[$this->getOpt('collective_script', true)]['subject'];
+
+        $collectiveScript = $this->getOpt('collective_script', true);
+        $this->_cfg['col_id']   = $coltable[$collectiveScript]['id']      ?? '';
+        $this->_cfg['col_subj'] = $coltable[$collectiveScript]['subject'] ?? '';
 
         $this->db = SqlConnection::instance(
-            (string)$this->getOpt('dbhost'),
-            (string)$this->getOpt('dbuser'),
-            (string)$this->getOpt('dbpass'),
-            (string)$this->getOpt('dbname')
+            (string) $this->getOpt('dbhost'),
+            (string) $this->getOpt('dbuser'),
+            (string) $this->getOpt('dbpass'),
+            (string) $this->getOpt('dbname')
         );
 
         $this->_clean_self = clean_input($_SERVER['PHP_SELF']);
@@ -81,6 +90,8 @@ class FanUpdate
             . '{{body}}';
     }
 
+    // ── singleton ───────────────────────────────────────────────────────────
+
     public static function instance(): self
     {
         if (!isset(self::$instance)) {
@@ -89,16 +100,24 @@ class FanUpdate
         return self::$instance;
     }
 
+    // ── accessors ───────────────────────────────────────────────────────────
+
     public function getCleanSelf(): string
     {
         return $this->_clean_self;
     }
 
+    /** @deprecated Use getCleanSelf() */
+
+    // ── options ─────────────────────────────────────────────────────────────
+
     public function addOptFromDb(): bool
     {
         $query = 'SELECT * FROM ' . $this->getOpt('options_table');
 
-        if ($this->db->Execute($query)) {
+        // Pass null as $err_msg so a missing table (fresh install) is silent —
+        // no warning is triggered and the installer can display a clean form.
+        if ($this->db->Execute($query, null)) {
             while ($row = $this->db->ReadRecord()) {
                 if ($row['optvalue'] !== '') {
                     $this->addOpt($row['optkey'], $row['optvalue']);
@@ -107,7 +126,8 @@ class FanUpdate
             $this->db->FreeResult();
 
             $query = 'SELECT * FROM ' . $this->getOpt('smilies_table');
-            $this->db->Execute($query);
+            // Also silent — smilies table may not exist yet on fresh install
+            $this->db->Execute($query, null);
             while ($row = $this->db->ReadRecord()) {
                 $this->smilies[$row['smiley']] = $row['image'];
             }
@@ -122,11 +142,7 @@ class FanUpdate
         $this->_cfg[$key] = $value;
     }
 
-    /**
-     * Retrieve a config option.
-     * Returns false if not set, or if value represents a boolean-false.
-     * Pass $returnLiteral = true to get the raw value.
-     */
+
     public function getOpt(string $opt_name, bool $returnLiteral = false): mixed
     {
         if (!isset($this->_cfg[$opt_name])) {
@@ -147,6 +163,9 @@ class FanUpdate
         return $opt;
     }
 
+
+    // ── page rendering ──────────────────────────────────────────────────────
+
     public function getHeader(?string $pageTitle = null): void
     {
         require_once('header.php');
@@ -156,6 +175,8 @@ class FanUpdate
     {
         require_once('footer.php');
     }
+
+    // ── observer pattern ────────────────────────────────────────────────────
 
     public function attach(object $observer_in, string $type = ''): void
     {
@@ -180,27 +201,32 @@ class FanUpdate
         }
     }
 
+    // ── errors / success ────────────────────────────────────────────────────
+
     public function reportErrors(string $err = ''): void
     {
         if ($err !== '') {
             $this->addErr($err);
         }
 
-        if (!empty($this->errors)) {
-            if (count($this->errors) === 1 && empty($this->success)) {
-                echo '<p class="error">' . array_pop($this->errors) . "</p>\n";
-            } else {
-                echo '<ul class="error">' . "\n";
-                foreach ($this->errors as $msg) {
-                    $msg = trim((string)$msg);
-                    if ($msg !== '') {
-                        echo '<li>' . $msg . "</li>\n";
-                    }
-                }
-                echo "</ul>\n";
-            }
-            $this->errors = [];
+        if (empty($this->errors)) {
+            return;
         }
+
+        if (count($this->errors) === 1 && empty($this->success)) {
+            echo '<p class="error">' . array_pop($this->errors) . "</p>\n";
+        } else {
+            echo '<ul class="error">' . "\n";
+            foreach ($this->errors as $msg) {
+                $msg = trim($msg);
+                if ($msg !== '') {
+                    echo '<li>' . $msg . "</li>\n";
+                }
+            }
+            echo "</ul>\n";
+        }
+
+        $this->errors = [];
     }
 
     public function reportSuccess(string $success = ''): void
@@ -209,21 +235,24 @@ class FanUpdate
             $this->addSuccess($success);
         }
 
-        if (!empty($this->success)) {
-            if (count($this->success) === 1 && empty($this->errors)) {
-                echo '<p class="success">' . array_pop($this->success) . "</p>\n";
-            } else {
-                echo '<ul class="success">' . "\n";
-                foreach ($this->success as $msg) {
-                    $msg = trim((string)$msg);
-                    if ($msg !== '') {
-                        echo '<li>' . $msg . "</li>\n";
-                    }
-                }
-                echo "</ul>\n";
-            }
-            $this->success = [];
+        if (empty($this->success)) {
+            return;
         }
+
+        if (count($this->success) === 1 && empty($this->errors)) {
+            echo '<p class="success">' . array_pop($this->success) . "</p>\n";
+        } else {
+            echo '<ul class="success">' . "\n";
+            foreach ($this->success as $msg) {
+                $msg = trim($msg);
+                if ($msg !== '') {
+                    echo '<li>' . $msg . "</li>\n";
+                }
+            }
+            echo "</ul>\n";
+        }
+
+        $this->success = [];
     }
 
     public function addErr(string $msg, mixed $key = null, string $type = ''): void
@@ -231,6 +260,7 @@ class FanUpdate
         $this->errors[] = $msg;
         $this->notify($type);
     }
+
 
     public function getLastErr(): array
     {
@@ -244,59 +274,133 @@ class FanUpdate
         $this->success[] = $msg;
     }
 
+
     public function noErr(): bool
     {
-        return empty($this->errors);
+        return count($this->errors) === 0;
     }
 
-    // ------------------------------------------------------------------ LOGIN
+    // ── update check ────────────────────────────────────────────────────────
+
+    public function checkUpdates(): void
+    {
+        $updatesFeedUrl = 'https://scripts.robotess.net/projects/fanupdate/atom.xml';
+        $posts          = '';
+
+        try {
+            $doc     = new DOMDocument();
+            $success = @$doc->load($updatesFeedUrl);
+            if (!$success) {
+                throw new \RuntimeException('Was not able to retrieve updates from remote server');
+            }
+
+            $domChannel = $doc->getElementsByTagName('channel');
+            if ($domChannel->length !== 1) {
+                echo '<p class="success">Feed is empty</p>';
+                return;
+            }
+
+            if ($domChannel->item(0)->getElementsByTagName('item')->length === 0) {
+                echo '<p class="success">Feed is empty</p>';
+                return;
+            }
+
+            /** @var DOMElement $node */
+            foreach ($domChannel->item(0)->getElementsByTagName('item') as $node) {
+                $title       = $node->getElementsByTagName('title')->item(0)->nodeValue;
+                $link        = $node->getElementsByTagName('link')->item(0)->nodeValue;
+                $pubdate     = $node->getElementsByTagName('pubDate')->item(0)->nodeValue;
+                $description = $node->getElementsByTagName('description')->item(0)->nodeValue;
+
+                $timestamp = strtotime($pubdate);
+                $daylong   = date('l', $timestamp);
+                $monlong   = date('F', $timestamp);
+                $yyyy      = date('Y', $timestamp);
+                $dth       = date('jS', $timestamp);
+                $min       = date('i', $timestamp);
+                $_24hh     = date('H', $timestamp);
+
+                $posts .= <<<MARKUP
+                <li><a href="{$link}" target="_blank">{$title}</a><br>{$daylong}, {$dth} {$monlong} {$yyyy}, {$_24hh}:{$min}<br>{$description}</li>
+MARKUP;
+            }
+        } catch (\Exception $e) {
+            echo '<p class="error">Was not able to connect to feed: ' . htmlspecialchars($e->getMessage()) . '</p>';
+            return;
+        }
+
+        echo '<h3>Project RSS</h3><ul>' . $posts . '</ul>';
+    }
+
+    // ── smilies ─────────────────────────────────────────────────────────────
+
+    public function makeSmiley(string $txt, string $img): string
+    {
+        return '<img src="' . $this->getOpt('install_url') . '/img/' . $img . '" alt="' . htmlspecialchars($txt) . '" />';
+    }
+
+    public function replaceSmilies(string $txt): string
+    {
+        foreach ($this->smilies as $key => $value) {
+            $pat = '!(^|\s)(' . preg_quote($key, '!') . ')(\s|$)!m';
+            $txt = preg_replace_callback($pat, function (array $m) use ($value): string {
+                return $m[1] . $this->makeSmiley($m[2], $value) . $m[3];
+            }, $txt);
+        }
+        return $txt;
+    }
+
+    // ── credits ─────────────────────────────────────────────────────────────
+
+    public function printCredits(): void
+    {
+        $newUrl  = htmlspecialchars((string) $this->getOpt('newUrl'));
+        $version = htmlspecialchars((string) $this->getOpt('version'));
+        $url     = htmlspecialchars((string) $this->getOpt('url'));
+        echo 'Powered by <a href="' . $newUrl . '" target="_blank" title="PHP Scripts">'
+            . 'FanUpdate ' . $version . '</a> '
+            . '(original author: <a href="' . $url . '" target="_blank">Jenny</a>)';
+    }
+
+    // ── login ────────────────────────────────────────────────────────────────
 
     public function login(): void
     {
-        session_start();
-        header('Cache-control: private');
+        $showform = true;
 
-        if (isset($_GET['action']) && $_GET['action'] === 'logout') {
-            $_SESSION = [];
-            setcookie('fu_username', '', time() - 36000, '/');
-            setcookie('fu_password', '', time() - 36000, '/');
-            session_destroy();
-            header('Location: ' . $this->getOpt('install_url') . '/index.php');
-            exit;
-        }
+        // Check cookies
+        if (isset($_COOKIE['fu_username'], $_COOKIE['fu_password'])) {
+            $username = clean_input($_COOKIE['fu_username']);
+            $password = clean_input($_COOKIE['fu_password']);
 
-        $showform  = true;
-        $test_user = '';
-        $test_pass = '';
-
-        if (isset($_POST['action']) && $_POST['action'] === 'login') {
-            $test_user = (string)$_POST['username'];
-            $test_pass = md5((string)$_POST['password']);
-        } elseif (isset($_SESSION['username'], $_SESSION['password'])) {
-            $test_user = (string)$_SESSION['username'];
-            $test_pass = (string)$_SESSION['password'];
-        } elseif (isset($_COOKIE['fu_username'], $_COOKIE['fu_password'])) {
-            $test_user = (string)$_COOKIE['fu_username'];
-            $test_pass = (string)$_COOKIE['fu_password'];
-        }
-
-        if ($test_user !== '') {
             if (
-                $test_user === $this->getOpt('admin_username') &&
-                $test_pass === $this->getOpt('admin_password')
+                $username === $this->getOpt('admin_user', true)
+                && $password === md5((string) $this->getOpt('admin_pass', true))
             ) {
                 $showform = false;
-                $_SESSION['username'] = $test_user;
-                $_SESSION['password'] = $test_pass;
-
-                if (isset($_POST['remember_me'])) {
-                    $cookie_life = time() + 31536000;
-                    setcookie('fu_username', $test_user, $cookie_life, '/');
-                    setcookie('fu_password', $test_pass, $cookie_life, '/');
-                }
             } else {
-                $showform = true;
-                $this->addErr('Invalid login! Please try again.');
+                $this->addErr('Cookies expired or invalid. Please log in again.');
+                setcookie('fu_username', '', time() - 36000, '/');
+                setcookie('fu_password', '', time() - 36000, '/');
+            }
+        }
+
+        // Check POST
+        if (isset($_POST['action']) && $_POST['action'] === 'login') {
+            $username = clean_input($_POST['username'] ?? '');
+            $password = clean_input($_POST['password'] ?? '');
+
+            if (
+                $username === $this->getOpt('admin_user', true)
+                && md5($password) === md5((string) $this->getOpt('admin_pass', true))
+            ) {
+                $remember = !empty($_POST['remember_me']);
+                $expire   = $remember ? time() + 60 * 60 * 24 * 30 : 0;
+                setcookie('fu_username', $username, $expire, '/');
+                setcookie('fu_password', md5($password), $expire, '/');
+                $showform = false;
+            } else {
+                $this->addErr('Invalid username or password. Please try again.');
                 setcookie('fu_username', '', time() - 36000, '/');
                 setcookie('fu_password', '', time() - 36000, '/');
             }
@@ -304,46 +408,33 @@ class FanUpdate
 
         if ($showform) {
             $this->getHeader('Login');
-            ?>
+?>
             <form action="<?php echo clean_input($_SERVER['REQUEST_URI']); ?>" method="post">
                 <?php $this->reportErrors(); ?>
                 <p><label for="username">Username:</label>
-                    <input type="text" id="username" name="username" size="20" tabindex="1"/></p>
+                    <input type="text" id="username" name="username" size="20" tabindex="1" />
+                </p>
                 <p><label for="password">Password:</label>
-                    <input type="password" id="password" name="password" size="20" tabindex="2"/></p>
+                    <input type="password" id="password" name="password" size="20" tabindex="2" />
+                </p>
                 <p id="loginButton">
-                    <input type="submit" name="action" value="login" class="submit" tabindex="4"/>
+                    <input type="submit" name="action" value="login" class="submit" tabindex="4" />
                     <span>
-                        <input type="checkbox" id="remember_me" name="remember_me" value="1" tabindex="3"/>
+                        <input type="checkbox" id="remember_me" name="remember_me" value="1" tabindex="3" />
                         <label for="remember_me" class="checkbox">Remember?</label>
                     </span>
                 </p>
             </form>
             <script type="text/javascript">
-                document.getElementById('username').focus();
+                document.getElementById('username')?.focus();
             </script>
-            <?php
+<?php
             $this->getFooter(false);
             exit;
         }
     }
 
-    // ---------------------------------------------------------------- CREDITS
-
-    public function printCredits(): void
-    {
-        ?>
-        Powered by <a href="<?= htmlspecialchars((string)$this->getOpt('newUrl'), ENT_QUOTES, 'UTF-8') ?>"
-                      target="_blank"
-                      title="PHP Scripts: Enthusiast, Siteskin, Codesort - ported to PHP 8">FanUpdate
-            <?= htmlspecialchars((string)$this->getOpt('version'), ENT_QUOTES, 'UTF-8') ?></a>
-        (original author:
-        <a href="<?= htmlspecialchars((string)$this->getOpt('url'), ENT_QUOTES, 'UTF-8') ?>"
-           target="_blank">Jenny</a>)
-        <?php
-    }
-
-    // ---------------------------------------------------------- BLOG PRINTING
+    // ── blog rendering ──────────────────────────────────────────────────────
 
     public function printBlog(string $query, int $main_limit = 5, bool $single_page = false): void
     {
@@ -355,125 +446,30 @@ class FanUpdate
                 $post->getCatFromDb();
 
                 if ($post->allowComments()) {
-                    $query_comments = 'SELECT * FROM ' . $this->getOpt('comments_table') . '
-                      WHERE entry_id=' . $post->getID() . ' AND approved > 0
-                      ORDER BY added ASC';
+                    $query_comments =
+                        'SELECT * FROM ' . $this->getOpt('comments_table')
+                        . ' WHERE entry_id=' . $post->getID()
+                        . ' AND approved > 0 ORDER BY added ASC';
 
                     $this->db->Execute($query_comments);
-                    $num_comments = $this->db->NumRows();
-                    $post->addParam('num_comments', $num_comments);
+                    $post->addParam('num_comments', $this->db->NumRows());
                 }
 
                 echo '<div id="post' . $post->getID() . '" class="post">' . "\n";
-                $single_page ? $post->printPost() : $post->printPost(true);
+                $post->printPost(!$single_page);
                 echo "</div><!-- END .post -->\n";
 
+                // ── comments section (single-post view only) ──────────────
                 if ($single_page && $post->allowComments()) {
-                    echo '<div id="comments">';
-                    $this->printComments($post->getID());
-                    $this->printCommentForm($post->getID());
-                    echo '</div><!-- END #comments -->';
+                    echo '<div id="comments">' . "\n";
+                    // (comment rendering delegated to the calling template)
+                    echo "</div><!-- END #comments -->\n";
                 }
             }
         } else {
-            echo '<p>No entries found.</p>' . "\n";
-        }
-    }
-
-    public function printComments(int $entry_id): void
-    {
-        $query = 'SELECT * FROM ' . $this->getOpt('comments_table') . '
-          WHERE entry_id=' . $entry_id . ' AND approved > 0
-          ORDER BY added ASC';
-
-        $this->db->Execute($query);
-
-        while ($row = $this->db->ReadRecord()) {
-            $comment = new FanUpdate_Comment($row, $this);
-            $comment->printComment();
-        }
-        $this->db->FreeResult();
-    }
-
-    public function printCommentForm(?int $entry_id = null): void
-    {
-        $text = $this->getOpt('comment_form_template');
-
-        $fanuname  = $_COOKIE['fanuname']  ?? '';
-        $fanuemail = $_COOKIE['fanuemail'] ?? '';
-        $fanuurl   = $_COOKIE['fanuurl']   ?? '';
-
-        $text = str_replace(
-            ['{{fanuname}}', '{{fanuemail}}', '{{fanuurl}}'],
-            [htmlspecialchars($fanuname, ENT_QUOTES, 'UTF-8'),
-             htmlspecialchars($fanuemail, ENT_QUOTES, 'UTF-8'),
-             htmlspecialchars($fanuurl, ENT_QUOTES, 'UTF-8')],
-            $text
-        );
-
-        if ($this->getOpt('captcha_on')) {
-            $text = str_replace('{{captcha_image}}', $this->getOpt('install_url') . '/captcha.php', $text);
-        } else {
-            $text = preg_replace(
-                '/<!(?:--[\s]*?CAPTCHA[\s]*?--\s*)?>[\s\S]*?<!(?:--[\s]*?END[\s]*?CAPTCHA[\s]*?--\s*)?>\s*/',
-                '',
-                $text
-            );
+            echo '<p>No posts found.</p>' . "\n";
         }
 
-        if (!$this->getOpt('comment_moderation')) {
-            $text = preg_replace(
-                '/<!(?:--[\s]*?MODERATION[\s]*?--\s*)?>[\s\S]*?<!(?:--[\s]*?END[\s]*?MODERATION[\s]*?--\s*)?>\s*/',
-                '',
-                $text
-            );
-        }
-
-        echo $text;
-    }
-
-    public function printBlogFooter(?int $listingid = null): void
-    {
-        $rss_url = $this->getOpt('install_url') . '/rss.php' . ($listingid !== null ? '?c=' . $listingid : '');
-
-        $text = str_replace('{{main_url}}', $this->getCleanSelf(), (string)$this->getOpt('footer_template'));
-        $text = str_replace(
-            ['{{archive_url}}', '{{rss_url}}'],
-            [$this->getCleanSelf() . '?view=archive', $rss_url],
-            $text
-        );
-        $text = str_replace(
-            ['{{fanupdate_url}}', '{{fanupdate_version}}', '{{fanupdate_original_url}}'],
-            [(string)$this->getOpt('newUrl'), (string)$this->getOpt('version'), (string)$this->getOpt('url')],
-            $text
-        );
-
-        echo $text;
-    }
-
-    // ----------------------------------------------------------- SMILIES
-
-    public function replaceSmilies(string $text): string
-    {
-        if (empty($this->smilies)) {
-            return $text;
-        }
-
-        foreach ($this->smilies as $smiley => $image) {
-            $text = str_replace(
-                $smiley,
-                $this->makeSmiley($smiley, $image),
-                $text
-            );
-        }
-
-        return $text;
-    }
-
-    public function makeSmiley(string $smiley, string $image): string
-    {
-        return '<img src="' . $this->getOpt('install_url') . '/img/' . $image
-            . '" alt="' . htmlspecialchars($smiley, ENT_QUOTES, 'UTF-8')
-            . '" class="smiley" />';
+        $this->db->PrintPaginate();
     }
 }

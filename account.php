@@ -17,7 +17,7 @@ declare(strict_types=1);
  *    backreference markers by preg_replace
  *  - A fresh HMAC token is issued after either change so the session cookie
  *    remains valid (token = HMAC(username, storedHash))
- *  - HttpOnly flag set on both cookies
+ *  - Cookies: Secure=true, HttpOnly=true, SameSite=Strict
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,6 +31,21 @@ require_once('functions.php');
 $fu = FanUpdate::instance();
 $fu->addOptFromDb();
 $fu->login();
+
+// ── shared cookie options ────────────────────────────────────────────────────
+// Mirrors the flags set by FanUpdate::setAuthCookie().
+// account.php issues cookies directly (outside the FanUpdate class) so it
+// must replicate the options array rather than calling the private helper.
+
+$authCookieOpts = static function (int $expire): array {
+    return [
+        'expires'  => $expire,
+        'path'     => '/',
+        'secure'   => true,
+        'httponly' => true,
+        'samesite' => 'Strict',
+    ];
+};
 
 // ── handle username change ───────────────────────────────────────────────────
 
@@ -89,8 +104,8 @@ if (isset($_POST['action']) && $_POST['action'] === 'change_username') {
                 $remember = isset($_COOKIE['fu_username']);
                 $expire   = $remember ? time() + 60 * 60 * 24 * 30 : 0;
 
-                setcookie('fu_username', $newUsername, $expire, '/', '', false, true);
-                setcookie('fu_token',    $newToken,    $expire, '/', '', false, true);
+                setcookie('fu_username', $newUsername, $authCookieOpts($expire));
+                setcookie('fu_token',    $newToken,    $authCookieOpts($expire));
 
                 $fu->addSuccess('Username changed successfully.');
             }
@@ -169,8 +184,8 @@ if (isset($_POST['action']) && $_POST['action'] === 'change_password') {
                 $remember = isset($_COOKIE['fu_username']);
                 $expire   = $remember ? time() + 60 * 60 * 24 * 30 : 0;
 
-                setcookie('fu_username', $username, $expire, '/', '', false, true);
-                setcookie('fu_token',    $newToken,  $expire, '/', '', false, true);
+                setcookie('fu_username', $username, $authCookieOpts($expire));
+                setcookie('fu_token',    $newToken,  $authCookieOpts($expire));
 
                 $fu->addSuccess('Password changed successfully.');
             }

@@ -6,7 +6,7 @@ collective of fan websites. Works equally well as a standalone blog.
 Originally written by **Jenny Ferenc** in 2005. Ported to PHP 7 by **Ekaterina**
 (scripts.robotess.net) in 2020. 
 
-This Redux release updates the codebase to **PHP 8.2+** (current patch: Redux 1.2.2).
+This Redux release updates the codebase to **PHP 8.2+** (current patch: Redux 1.4.0).
 
 ---
 
@@ -136,7 +136,15 @@ To show only "Whole Collective" entries, set `$listingid = 0`.
 
 ## Upgrading
 
-### From Redux 1.1.x
+### From Redux 1.3.x
+
+1. Back up your database and all files.
+2. Upload all new files, overwriting existing ones — **except `blog-config.php`**,
+   which you can keep.
+3. Your existing session cookies will remain valid; no re-login required unless
+   you are upgrading from a version before the HMAC token was introduced.
+
+### From Redux 1.1.x or 1.2.x
 
 1. Back up your database and all files.
 2. Upload all new files, overwriting existing ones — **except `blog-config.php`**,
@@ -166,14 +174,18 @@ running the installer. The old format is not compatible.
 
 ---
 
-## Changing your admin password
+## Changing your admin credentials
 
-Use **Admin → Password** in the admin panel. You will be asked for your current
-password before the change is accepted. The new hash is written to
-`blog-config.php` automatically and your session stays active.
+Use **Admin → Account** in the admin panel. The page has two sections:
 
-If `blog-config.php` is not writable, the page will display the ready-to-paste
-bcrypt hash so you can update the file manually in a text editor.
+- **Change Username** — enter a new username and confirm it. No current value
+  required since you are already authenticated.
+- **Change Password** — enter your current password, then the new password
+  (minimum 8 characters) and a confirmation. The new bcrypt hash is written to
+  `blog-config.php` automatically and your session stays active.
+
+If `blog-config.php` is not writable, both forms display the ready-to-paste
+value so you can update the file manually in a text editor.
 
 ---
 
@@ -312,6 +324,35 @@ bodies are automatically added as RSS enclosures for podcast support.
 
 ---
 
+## Security
+
+### Login rate limiting
+
+After 5 failed login attempts from the same IP address, that IP is locked out
+for 15 minutes. Each subsequent lockout doubles the window (exponential
+backoff), capped at 24 hours. A successful login resets the counter immediately.
+
+Lock state is stored in `data/login_attempts/` (flat JSON files, one per IP).
+The directory is created automatically on first use and is protected by an
+auto-generated `.htaccess` deny rule. It is not web-accessible. If you use
+nginx, add a `location ^~ /data/ { deny all; }` rule to your server config.
+
+### Session cookies
+
+The `fu_username` and `fu_token` session cookies are issued with:
+
+| Flag | Value | Reason |
+|------|-------|--------|
+| `Secure` | `true` | Never transmitted over plain HTTP |
+| `HttpOnly` | `true` | Inaccessible to JavaScript |
+| `SameSite` | `Strict` | Not sent on any cross-site request |
+
+The site must run on HTTPS for `Secure` cookies to work. The admin panel will
+function on HTTP but the cookies will not be sent to the browser, effectively
+preventing login.
+
+---
+
 ## PHP 8.2 compatibility notes
 
 This release resolves all PHP 8.2 deprecation warnings:
@@ -341,7 +382,7 @@ fanupdate/
 ├── templates.php            # Admin: template editor
 ├── smilies.php              # Admin: smilies
 ├── blacklist.php            # Admin: spam blacklist
-├── change-password.php      # Admin: change admin password
+├── account.php              # Admin: change username and password
 ├── credits.php              # Admin: version info and credits
 ├── install.php              # Installer (DELETE after use)
 ├── process.php              # Comment submission handler
@@ -357,7 +398,10 @@ fanupdate/
 │   ├── FanUpdate.php        # Core application class
 │   ├── FanUpdate_Post.php   # Post model
 │   ├── FanUpdate_Comment.php# Comment model
+│   ├── LoginRateLimiter.php # IP-based login rate limiter
 │   └── SqlConnection.php    # Database abstraction (singleton)
+├── data/
+│   └── login_attempts/      # Rate limiter lock files (auto-created, not web-accessible)
 ├── css/
 │   └── style.css            # Admin panel styles
 ├── js/
@@ -448,6 +492,25 @@ $fanupdate['admin_password'] = password_hash('your-password', PASSWORD_BCRYPT);
 
 Or run: `php -r "echo password_hash('your-password', PASSWORD_BCRYPT);"` and
 paste the result.
+
+### I am locked out of the admin panel
+
+After 5 failed login attempts your IP is locked out for 15 minutes (Redux
+1.3.0+). The lockout window doubles on each subsequent lockout, up to a maximum
+of 24 hours.
+
+To clear a lockout manually, delete the relevant lock file from
+`data/login_attempts/` on the server. Files are named `fu_<md5-of-ip>.json`.
+If you do not know which file is yours, deleting all `fu_*.json` files in that
+directory is safe — they will be recreated on the next failed attempt.
+
+### Login fails even with the correct password after upgrading to Redux 1.4.0
+
+Redux 1.4.0 adds `Secure=true` to the session cookies, which means the browser
+will not send them over plain HTTP. If your admin panel URL begins with `http://`
+rather than `https://`, the cookies will never arrive and every page load will
+show the login form. The fix is to ensure the site runs on HTTPS and access the
+admin panel via `https://`.
 
 ---
 

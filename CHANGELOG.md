@@ -1,7 +1,75 @@
 # Changelog — FanUpdate Redux
 
 All notable changes to this project are documented here.  
-Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
+
+
+---
+
+## [Redux 1.4.0] — May 29, 2026 — Cookie Security
+
+### Security
+
+- **`Secure` flag** added to `fu_username` and `fu_token` cookies — cookies are
+  now never transmitted over plain HTTP; requires the site to run on HTTPS
+- **`SameSite=Strict`** added to `fu_username` and `fu_token` cookies — cookies
+  are not sent on any cross-site request, closing a CSRF vector against the
+  admin panel
+- All `setcookie()` calls for auth cookies converted from the positional-argument
+  form to the **options-array form** (PHP 7.3+) — the only clean way to set
+  `SameSite` without writing a raw `Set-Cookie` header manually
+- `FanUpdate::setAuthCookie()` private helper added — centralises all auth
+  cookie attributes so a single change propagates everywhere; used by all six
+  cookie-issuing points in `login()`
+- `account.php` — cookie reissue calls updated to match; uses an `$authCookieOpts`
+  closure since `account.php` issues cookies outside the class
+- `process.php` commenter cookies (`fanuname`, `fanuemail`, `fanuurl`) updated:
+  `Secure=true` added; `HttpOnly` remains `false` (JS-readable for form
+  pre-fill); `SameSite=Lax` (not Strict — Strict would clear cookies on
+  cross-page navigation, breaking the pre-fill feature)
+
+---
+
+## [Redux 1.3.0] — May 29, 2026 — Rate Limiting & Account Page
+
+### Security
+
+- **Login rate limiting** — `class/LoginRateLimiter.php` added; tracks failed
+  login attempts per IP in flat JSON files stored in `data/login_attempts/`
+  (not web-accessible); after 5 failures the IP is locked out for 15 minutes;
+  each subsequent lockout doubles the window (exponential backoff), capped at
+  24 hours; a successful login resets the counter immediately
+- `REMOTE_ADDR` used as the rate-limit key — `X-Forwarded-For` is never trusted
+  because it is trivially spoofable
+- Lock files are stored in `data/login_attempts/` with a `.htaccess` deny rule
+  auto-created on first use; directory is created automatically if absent
+- Stale lock files pruned automatically (at most once per hour) so the directory
+  does not grow indefinitely
+
+### Added
+
+- **`account.php`** — combined admin credentials page replacing the separate
+  `change-password.php` and `change-username.php` files; hosts both the
+  "Change Username" and "Change Password" forms on a single page; username
+  change requires no current-value verification (admin is already authenticated);
+  password change still requires current password via `password_verify()`; both
+  reissue a fresh HMAC session token immediately so the admin stays logged in
+- **Account link** added to main nav in `footer.php`, positioned before Options
+  (more important than Smilies or Credits)
+- `class/LoginRateLimiter.php` — standalone class, no DB or APCu dependency;
+  self-healing (stale files pruned automatically); shared-host friendly
+
+### Changed
+
+- `change-password.php` and `change-username.php` retired — superseded by
+  `account.php`
+- Main nav order updated: Dashboard · Entries · Comments · Categories ·
+  **Account** · Options · Credits · Logout
+- `footer.php` — Password link replaced with Account link
+
+### Fixed
+
+- Username validation in `account.php` restricts to `[A-Za-z0-9_]` to prevent
+  single-quote injection into the `blog-config.php` regex replacement
 
 ---
 

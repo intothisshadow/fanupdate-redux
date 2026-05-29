@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 /*****************************************************************************
  * FanUpdate — version.php
@@ -22,7 +23,7 @@ declare(strict_types=1);
 // ── release identity ─────────────────────────────────────────────────────────
 
 /** Human-readable version string displayed in the UI, footer, and RSS feeds. */
-const FU_VERSION      = 'Redux 1.2.2';
+const FU_VERSION      = 'Redux 1.4.0';
 
 /** Database schema version — update only when install.php adds/alters tables. */
 const FU_DB_VERSION   = '2.2.1b2';
@@ -31,7 +32,7 @@ const FU_DB_VERSION   = '2.2.1b2';
 const FU_RELEASE_DATE = '2026-05-29';
 
 /** Short release codename (shown on the Dashboard and Credits page). */
-const FU_RELEASE_NAME = 'gplv3';
+const FU_RELEASE_NAME = 'cookie security (Secure + SameSite)';
 
 // ── project URLs (rarely change) ─────────────────────────────────────────────
 
@@ -63,8 +64,8 @@ const FU_CONTRIBUTORS = [
         'url'          => 'http://prism-perfect.net/',
         'email'        => 'jenny@prism-perfect.net',
         'contribution' => 'Created FanUpdate from scratch. Wrote the core engine, '
-                        . 'admin panel, comment system, RSS feeds, CAPTCHA, smilies, '
-                        . 'blacklist, and collective script integration.',
+            . 'admin panel, comment system, RSS feeds, CAPTCHA, smilies, '
+            . 'blacklist, and collective script integration.',
     ],
     [
         'name'         => 'Ekaterina',
@@ -73,8 +74,8 @@ const FU_CONTRIBUTORS = [
         'url'          => 'https://scripts.robotess.net',
         'email'        => null,
         'contribution' => 'Ported the codebase to PHP 7.2+. Introduced the class/'
-                        . ' directory structure, OOP mysqli, and the Robotess Fork '
-                        . 'release series. Maintained the GitLab repository.',
+            . ' directory structure, OOP mysqli, and the Robotess Fork '
+            . 'release series. Maintained the GitLab repository.',
     ],
     [
         'name'         => 'Redux contributor',
@@ -83,10 +84,10 @@ const FU_CONTRIBUTORS = [
         'url'          => null,
         'email'        => null,
         'contribution' => 'Full PHP 8.2+ compatibility pass: explicit property '
-                        . 'declarations, strict return types, utf8_encode() removal, '
-                        . 'bcrypt password storage, HMAC session tokens, '
-                        . 'change-password admin page, version system, credits page, '
-                        . 'and GPLv3 licence upgrade.',
+            . 'declarations, strict return types, utf8_encode() removal, '
+            . 'bcrypt password storage, HMAC session tokens, '
+            . 'change-password admin page, version system, credits page, '
+            . 'and GPLv3 licence upgrade.',
     ],
 ];
 

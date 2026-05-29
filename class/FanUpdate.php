@@ -366,20 +366,21 @@ class FanUpdate
             . 'FanUpdate ' . $version . '</a>'
             . ' &mdash; <a href="credits.php">credits</a>';
     }
-// ── cookie functions ─────────────────────────────────────────────────────
+    // ── cookie helper ────────────────────────────────────────────────────────
 
+    /**
      * Issue or expire a session cookie with the full security attribute set.
      *
-     * Using the options-array form of setcookie() (PHP 7.3+) is the only way
-     * to set SameSite without writing a raw Set-Cookie header manually.
+     * Uses the options-array form of setcookie() (PHP 7.3+) — the only clean
+     * way to set SameSite without writing a raw Set-Cookie header manually.
      *
      * Flags:
-     *  secure   = true  — cookie is never sent over plain HTTP
-     *  httponly = true  — cookie is inaccessible to JavaScript (XSS mitigation)
-     *  samesite = Strict — cookie is not sent on cross-site requests (CSRF mitigation)
+     *  secure   = true   — never sent over plain HTTP
+     *  httponly = true   — inaccessible to JavaScript (XSS mitigation)
+     *  samesite = Strict — not sent on cross-site requests (CSRF mitigation)
      *
      * @param string $name    Cookie name
-     * @param string $value   Cookie value; pass '' to expire
+     * @param string $value   Cookie value; pass '' to expire immediately
      * @param int    $expire  Unix timestamp (0 = session cookie; negative = expire now)
      */
     private function setAuthCookie(string $name, string $value, int $expire): void
@@ -395,7 +396,7 @@ class FanUpdate
 
     // ── login ────────────────────────────────────────────────────────────────
     //
-    // Security model (Redux 1.3.0+):
+    // Security model (Redux 1.4.0):
     //
     //  Passwords / session tokens (unchanged from Redux 1.2.0):
     //  • Passwords stored as bcrypt via password_hash(PASSWORD_BCRYPT).
@@ -416,14 +417,19 @@ class FanUpdate
     //  • REMOTE_ADDR is used as the key — X-Forwarded-For is never trusted
     //    because it is trivially spoofable.
     //
+    //  Cookie flags (Redux 1.4.0):
+    //  • Secure=true  — cookies never sent over plain HTTP
+    //  • HttpOnly=true — cookies inaccessible to JavaScript
+    //  • SameSite=Strict — cookies not sent on cross-site requests
+    //
     // ────────────────────────────────────────────────────────────────────────
 
     public function login(): void
     {
         // ── logout ──────────────────────────────────────────────────────────
         if (isset($_GET['action']) && $_GET['action'] === 'logout') {
-            setcookie('fu_username', '', time() - 36000, '/', '', false, true);
-            setcookie('fu_token',    '', time() - 36000, '/', '', false, true);
+            $this->setAuthCookie('fu_username', '', time() - 36000);
+            $this->setAuthCookie('fu_token',    '', time() - 36000);
             header('Location: ' . clean_input($_SERVER['PHP_SELF']));
             exit;
         }
@@ -446,8 +452,8 @@ class FanUpdate
                 $showform = false;
             } else {
                 $this->addErr('Session expired or invalid. Please log in again.');
-                setcookie('fu_username', '', time() - 36000, '/', '', false, true);
-                setcookie('fu_token',    '', time() - 36000, '/', '', false, true);
+                $this->setAuthCookie('fu_username', '', time() - 36000);
+                $this->setAuthCookie('fu_token',    '', time() - 36000);
             }
         }
 
@@ -511,8 +517,8 @@ class FanUpdate
 
                     $token = hash_hmac('sha256', $username, $storedHash);
 
-                    setcookie('fu_username', $username, $expire, '/', '', false, true);
-                    setcookie('fu_token',    $token,    $expire, '/', '', false, true);
+                    $this->setAuthCookie('fu_username', $username, $expire);
+                    $this->setAuthCookie('fu_token',    $token,    $expire);
 
                     $showform = false;
                 } else {
@@ -522,8 +528,8 @@ class FanUpdate
                     // Deliberate: same message for wrong username and wrong
                     // password — do not leak which one was incorrect.
                     $this->addErr('Invalid username or password. Please try again.');
-                    setcookie('fu_username', '', time() - 36000, '/', '', false, true);
-                    setcookie('fu_token',    '', time() - 36000, '/', '', false, true);
+                    $this->setAuthCookie('fu_username', '', time() - 36000);
+                    $this->setAuthCookie('fu_token',    '', time() - 36000);
                 }
             } // end rate-limit else
         }

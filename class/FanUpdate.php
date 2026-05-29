@@ -366,6 +366,32 @@ class FanUpdate
             . 'FanUpdate ' . $version . '</a>'
             . ' &mdash; <a href="credits.php">credits</a>';
     }
+// ── cookie functions ─────────────────────────────────────────────────────
+
+     * Issue or expire a session cookie with the full security attribute set.
+     *
+     * Using the options-array form of setcookie() (PHP 7.3+) is the only way
+     * to set SameSite without writing a raw Set-Cookie header manually.
+     *
+     * Flags:
+     *  secure   = true  — cookie is never sent over plain HTTP
+     *  httponly = true  — cookie is inaccessible to JavaScript (XSS mitigation)
+     *  samesite = Strict — cookie is not sent on cross-site requests (CSRF mitigation)
+     *
+     * @param string $name    Cookie name
+     * @param string $value   Cookie value; pass '' to expire
+     * @param int    $expire  Unix timestamp (0 = session cookie; negative = expire now)
+     */
+    private function setAuthCookie(string $name, string $value, int $expire): void
+    {
+        setcookie($name, $value, [
+            'expires'  => $expire,
+            'path'     => '/',
+            'secure'   => true,
+            'httponly' => true,
+            'samesite' => 'Strict',
+        ]);
+    }
 
     // ── login ────────────────────────────────────────────────────────────────
     //

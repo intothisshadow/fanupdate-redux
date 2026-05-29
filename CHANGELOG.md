@@ -5,6 +5,51 @@ All notable changes to this project are documented here.
 
 ---
 
+## [Redux 1.5.1] — May 29, 2026 — Timezone Fix & Options Cleanup
+
+### Fixed
+
+- **Posts hidden by timezone offset miscalculation** — `show-blog.php`,
+  `show-cat.php`, and `rss.php` all used
+  `DATE_ADD(CURRENT_TIMESTAMP(), INTERVAL -X HOUR)` to filter post visibility,
+  where `X` was the `_server_tz_offset` option. On servers where the MySQL
+  timezone differed from UTC, this calculation could make recently-added posts
+  appear future-dated and hide them from the public blog. All three files now
+  use `UTC_TIMESTAMP()` directly — no offset arithmetic, no drift, correct
+  behaviour regardless of server timezone configuration.
+- **Post and comment dates displayed in wrong timezone** — `getDateFormatted()`
+  in both `FanUpdate_Post` and `FanUpdate_Comment` was applying
+  `_server_tz_offset` to shift display dates, which was the server's own UTC
+  offset rather than the admin's local timezone. Replaced with `timezone_offset`
+  (the admin-configured hours-from-UTC value, e.g. `3` for UTC+3), so displayed
+  dates now correctly reflect the admin's local time.
+
+### Changed
+
+- **`_server_tz_offset` option removed** — no longer used anywhere in the
+  codebase. Existing installs: delete it via
+  `DELETE FROM blog_options WHERE optkey = '_server_tz_offset'` in phpMyAdmin,
+  or simply run `install.php` which now removes it automatically on upgrade.
+- `install.php` — `$setting[27]` (`_server_tz_offset`) removed from the
+  settings array so fresh installs never create it
+- `install.php` — upgrade path now issues a `DELETE` to remove
+  `_server_tz_offset` from any existing database automatically
+- `install.php` — the legacy `UPGRADE FROM < 2.2b3` time-conversion block
+  previously referenced `$setting[27]['optvalue']`; now reads the value
+  directly from the database (for anyone upgrading from a pre-2.2b3 install
+  where the conversion has not yet run)
+
+### Files changed
+
+- `show-blog.php`
+- `show-cat.php`
+- `rss.php`
+- `class/FanUpdate_Post.php`
+- `class/FanUpdate_Comment.php`
+- `install.php`
+
+---
+
 ## [Redux 1.5.0] — May 29, 2026 — Post-Install Hardening & Bug Fixes
 
 ### Security
@@ -333,7 +378,7 @@ includes a security audit pass.
 - `get_magic_quotes_gpc()` call in `SqlConnection::Escape()` — the function was
   removed in PHP 8.0; `stripslashes()` companion call also removed
 - Curly-brace string-index syntax (`$str{0}`) in `functions.php` — removed in
-  PHP 8.0; replaced with square-bracket syntax (`$str[0]`)
+  PHP 8.0; replaced with square-bracket syntax (`$str[0]`)`
 - Redundant `mysqli_real_escape_string()` availability check (PHP 4 era)
 
 ### Fixed

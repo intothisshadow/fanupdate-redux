@@ -6,7 +6,7 @@ collective of fan websites. Works equally well as a standalone blog.
 Originally written by **Jenny Ferenc** in 2005. Ported to PHP 7 by **Ekaterina**
 (scripts.robotess.net) in 2020. 
 
-This Redux release updates the codebase to **PHP 8.2+** (current patch: Redux 1.5.0).
+This Redux release updates the codebase to **PHP 8.2+** (current patch: Redux 1.5.1).
 
 ---
 
@@ -142,6 +142,15 @@ To show only "Whole Collective" entries, set `$listingid = 0`.
 ---
 
 ## Upgrading
+
+### From Redux 1.5.x
+
+1. Back up your database and all files.
+2. Upload all new files, overwriting existing ones — **except `blog-config.php`**,
+   which you can keep.
+3. Run `install.php` — it will automatically remove the obsolete
+   `_server_tz_offset` option from your database.
+4. `install.php` will delete itself automatically on success.
 
 ### From Redux 1.4.x
 
@@ -554,6 +563,21 @@ missing ones).
 fail if the file is not writable by the web server process. Delete it manually
 via FTP or your hosting file manager. The warning will disappear on the next
 login once the file is gone.
+
+### Some posts are not visible on the public blog
+
+This was a timezone bug present in Redux 1.5.0 and earlier. The post visibility
+query used `DATE_ADD(CURRENT_TIMESTAMP(), INTERVAL X HOUR)` with the
+`_server_tz_offset` option to determine which posts had passed their scheduled
+time. On servers where the MySQL timezone differed from UTC, this calculation
+could make recently-added posts appear future-dated and hide them.
+
+Fixed in Redux 1.5.1 — all visibility queries now use `UTC_TIMESTAMP()`
+directly, which is always correct regardless of server timezone. Upgrade to
+1.5.1 and run `install.php` to remove the obsolete `_server_tz_offset` option.
+
+If you cannot upgrade immediately, go to **Admin → Options** and set
+`_server_tz_offset` to `0`.
 
 ---
 

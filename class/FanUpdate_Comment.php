@@ -12,18 +12,14 @@
  *  - No utf8_encode() / utf8_decode() usage
  *  - declare(strict_types=1) at file level
  *
+ * Redux 1.5.1 fix:
+ *  - getDateFormatted(): replaced _server_tz_offset with timezone_offset.
+ *    Same reasoning as FanUpdate_Post — see that file for full explanation.
+ *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/gpl-3.0.html>.
  ******************************************************************************/
 
 declare(strict_types=1);
@@ -87,39 +83,28 @@ class FanUpdate_Comment
         return (string) ($this->params['email'] ?? '');
     }
 
-    /**
-     * Return the commenter's URL (their website, if provided).
-     * Not to be confused with getLinkUrl() which is the permalink to this comment.
-     */
     public function getUrl(): string
     {
         return (string) ($this->params['url'] ?? '');
     }
 
+    public function getPoints(): int
+    {
+        return (int) ($this->params['points'] ?? 0);
+    }
+
     // ── body ──────────────────────────────────────────────────────────────────
 
-    /**
-     * Return the raw (unformatted) comment text.
-     */
     public function getBody(): string
     {
         return (string) ($this->params['comment'] ?? '');
     }
 
-    /**
-     * Return the comment text formatted with wpautop() / wptexturize().
-     */
     public function getBodyFormatted(): string
     {
         return wpautop($this->getBody(), true, false);
     }
 
-    /**
-     * Return a word-count-limited excerpt of the comment.
-     *
-     * @param int  $words     Word limit (0 = no limit).
-     * @param bool $strip_tags Strip HTML before returning.
-     */
     public function getAbstract(int $words = 0, bool $strip_tags = false): string
     {
         $text = $this->getBody();
@@ -137,17 +122,17 @@ class FanUpdate_Comment
 
     // ── date ──────────────────────────────────────────────────────────────────
 
-    /**
-     * Return the raw stored date string (MySQL datetime, UTC).
-     */
     public function getDate(): string
     {
         return (string) ($this->params['added'] ?? '');
     }
 
     /**
-     * Return the date formatted according to $format (PHP date() format string).
-     * Falls back to the 'date_format' option if no format is supplied.
+     * Return the date formatted for display, adjusted to the admin's configured
+     * local timezone (timezone_offset = hours difference from UTC).
+     *
+     * Uses timezone_offset instead of the old _server_tz_offset — see
+     * FanUpdate_Post::getDateFormatted() for full explanation.
      */
     public function getDateFormatted(string $format = ''): string
     {
@@ -155,13 +140,14 @@ class FanUpdate_Comment
             $format = (string) $this->fu->getOpt('date_format');
         }
 
-        $ts = strtotime($this->getDate());
+        $ts = strtotime($this->getDate() . ' UTC');
         if ($ts === false) {
             return '';
         }
 
-        $offset = (int) $this->fu->getOpt('_server_tz_offset');
-        $ts    -= $offset * 3600;
+        $raw    = $this->fu->getOpt('timezone_offset');
+        $offset = ($raw === false) ? 0 : (int) $raw;
+        $ts    += $offset * 3600;
 
         return date($format, $ts);
     }
@@ -175,9 +161,6 @@ class FanUpdate_Comment
 
     // ── URLs ──────────────────────────────────────────────────────────────────
 
-    /**
-     * Permanent link to this comment (blog page + anchor).
-     */
     public function getLinkUrl(): string
     {
         return (string) ($this->params['link_url'] ?? '');
@@ -185,11 +168,6 @@ class FanUpdate_Comment
 
     // ── Gravatar ──────────────────────────────────────────────────────────────
 
-    /**
-     * Build the Gravatar image URL for this commenter's email.
-     *
-     * @param int $size  Image size in pixels (max 80, per option).
-     */
     public function getGravatarUrl(int $size = 0): string
     {
         if (!$this->fu->getOpt('gravatar_on')) {
@@ -217,11 +195,6 @@ class FanUpdate_Comment
             . '&r=' . $rating;
     }
 
-    /**
-     * Return an <img> tag for this commenter's Gravatar.
-     *
-     * @param int $size  Image size in pixels.
-     */
     public function getGravatar(int $size = 0): string
     {
         if (!$this->fu->getOpt('gravatar_on')) {
@@ -243,10 +216,6 @@ class FanUpdate_Comment
 
     // ── commenter link ────────────────────────────────────────────────────────
 
-    /**
-     * Return the commenter's name as a link to their URL (if they provided one),
-     * or plain text if they didn't.
-     */
     public function getCommenterLink(): string
     {
         $name = htmlspecialchars($this->getName());
@@ -261,24 +230,11 @@ class FanUpdate_Comment
 
     // ── template rendering ────────────────────────────────────────────────────
 
-    /**
-     * Print the comment using the configured comment_template.
-     *
-     * Template variables (from readme.txt):
-     *   {{id}}       — comment ID
-     *   {{name}}     — commenter name (linked to their URL if provided)
-     *   {{gravatar}} — Gravatar img tag
-     *   {{date}}     — formatted date
-     *   {{body}}     — formatted comment text
-     *
-     * @return void
-     */
     public function printComment(): void
     {
         $template = (string) $this->fu->getOpt('comment_template');
 
         if ($template === '') {
-            // Hard fallback — mirrors the default set in install.php
             $template =
                 '{{gravatar}}' . "\n"
                 . '<p class="commenter">On '
@@ -287,11 +243,11 @@ class FanUpdate_Comment
                 . '{{body}}';
         }
 
-        $template = str_replace('{{id}}',       (string) $this->getID(),          $template);
-        $template = str_replace('{{name}}',      $this->getCommenterLink(),         $template);
-        $template = str_replace('{{gravatar}}',  $this->getGravatar(),              $template);
-        $template = str_replace('{{date}}',      $this->getDateFormatted(),         $template);
-        $template = str_replace('{{body}}',      $this->getBodyFormatted(),         $template);
+        $template = str_replace('{{id}}',      (string) $this->getID(), $template);
+        $template = str_replace('{{name}}',    $this->getCommenterLink(),  $template);
+        $template = str_replace('{{gravatar}}', $this->getGravatar(),      $template);
+        $template = str_replace('{{date}}',    $this->getDateFormatted(),  $template);
+        $template = str_replace('{{body}}',    $this->getBodyFormatted(),  $template);
 
         echo '<div id="comment' . $this->getID() . '" class="comment">' . "\n";
         echo $template . "\n";

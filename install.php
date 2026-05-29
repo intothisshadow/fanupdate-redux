@@ -293,11 +293,6 @@ $setting[26]['optvalue'] = 0;
 $setting[26]['optdesc']  = 'Hours difference between your location and GMT. Default: 0';
 $setting[26]['version']  = '2.2b3';
 
-$setting[27]['optkey']   = '_server_tz_offset';
-$setting[27]['optvalue'] = date('Z') / 3600;
-$setting[27]['optdesc']  = 'Hours difference between server time and GMT.';
-$setting[27]['version']  = '2.2b3';
-
 $setting[28]['optkey']   = 'ajax_comments';
 $setting[28]['optvalue'] = 'y';
 $setting[28]['optdesc']  = 'Use ajax commenting? Turn off if you have problems. y or n';
@@ -592,7 +587,13 @@ if (!$fu->noErr()) {
 
     if ($version_installed > 0 && version_compare((string) $version_installed, '2.2b3', '<')) {
 
-        $query = 'UPDATE ' . $fu->getOpt('blog_table') . ' SET added=DATE_ADD(added, INTERVAL ' . (0 - $setting[27]['optvalue']) . ' HOUR)';
+        // _server_tz_offset no longer exists in $setting[], so read it
+        // directly from the DB for this legacy time-conversion query.
+        $legacy_offset = (float) $fu->db->GetFirstCell(
+            'SELECT optvalue FROM ' . $fu->getOpt('options_table') . " WHERE optkey='_server_tz_offset' LIMIT 1"
+        );
+
+        $query = 'UPDATE ' . $fu->getOpt('blog_table') . ' SET added=DATE_ADD(added, INTERVAL ' . (0 - $legacy_offset) . ' HOUR)';
         if ($fu->db->Execute($query)) {
             if ($fu->db->AffectedRows() > 0) {
                 $fu->addSuccess('Blog times converted to GMT.');
@@ -601,7 +602,7 @@ if (!$fu->noErr()) {
             $fu->addErr('Failed to convert blog times to GMT!');
         }
 
-        $query = 'UPDATE ' . $fu->getOpt('comments_table') . ' SET added=DATE_ADD(added, INTERVAL ' . (0 - $setting[27]['optvalue']) . ' HOUR)';
+        $query = 'UPDATE ' . $fu->getOpt('comments_table') . ' SET added=DATE_ADD(added, INTERVAL ' . (0 - $legacy_offset) . ' HOUR)';
         if ($fu->db->Execute($query)) {
             if ($fu->db->AffectedRows() > 0) {
                 $fu->addSuccess('Comment times converted to GMT.');
@@ -627,7 +628,16 @@ if (!$fu->noErr()) {
     // _______________________________________________ UPGRADE FROM ANY VERSION
 
     if ($version_installed > 0 && version_compare((string) $version_installed, $installer_version, '<')) {
-
+        // Remove _server_tz_offset — no longer used as of Redux 1.5.1.
+        // All queries now use UTC_TIMESTAMP() directly; date display uses
+        // timezone_offset instead.
+        $fu->db->Execute(
+            'DELETE FROM ' . $fu->getOpt('options_table') . " WHERE optkey='_server_tz_offset'",
+            null
+        );
+        if ($fu->db->AffectedRows() > 0) {
+            $fu->addSuccess('Removed obsolete option <strong>_server_tz_offset</strong>.');
+        }
         $files = [];
         $files[] = 'add-fl.php';
         $files[] = 'blog-admin.php';

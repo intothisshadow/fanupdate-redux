@@ -582,6 +582,7 @@ class FanUpdate
 
                     $this->db->Execute($query_comments);
                     $post->addParam('num_comments', $this->db->NumRows());
+                    $this->db->FreeResult();
                 }
 
                 echo '<div id="post' . $post->getID() . '" class="post">';

@@ -13,11 +13,22 @@
  *  - Strict return types added throughout
  *  - #[\AllowDynamicProperties] NOT used — all properties declared instead
  *
+ * Bug fix (Redux 1.1.2):
+ *  - ExecutePaginate(): replaced broken NumRows()-after-GetFirstCell() count
+ *    logic with a clean subquery approach:
+ *      SELECT COUNT(*) FROM (...original query without ORDER BY...) AS _sub
+ *    This correctly handles both plain queries and GROUP BY queries.
+ *    The old `if ($numrows > 1)` branch was unreachable for COUNT(*) (which
+ *    always returns exactly 1 row) and caused total_results to be set to 1
+ *    instead of the real post count, limiting the blog to a single visible post.
+ *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 2 of the License, or
  * any later version.
  ******************************************************************************/
+
+declare(strict_types=1);
 
 class SqlConnection
 {
@@ -38,11 +49,11 @@ class SqlConnection
 
     private int $_NumQueries = 0;
 
-    // ── pagination ──────────────────────────────────────────────────────────
-    public int   $max_results   = 15;
-    public int   $page          = 1;
-    public int   $total_results = 0;
-    public int   $cur_row       = 0;
+    // ── pagination state ────────────────────────────────────────────────────
+    public int $max_results   = 15;
+    public int $page          = 1;
+    public int $total_results = 0;
+    public int $cur_row       = 0;
 
     /** @var self */
     private static SqlConnection $instance;
@@ -96,7 +107,7 @@ class SqlConnection
             $this->SetConnOpt($host, $user, $pass, $name);
         }
 
-        // Short-circuit when already connected (and no new credentials given)
+        // Short-circuit when already connected (and no new credentials given).
         if ($this->_Cnn !== false && $host === '') {
             return true;
         }
@@ -113,8 +124,10 @@ class SqlConnection
             return false;
         }
 
-        // Uncomment to force UTF-8 at the connection level:
-        // $this->Execute("SET NAMES utf8mb4");
+        // Force UTF-8 at the connection level — eliminates need for encoding
+        // conversion elsewhere, and replaces the deprecated utf8_encode/decode
+        // pattern for data round-trips through the database.
+        @mysqli_set_charset($this->_Cnn, 'utf8mb4');
 
         return true;
     }
@@ -129,8 +142,8 @@ class SqlConnection
 
         $this->_NumQueries++;
 
-        // PHP 8.0+: mysqli throws mysqli_sql_exception by default in some configs.
-        // We disable exception mode for the query and restore it after, so callers
+        // PHP 8.0+: mysqli may throw mysqli_sql_exception in some configs.
+        // Disable exception mode for the query and restore it after, so callers
         // can pass $err_msg=null to safely probe for table existence.
         $driver = new \mysqli_driver();
         $prev_report = $driver->report_mode;
@@ -159,6 +172,21 @@ class SqlConnection
         return true;
     }
 
+    /**
+     * Execute a query with pagination support.
+     *
+     * FIX (Redux 1.1.2): The previous implementation called GetFirstCell()
+     * (which internally calls FreeResult(), popping the result off $_Results),
+     * then called NumRows() which reads end($_Results) — now pointing at a
+     * stale earlier result. The bogus $numrows value was then used in an
+     * `if ($numrows > 1)` branch that could silently overwrite total_results
+     * with 1, causing only one post to be shown.
+     *
+     * The fix wraps the base query in a subquery for counting:
+     *   SELECT COUNT(*) FROM (...) AS _fu_count_sub
+     * This always returns exactly one integer regardless of GROUP BY clauses,
+     * and does not depend on the result stack state after GetFirstCell().
+     */
     public function ExecutePaginate(string $Sql, int $max_results = 0): void
     {
         if ($max_results > 0) {
@@ -167,17 +195,14 @@ class SqlConnection
 
         $this->page = isset($_GET['p']) ? (int) $_GET['p'] : 1;
 
-        $sql_from = strstr($Sql, 'FROM ');
-        [$sql_from] = explode('ORDER BY ', (string) $sql_from);
-        $count_sql = 'SELECT COUNT(*) ' . $sql_from;
+        // Strip ORDER BY from the base query to build the count subquery.
+        // Use a subquery wrapper so GROUP BY is counted correctly:
+        //   SELECT COUNT(*) FROM (SELECT ... FROM ... WHERE ... GROUP BY ...) AS _fu_count_sub
+        $sql_without_order = preg_replace('/\s+ORDER\s+BY\s+.+$/is', '', $Sql);
+        $count_sql = 'SELECT COUNT(*) FROM (' . $sql_without_order . ') AS _fu_count_sub';
 
-        $this->Execute($count_sql);
-        $numrows = $this->NumRows();
-        $this->total_results = (int) $this->GetFirstCell();
-
-        if ($numrows > 1) {
-            $this->total_results = $numrows;
-        }
+        // GetFirstCell() executes and frees in one shot — no result stack side-effects.
+        $this->total_results = (int) $this->GetFirstCell($count_sql);
 
         if (isset($_GET['nopage'])) {
             $this->max_results = $this->total_results;
@@ -238,6 +263,31 @@ class SqlConnection
         return $row[0] ?? false;
     }
 
+    /**
+     * Fetch all rows from the last (or a new) query as an array of associative
+     * arrays, then free the result.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function GetAll(string $sql = ''): array
+    {
+        if ($sql !== '') {
+            $this->Execute($sql);
+        }
+
+        $res = $this->GetLastResult();
+        if ($res === false) {
+            return [];
+        }
+
+        $rows = [];
+        while ($row = mysqli_fetch_assoc($res)) {
+            $rows[] = $row;
+        }
+        $this->FreeResult();
+        return $rows;
+    }
+
     public function GetLastResult(): \mysqli_result|false
     {
         $result = end($this->_Results);
@@ -286,8 +336,8 @@ class SqlConnection
 
     /**
      * Escape a value for safe insertion into a SQL query.
-     * get_magic_quotes_gpc() was removed in PHP 8.0; stripslashes() fallback
-     * removed accordingly.
+     * get_magic_quotes_gpc() was removed in PHP 8.0; stripslashes() companion
+     * call removed accordingly.
      */
     public function Escape(string $value): string
     {
@@ -301,9 +351,9 @@ class SqlConnection
     // ── pagination output ───────────────────────────────────────────────────
 
     public function PrintPaginate(
-        bool   $doNums    = true,
-        string $nextName  = 'Next',
-        string $prevName  = 'Previous'
+        bool   $doNums   = true,
+        string $nextName = 'Next',
+        string $prevName = 'Previous'
     ): void {
         if ($this->total_results <= $this->max_results) {
             return;

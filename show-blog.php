@@ -16,6 +16,13 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/gpl-3.0.html>.
+ *
+ * Redux 1.5.1 fix: replaced DATE_ADD(CURRENT_TIMESTAMP(), INTERVAL X HOUR)
+ * with UTC_TIMESTAMP(). The old offset arithmetic was a 2008-era workaround
+ * for servers not storing times in UTC. On modern PHP/MySQL stacks it causes
+ * posts to be hidden when the server clock and _server_tz_offset drift.
+ * UTC_TIMESTAMP() always returns the correct UTC time regardless of the
+ * server's local timezone setting.
  ******************************************************************************/
 ?>
 <div id="fanupdate">
@@ -40,8 +47,8 @@
 DATE_FORMAT( added, '%Y%m' ) AS get_monthx,
 COUNT(entry_id) AS num_entry
 FROM " . $fu->getOpt('blog_table') . '
-WHERE is_public > 0 AND added <= DATE_ADD(CURRENT_TIMESTAMP(), INTERVAL ' . (0 - $fu->getOpt('_server_tz_offset')) . ' HOUR)
-GROUP BY get_monthx DESC';
+WHERE is_public > 0 AND added <= UTC_TIMESTAMP()
+GROUP BY get_monthx ORDER BY get_monthx DESC';
 
             $fu->db->Execute($query);
 
@@ -61,7 +68,7 @@ GROUP BY get_monthx DESC';
 FROM ' . $fu->getOpt('catjoin_table') . ' j
 JOIN ' . $fu->getOpt('blog_table') . ' b ON j.entry_id=b.entry_id
 LEFT JOIN ' . $fu->getOpt('collective_table') . ' c ON j.cat_id=c.' . $fu->getOpt('col_id') . '
-WHERE b.is_public > 0 AND b.added <= DATE_ADD(CURRENT_TIMESTAMP(), INTERVAL ' . (0 - $fu->getOpt('_server_tz_offset')) . ' HOUR)
+WHERE b.is_public > 0 AND b.added <= UTC_TIMESTAMP()
 GROUP BY j.cat_id
 ORDER BY c.' . $fu->getOpt('col_subj') . ' ASC';
 
@@ -95,7 +102,7 @@ ORDER BY c.' . $fu->getOpt('col_subj') . ' ASC';
             $query .= ' JOIN ' . $fu->getOpt('catjoin_table') . ' j ON b.entry_id=j.entry_id';
         }
 
-        $query .= ' WHERE b.is_public > 0 AND b.added <= DATE_ADD(CURRENT_TIMESTAMP(), INTERVAL ' . (0 - $fu->getOpt('_server_tz_offset')) . ' HOUR)';
+        $query .= ' WHERE b.is_public > 0 AND b.added <= UTC_TIMESTAMP()';
 
         if (isset($_GET['c'])) {
 

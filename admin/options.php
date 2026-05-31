@@ -33,19 +33,13 @@ $clean = [];
 
 // ── PRIVATE KEYS: never shown in the form, never accepted from POST ──────────
 //
-// _db_version       : schema version used by install.php — read-only, not editable here
-// _last_update_check: dead key from the original prism-perfect.net polling (removed)
-// _last_update_version: dead key from the same defunct feature (removed)
-//
 // Any optkey that starts with '_' is treated as private by convention.
 // The list below is an explicit deny-list for the UPDATE handler so that even
 // if someone crafts a POST with these keys, they are silently ignored.
 
-/** @var list<string> PRIVATE_KEYS Keys that must never be written via this form. */
+/** @var list<string> OPTIONS_PRIVATE_KEYS Keys that must never be written via this form. */
 const OPTIONS_PRIVATE_KEYS = [
-    '_db_version',
-    '_last_update_check',
-    '_last_update_version',
+    '_db_version',       // schema version used by install.php — read-only
     '_server_tz_offset', // removed in Redux 1.5.1
 ];
 
@@ -85,7 +79,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'update') {
             } elseif ($fu->db->AffectedRows() > 0) {
                 $fu->addSuccess(
                     'Set <strong>' . htmlspecialchars($key, ENT_QUOTES, 'UTF-8') . '</strong> = '
-                    . nl2br(htmlspecialchars((string) $clean['value'][$id], ENT_QUOTES, 'UTF-8'))
+                        . nl2br(htmlspecialchars((string) $clean['value'][$id], ENT_QUOTES, 'UTF-8'))
                 );
             }
         }
@@ -96,13 +90,13 @@ $fu->getHeader('Options');
 
 ?>
 
-    <h2>Options</h2>
-    <ul class="subnav">
-        <li><a href="options.php">Main</a></li>
-        <li><a href="blacklist.php">Blacklist</a></li>
-        <li><a href="smilies.php">Smilies</a></li>
-        <li><a href="templates.php">Templates</a></li>
-    </ul>
+<h2>Options</h2>
+<ul class="subnav">
+    <li><a href="options.php">Main</a></li>
+    <li><a href="blacklist.php">Blacklist</a></li>
+    <li><a href="smilies.php">Smilies</a></li>
+    <li><a href="templates.php">Templates</a></li>
+</ul>
 
 <?php
 
@@ -132,64 +126,64 @@ $fu->db->FreeResult();
 
 ?>
 
-    <form action="options.php" method="post">
-        <?php
+<form action="options.php" method="post">
+    <?php
 
-        $class = 'odd'; // PHP 8.2: declare before use — no dynamic property risk here,
-                        // but explicit initialisation avoids the isset() dance below.
+    $class = 'odd'; // PHP 8.2: declare before use — no dynamic property risk here,
+    // but explicit initialisation avoids the isset() dance below.
 
-        foreach ($rows as $row) {
+    foreach ($rows as $row) {
 
-            $optkey = (string) $row['optkey'];
+        $optkey = (string) $row['optkey'];
 
-            // Skip private keys: any key that starts with '_' is internal.
-            // This covers _db_version and any future private keys automatically.
-            if (str_starts_with($optkey, '_')) {
-                continue;
-            }
-
-            $class = ($class === 'even') ? 'odd' : 'even';
-
-            $safe_key  = htmlspecialchars($optkey, ENT_QUOTES, 'UTF-8');
-            $safe_desc = htmlspecialchars((string) ($row['optdesc'] ?? ''), ENT_QUOTES, 'UTF-8');
-            $safe_val  = htmlspecialchars((string) ($row['optvalue'] ?? ''), ENT_QUOTES, 'UTF-8');
-
-            ?>
-            <div class="option <?php echo $class; ?>">
-                <p>
-                    <label for="<?php echo $safe_key; ?>">
-                        <?php echo $safe_key; ?>:
-                        <span class="help"><?php echo $safe_desc; ?></span>
-                    </label>
-                    <input type="text"
-                           id="<?php echo $safe_key; ?>"
-                           name="value[]"
-                           size="50"
-                           maxlength="255"
-                           value="<?php echo $safe_val; ?>" />
-                    <input type="hidden" name="key[]" value="<?php echo $safe_key; ?>" />
-                </p>
-            </div><!-- END .option -->
-            <?php
-
+        // Skip private keys: any key that starts with '_' is internal.
+        // This covers _db_version and any future private keys automatically.
+        if (str_starts_with($optkey, '_')) {
+            continue;
         }
 
-        ?>
+        $class = ($class === 'even') ? 'odd' : 'even';
 
-        <p>
-            <input type="hidden" name="action" value="update" />
-            <input type="submit"
-                   value="Save Changes"
-                   class="update"
-                   title="Save changes, accesskey s"
-                   accesskey="s"
-                   id="primary_action" />
-        </p>
+        $safe_key  = htmlspecialchars($optkey, ENT_QUOTES, 'UTF-8');
+        $safe_desc = htmlspecialchars((string) ($row['optdesc'] ?? ''), ENT_QUOTES, 'UTF-8');
+        $safe_val  = htmlspecialchars((string) ($row['optvalue'] ?? ''), ENT_QUOTES, 'UTF-8');
 
-    </form>
+    ?>
+        <div class="option <?php echo $class; ?>">
+            <p>
+                <label for="<?php echo $safe_key; ?>">
+                    <?php echo $safe_key; ?>:
+                    <span class="help"><?php echo $safe_desc; ?></span>
+                </label>
+                <input type="text"
+                    id="<?php echo $safe_key; ?>"
+                    name="value[]"
+                    size="50"
+                    maxlength="255"
+                    value="<?php echo $safe_val; ?>" />
+                <input type="hidden" name="key[]" value="<?php echo $safe_key; ?>" />
+            </p>
+        </div><!-- END .option -->
+    <?php
 
-    <p>Many of these options can be overridden by <a href="category.php">category-level settings</a>.
-       Be aware, if you change the <strong>install_path</strong> you will need to generate new
-       code snippets for inclusion in your sites.</p>
+    }
+
+    ?>
+
+    <p>
+        <input type="hidden" name="action" value="update" />
+        <input type="submit"
+            value="Save Changes"
+            class="update"
+            title="Save changes, accesskey s"
+            accesskey="s"
+            id="primary_action" />
+    </p>
+
+</form>
+
+<p>Many of these options can be overridden by <a href="category.php">category-level settings</a>.
+    Be aware, if you change the <strong>install_path</strong> you will need to generate new
+    code snippets for inclusion in your sites.</p>
 
 <?php $fu->getFooter();

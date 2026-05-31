@@ -258,16 +258,6 @@ $setting[19]['optvalue'] = '<div class="archivelink">
 $setting[19]['optdesc']  = 'Put your footer blog navigation here. See readme.txt for template variables.';
 $setting[19]['version']  = 2.1;
 
-$setting[20]['optkey']   = '_last_update_check';
-$setting[20]['optvalue'] = date('Y-m-d');
-$setting[20]['optdesc']  = 'Last time prism-perfect.net was checked for latest release.';
-$setting[20]['version']  = 2.0;
-
-$setting[21]['optkey']   = '_last_update_version';
-$setting[21]['optvalue'] = $fu->getOpt('version');
-$setting[21]['optdesc']  = 'Most recent stable version.';
-$setting[21]['version']  = 2.0;
-
 $setting[22]['optkey']   = 'points_scoring';
 $setting[22]['optvalue'] = 'y';
 $setting[22]['optdesc']  = 'Use point scoring system to block spam. y or n';
@@ -638,6 +628,17 @@ if (!$fu->noErr()) {
         if ($fu->db->AffectedRows() > 0) {
             $fu->addSuccess('Removed obsolete option <strong>_server_tz_offset</strong>.');
         }
+        // Remove defunct prism-perfect.net update-polling keys (removed in Redux 1.8.0).
+        foreach (['_last_update_check', '_last_update_version'] as $_dead_key) {
+            $fu->db->Execute(
+                'DELETE FROM ' . $fu->getOpt('options_table') . " WHERE optkey='$_dead_key'",
+                null
+            );
+            if ($fu->db->AffectedRows() > 0) {
+                $fu->addSuccess('Removed obsolete option <strong>' . htmlspecialchars($_dead_key) . '</strong>.');
+            }
+        }
+        unset($_dead_key);
         $files = [];
         $files[] = 'add-fl.php';
         $files[] = 'blog-admin.php';

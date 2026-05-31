@@ -27,15 +27,15 @@
             $pageID = strtolower(str_replace(' ', '-', $pageTitle));
         } ?>FanUpdate ADMIN</title>
 
-    <link rel="stylesheet" type="text/css" media="screen" href="css/style.css"
+    <link rel="stylesheet" type="text/css" media="screen" href="../assets/css/style.css"
           title="FanUpdate <?php echo $this->getOpt('version'); ?>"/>
-    <link rel="shortcut icon" href="favicon.ico"/>
+    <link rel="shortcut icon" href="../favicon.ico"/>
 
     <meta charset="UTF-8"/>
     <meta name="robots" content="noindex,nofollow"/>
 
-    <script src="js/fanupdate.js"></script>
-    <script src="js/fanupdate-admin.js"></script>
+    <script src="../assets/js/fanupdate.js"></script>
+    <script src="../assets/js/fanupdate-admin.js"></script>
 
 </head>
 

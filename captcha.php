@@ -1,9 +1,17 @@
 <?php
+declare(strict_types=1);
 /*****************************************************************************
  * CaptchaSecurityImages
  * Copyright (c) 2006 by Simon Jarvis
  * Copyright (c) 2007 by Jenny Ferenc (contributor) <jenny@prism-perfect.net>
  * Copyright (c) 2020 by Ekaterina (contributor) http://scripts.robotess.net
+ *
+ * PHP 8.2 fixes:
+ *  - declare(strict_types=1) added
+ *  - $font declared as a typed property with explicit path using __DIR__
+ *    (resolves correctly regardless of where captcha.php is called from)
+ *  - mt_rand() replaced with random_int() (cryptographically secure)
+ *  - Dynamic property creation removed (class property declared explicitly)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,56 +31,85 @@ session_start();
 
 class CaptchaSecurityImages
 {
-    public $font = 'VeraSe.ttf';
+    // Explicit property declaration (PHP 8.2: no dynamic properties).
+    // Uses __DIR__ so the path resolves correctly regardless of the working
+    // directory of the calling script.
+    public string $font;
 
-    public function generateCode($characters)
+    public function __construct(int $width = 130, int $height = 40, int $characters = 6)
     {
-        /* list all possible characters, similar looking characters and vowels have been removed */
-        $possible = '23456789bcdfghjkmnpqrstvwxyz';
-        $code = '';
-        $i = 0;
-        while ($i < $characters) {
-            $code .= $possible[mt_rand(0, strlen($possible) - 1)];
-            $i++;
-        }
-        return $code;
-    }
-
-    public function __construct($width = 130, $height = 40, $characters = 6)
-    {
+        // Font lives in assets/fonts/ relative to the fanupdate root.
+        // captcha.php is in the root, so __DIR__ points at the root.
+        $this->font = __DIR__ . '/assets/fonts/VeraSe.ttf';
 
         $code = $this->generateCode($characters);
 
         // font size will be 60% of the image height
         $font_size = $height * 0.6;
-        $image = @imagecreate($width, $height) or die('Cannot initialize new GD image stream');
+        $image = @imagecreate($width, $height)
+            or die('Cannot initialize new GD image stream');
 
         // set the colours
         $background_color = imagecolorallocate($image, 255, 255, 255);
-        $text_color = imagecolorallocate($image, 20, 40, 100);
-        $noise_color = imagecolorallocate($image, 100, 120, 180);
+        $text_color       = imagecolorallocate($image, 20, 40, 100);
+        $noise_color      = imagecolorallocate($image, 100, 120, 180);
 
         // generate random dots in background
-        for ($i = 0; $i < ($width * $height) / 3; $i++) {
-            imagefilledellipse($image, mt_rand(0, $width), mt_rand(0, $height), 1, 1, $noise_color);
+        $dot_count = (int) (($width * $height) / 3);
+        for ($i = 0; $i < $dot_count; $i++) {
+            imagefilledellipse(
+                $image,
+                random_int(0, $width),
+                random_int(0, $height),
+                1,
+                1,
+                $noise_color
+            );
         }
 
         // generate random lines in background
-        for ($i = 0; $i < ($width * $height) / 150; $i++) {
-            imageline($image, mt_rand(0, $width), mt_rand(0, $height), mt_rand(0, $width), mt_rand(0, $height), $noise_color);
+        $line_count = (int) (($width * $height) / 150);
+        for ($i = 0; $i < $line_count; $i++) {
+            imageline(
+                $image,
+                random_int(0, $width),
+                random_int(0, $height),
+                random_int(0, $width),
+                random_int(0, $height),
+                $noise_color
+            );
         }
 
         // create textbox and add text
-        $textbox = imagettfbbox($font_size, 0, $this->font, $code) or die('Error in imagettfbbox function');
-        $x = ($width - $textbox[4]) / 2;
+        $textbox = imagettfbbox($font_size, 0, $this->font, $code)
+            or die('Error in imagettfbbox function');
+
+        $x = ($width  - $textbox[4]) / 2;
         $y = ($height - $textbox[5]) / 2;
-        imagettftext($image, $font_size, 0, $x, $y, $text_color, $this->font, $code) or die('Error in imagettftext function');
+
+        imagettftext($image, $font_size, 0, (int) $x, (int) $y, $text_color, $this->font, $code)
+            or die('Error in imagettftext function');
 
         // output captcha image to browser
         header('Content-Type: image/jpeg');
         imagejpeg($image);
         imagedestroy($image);
+
         $_SESSION['security_code'] = $code;
+    }
+
+    public function generateCode(int $characters): string
+    {
+        /* list all possible characters; similar-looking chars and vowels removed */
+        $possible = '23456789bcdfghjkmnpqrstvwxyz';
+        $len      = strlen($possible) - 1;
+        $code     = '';
+
+        for ($i = 0; $i < $characters; $i++) {
+            $code .= $possible[random_int(0, $len)];
+        }
+
+        return $code;
     }
 }
 

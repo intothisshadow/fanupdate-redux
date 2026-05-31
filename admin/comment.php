@@ -18,8 +18,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/gpl-3.0.html>.
  ******************************************************************************/
 
-require_once('blog-config.php');
-require_once('functions.php');
+require_once(__DIR__ . '/../blog-config.php');
+require_once(__DIR__ . '/../functions.php');
 
 $fu = FanUpdate::instance();
 $fu->addOptFromDb();
@@ -270,7 +270,7 @@ if ($showform) {
 
     ?>
 
-    <script type="text/javascript" src="js/fanupdate-comment-admin.js"></script>
+    <script type="text/javascript" src="../assets/js/fanupdate-comment-admin.js"></script>
 
     <?php
 

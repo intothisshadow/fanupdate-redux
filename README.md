@@ -6,7 +6,7 @@ collective of fan websites. Works equally well as a standalone blog.
 Originally written by **Jenny Ferenc** in 2005. Ported to PHP 7 by **Ekaterina**
 (scripts.robotess.net) in 2020. 
 
-This Redux release updates the codebase to **PHP 8.2+** (current patch: Redux 1.5.1).
+This Redux release updates the codebase to **PHP 8.2+** (current release: Redux 1.7.0).
 
 ---
 
@@ -143,7 +143,32 @@ To show only "Whole Collective" entries, set `$listingid = 0`.
 
 ## Upgrading
 
-### From Redux 1.5.x
+### From Redux 1.6.0
+
+1. Back up your files.
+2. Upload all new files, overwriting existing ones — **except `blog-config.php`**.
+3. The directory structure has changed in this release — see
+   [File structure](#file-structure) below. Move your existing files to their
+   new locations and delete the old `css/`, `js/`, and `img/` directories.
+4. Update the `gravatar_default` URL in **Admin → Options** to point to the
+   new path (`/assets/images/gravatar.png`).
+5. No database changes; `install.php` does not need to be re-run.
+
+### From Redux 1.5.2
+
+1. Back up your files.
+2. Upload the `assets/js/` directory and `admin/header.php`.
+3. Delete `assets/js/standardista-table-sorting.js` from the server — it is no
+   longer loaded and can be removed.
+4. No database changes; `install.php` does not need to be re-run.
+
+### From Redux 1.5.1
+
+1. Back up your files.
+2. Upload `show-cat.php` — this is the only changed file.
+3. No database changes; `install.php` does not need to be re-run.
+
+### From Redux 1.5.x (1.5.0)
 
 1. Back up your database and all files.
 2. Upload all new files, overwriting existing ones — **except `blog-config.php`**,
@@ -264,9 +289,9 @@ All templates are editable from **Admin → Options → Templates**.
 
 ## Adding smilies
 
-Upload image files to the `img/` directory inside your FanUpdate folder.
-They will appear automatically in the **Admin → Smilies** panel, where you can
-map each image to a text shortcut (e.g. `:)` → `smile.gif`).
+Upload image files to the `assets/images/smilies/` directory inside your
+FanUpdate folder. They will appear automatically in the **Admin → Smilies**
+panel, where you can map each image to a text shortcut (e.g. `:)` → `smile.gif`).
 
 ---
 
@@ -379,6 +404,32 @@ preventing login.
 
 ---
 
+## JavaScript modernisation notes (Redux 1.6.0+)
+
+All JavaScript files have been rewritten to remove IE-era compatibility code:
+
+- **`fetch()` replaces `XMLHttpRequest`** — `getXmlHttpObject()` (IE 5/6/7
+  `ActiveXObject` fallback) is gone; `makeRequest()` now uses `fetch()`
+- **`addEventListener` replaces Dean Edwards' `addEvent` shim** — the 2005
+  IE-compat event system is removed; `addEvent` / `removeEvent` are kept as
+  thin wrappers so existing call sites require no changes
+- **Dead IE code deleted** — the `document.selection.createRange()` branch in
+  `formatText()` and the `window.event` / `srcElement` fallbacks in
+  `getEventTarget()` are gone
+- **`classList` replaces manual `className` string manipulation** — used by the
+  `css` utility object throughout
+- **`querySelectorAll` replaces manual class-search loops**
+- **`standardista-table-sorting.js` merged** — the sorting logic now lives
+  inside `fanupdate.js`; the separate file is a stub and can be deleted from
+  the server once `header.php` has been updated (Redux 1.6.0 `header.php` no
+  longer loads it)
+- **All `var` → `const` / `let`; all global leaks eliminated**
+
+No functional changes to the admin panel — all features work identically in
+current browsers.
+
+---
+
 ## PHP 8.2 compatibility notes
 
 This release resolves all PHP 8.2 deprecation warnings:
@@ -396,20 +447,11 @@ This release resolves all PHP 8.2 deprecation warnings:
 
 ```
 fanupdate/
+├── index.php                # Redirects to admin/index.php (suppresses directory listing)
 ├── blog-config.php          # Your configuration (copy from .sample)
 ├── blog-config.sample.php   # Configuration template
 ├── version.php              # Single source of truth for version metadata
 ├── functions.php            # Shared helper functions
-├── index.php                # Admin dashboard
-├── blog.php                 # Admin: entries list
-├── category.php             # Admin: categories
-├── comment.php              # Admin: comments
-├── options.php              # Admin: main options
-├── templates.php            # Admin: template editor
-├── smilies.php              # Admin: smilies
-├── blacklist.php            # Admin: spam blacklist
-├── account.php              # Admin: change username and password
-├── credits.php              # Admin: version info and credits
 ├── install.php              # Installer (auto-deletes on success)
 ├── process.php              # Comment submission handler
 ├── show-blog.php            # Public blog display (all categories)
@@ -417,9 +459,20 @@ fanupdate/
 ├── rss.php                  # RSS feed
 ├── rss-comments.php         # RSS comments feed
 ├── captcha.php              # CAPTCHA image generator
-├── header.php               # Admin panel header
-├── footer.php               # Admin panel footer
-├── get-code.php             # Display snippet generator
+├── admin/
+│   ├── index.php            # Admin dashboard
+│   ├── blog.php             # Admin: entries list
+│   ├── category.php         # Admin: categories
+│   ├── comment.php          # Admin: comments
+│   ├── options.php          # Admin: main options
+│   ├── templates.php        # Admin: template editor
+│   ├── smilies.php          # Admin: smilies
+│   ├── blacklist.php        # Admin: spam blacklist
+│   ├── account.php          # Admin: change username and password
+│   ├── credits.php          # Admin: version info and credits
+│   ├── get-code.php         # Display snippet generator
+│   ├── header.php           # Admin panel header
+│   └── footer.php           # Admin panel footer
 ├── class/
 │   ├── FanUpdate.php        # Core application class
 │   ├── FanUpdate_Post.php   # Post model
@@ -428,13 +481,28 @@ fanupdate/
 │   └── SqlConnection.php    # Database abstraction (singleton)
 ├── data/
 │   └── login_attempts/      # Rate limiter lock files (auto-created, not web-accessible)
-├── css/
-│   └── style.css            # Admin panel styles
-├── js/
-│   └── fanupdate.js         # Admin panel JavaScript
-├── img/
-│   ├── gravatar.png         # Default Gravatar placeholder
-│   └── *.gif / *.png        # Smiley images
+├── assets/
+│   ├── css/
+│   │   └── style.css        # Admin panel styles
+│   ├── js/
+│   │   ├── fanupdate.js              # Core utilities + table sorting
+│   │   ├── fanupdate-admin.js        # Admin panel init (confirm-delete, WYSIWYG)
+│   │   ├── fanupdate-comment-admin.js# Comment approve/delete AJAX
+│   │   ├── fanupdate-post-admin.js   # Post delete AJAX
+│   │   ├── fanupdate-comment-submit.js# Front-end comment submission AJAX
+│   │   └── select-all.js             # Checkbox select-all, dynamic categories, timestamp
+│   ├── fonts/
+│   │   └── VeraSe.ttf       # CAPTCHA font (Bitstream Vera Serif)
+│   └── images/
+│       ├── fanupdate.png    # Admin panel logo
+│       ├── gravatar.png     # Default Gravatar placeholder
+│       ├── feed.png         # RSS feed icon
+│       ├── gradient-*.png   # Button gradient images
+│       ├── new-entry-button.png
+│       ├── text_bold.png    # WYSIWYG toolbar icons
+│       ├── text_italic.png
+│       └── smilies/         # Smiley images (upload your own here)
+│           └── *.gif / *.png
 └── docs/
     ├── readme.txt           # Original readme
     └── changelog.txt        # Original changelog
@@ -564,6 +632,17 @@ fail if the file is not writable by the web server process. Delete it manually
 via FTP or your hosting file manager. The warning will disappear on the next
 login once the file is gone.
 
+### `div#fanupdate` and its content break out of their container
+
+This was a bug in `show-cat.php` present in Redux 1.5.1 and earlier. The guard
+that checks for a valid `$listingid` ran *after* the opening `<div id="fanupdate">`
+had already been written to the page. If `$listingid` was absent or non-numeric,
+the script exited with the `<div>` unclosed, and the browser treated the rest of
+the host page as children of `#fanupdate`.
+
+Fixed in Redux 1.5.2 — the guard now runs before any HTML is emitted. Upgrade
+to 1.5.2 and replace `show-cat.php`.
+
 ### Some posts are not visible on the public blog
 
 This was a timezone bug present in Redux 1.5.0 and earlier. The post visibility
@@ -578,6 +657,14 @@ directly, which is always correct regardless of server timezone. Upgrade to
 
 If you cannot upgrade immediately, go to **Admin → Options** and set
 `_server_tz_offset` to `0`.
+
+### Smilies are not displaying after upgrading to Redux 1.7.0
+
+The smiley image directory moved from `img/` to `assets/images/smilies/` in
+Redux 1.7.0. Make sure you have moved your smiley image files to the new
+location. The `gravatar_default` URL stored in the database also needs updating
+— go to **Admin → Options** and change the Gravatar default image URL from
+`.../img/gravatar.png` to `.../assets/images/gravatar.png`.
 
 ---
 

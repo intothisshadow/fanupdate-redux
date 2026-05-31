@@ -14,6 +14,8 @@
  *  - Removed implicit global leaks (captcha, success, toRemove)
  *  - form.submit listener uses addEventListener
  *  - captcha element check uses optional chaining
+ *  - Image paths updated: fu_url + '/css/' → fu_url + '/assets/images/'
+ *    (restructure to assets/ subdirectory)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -82,9 +84,9 @@ function submitCmtCallback(responseText, targetID, url) {
 // ── Front-end WYSIWYG toolbar for the comment textarea ────────────────────────
 
 const myWysiwyg = [
-    new wysiwygButton('bold',   fu_url + '/css/text_bold.png',   'make bold',    e => { formatText(getEventTarget(e).className, '[B]', '[/B]');              return false; }),
-    new wysiwygButton('italic', fu_url + '/css/text_italic.png', 'make italic',  e => { formatText(getEventTarget(e).className, '[I]', '[/I]');              return false; }),
-    new wysiwygButton('link',   fu_url + '/css/link.png',        'insert link',  e => { insertLink(getEventTarget(e).className, true);                       return false; }),
+    new wysiwygButton('bold',   fu_url + '/assets/images/text_bold.png',   'make bold',   e => { formatText(getEventTarget(e).className, '[B]', '[/B]');  return false; }),
+    new wysiwygButton('italic', fu_url + '/assets/images/text_italic.png', 'make italic', e => { formatText(getEventTarget(e).className, '[I]', '[/I]');  return false; }),
+    new wysiwygButton('link',   fu_url + '/assets/images/link.png',        'insert link', e => { insertLink(getEventTarget(e).className, true);            return false; }),
 ];
 
 window.addEventListener('load', () => {

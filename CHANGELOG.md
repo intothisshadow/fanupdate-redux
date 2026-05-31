@@ -5,6 +5,174 @@ All notable changes to this project are documented here.
 
 ---
 
+## [Redux 1.7.0] — May 31, 2026 — Directory Restructure & Path Fixes
+
+Reorganisation of static assets into a unified `assets/` hierarchy, moving
+admin pages into `admin/`, and fixing all path references throughout.
+
+### Changed
+
+- **`index.php`** — new root-level file; issues a `301` redirect to
+  `admin/index.php`; suppresses directory listing and preserves any existing
+  bookmarks to the old root URL
+- **Directory structure reorganised:**
+  - `css/` → `assets/css/`
+  - `js/` → `assets/js/`
+  - `img/` → `assets/images/` (also renamed from `img` to `images`)
+  - All smiley images expected at `assets/images/smilies/`
+  - Font file `VeraSe.ttf` moved to `assets/fonts/`
+  - Admin panel pages (`index.php`, `blog.php`, `category.php`, `comment.php`,
+    `options.php`, `templates.php`, `smilies.php`, `blacklist.php`,
+    `account.php`, `credits.php`, `header.php`, `footer.php`, `get-code.php`)
+    moved into `admin/`
+  - Public-facing files (`show-blog.php`, `show-cat.php`, `rss.php`,
+    `rss-comments.php`, `process.php`, `captcha.php`) and root config files
+    (`blog-config.php`, `blog-config.sample.php`, `version.php`,
+    `functions.php`, `install.php`) remain in the project root
+- **`assets/css/style.css`** — all `url()` image references updated from bare
+  filenames to `../images/` paths:
+  - `url(fanupdate.png)` → `url(../images/fanupdate.png)`
+  - `url(feed.png)` → `url(../images/feed.png)`
+  - `url(gradient-green.png)` → `url(../images/gradient-green.png)`
+  - `url(gradient-teal.png)` → `url(../images/gradient-teal.png)`
+  - `url(gradient-red.png)` → `url(../images/gradient-red.png)`
+  - `url(gradient-black.png)` → `url(../images/gradient-black.png)`
+  - `url(new-entry-button.png)` → `url(../images/new-entry-button.png)`
+- **`admin/header.php`** — stylesheet `href` updated from `css/style.css` to
+  `../assets/css/style.css`; JS `src` attributes updated from `js/` to
+  `../assets/js/`; favicon `href` updated to `../favicon.ico`
+- **`assets/js/fanupdate-admin.js`** — WYSIWYG toolbar button image paths
+  updated from `css/text_bold.png` etc. to `../assets/images/text_bold.png`
+  etc. (seven paths total)
+- **`assets/js/fanupdate-comment-submit.js`** — front-end WYSIWYG image paths
+  updated from `fu_url + '/css/'` to `fu_url + '/assets/images/'` (three paths)
+- **`class/FanUpdate.php`** — `makeSmiley()` path updated from
+  `install_url . '/img/'` to `install_url . '/assets/images/smilies/'`
+- **`captcha.php`** — PHP 8.2 fixes applied alongside the path change:
+  - `$font` declared as an explicit typed `public string` property (removes
+    dynamic property creation deprecated in PHP 8.2)
+  - Font path set via `__DIR__ . '/assets/fonts/VeraSe.ttf'` so it resolves
+    correctly regardless of the calling script's working directory
+  - `mt_rand()` replaced with `random_int()` throughout (cryptographically
+    secure)
+  - `declare(strict_types=1)` added
+
+### Notes
+
+- **Database:** the `gravatar_default` option stored in the database likely
+  still points to a URL containing `/img/gravatar.png`; update it to
+  `/assets/images/gravatar.png` via **Admin → Options** after deploying.
+- **nginx users:** if you have a `location ^~ /img/` deny rule in your server
+  config, update it to `location ^~ /assets/` to protect the new path.
+
+### Files changed
+
+- `index.php` (new)
+- `assets/css/style.css`
+- `admin/header.php`
+- `assets/js/fanupdate-admin.js`
+- `assets/js/fanupdate-comment-submit.js`
+- `class/FanUpdate.php` (one-line change in `makeSmiley()`)
+- `captcha.php`
+
+---
+
+## [Redux 1.6.0] — May 31, 2026 — JavaScript Modernisation
+
+Full rewrite of all JavaScript files to remove IE-era compatibility shims and
+replace them with current browser APIs. No functional changes to the admin
+panel — all features work identically.
+
+### Changed
+
+- **`js/fanupdate.js`** — complete rewrite:
+  - `getXmlHttpObject()` deleted entirely (was an IE 5/6/7 `ActiveXObject`
+    fallback; `XMLHttpRequest` has been native in all browsers since 2008)
+  - `makeRequest()` rewritten using the `fetch()` API; signature preserved so
+    all callers (`fanupdate-comment-admin.js`, `fanupdate-post-admin.js`,
+    `fanupdate-comment-submit.js`) continue to work without changes
+  - Dean Edwards' `addEvent` / `handleEvent` / `removeEvent` / `fixEvent`
+    shim (2005) replaced with thin wrappers over native `addEventListener` /
+    `removeEventListener`; same public API, no behaviour change
+  - `getEventTarget()` quirksmode shim replaced with `e.target` (standard
+    since IE9); text-node walk-up retained as a safety net
+  - Dead `document.selection.createRange()` IE-only branch in `formatText()`
+    deleted; the `setSelectionRange` path (the modern branch) is kept
+  - `createElement()` XHTML-namespace helper replaced with
+    `document.createElement()`
+  - `css.getElementsByClass()` reimplemented using `querySelectorAll()`
+  - `css.addClassToElement()` / `removeClassFromElement()` reimplemented using
+    `classList.add()` / `classList.remove()`
+  - Standardista table-sorting logic preserved (Neil Crosby, MIT 2006) but
+    moved into a self-contained IIFE; internal `addEvent` calls replaced with
+    `addEventListener`; sort direction stored on the table element rather than
+    a global
+  - All global variable leaks eliminated (`el`, `top`, `url`, `input`,
+    `datDate1`, `datDate2`, `datediff`, `checkboxes_container`)
+  - All `var` → `const` / `let`
+- **`js/fanupdate-admin.js`** — `new Array()` → array literal; `var` →
+  `const`/`let`; `onclick =` assignments → `addEventListener`
+- **`js/fanupdate-comment-admin.js`** — `onclick =` → `addEventListener`;
+  `button.parentNode.parentNode.parentNode` → `button.closest('tr')`;
+  shadowed `cmt_id` re-declaration fixed
+- **`js/fanupdate-post-admin.js`** — same `closest('tr')` and `addEventListener`
+  treatment
+- **`js/fanupdate-comment-submit.js`** — `var` → `const`/`let`; implicit
+  globals (`captcha`, `success`, `toRemove`) eliminated; form submit wired via
+  `addEventListener`
+- **`js/select-all.js`** — `checkboxes_container` global moved into a module
+  IIFE; `onclick =` → `addEventListener`; `addCat` and `setNow` blocks wrapped
+  in IIFEs to prevent global leaks
+- **`js/standardista-table-sorting.js`** — replaced with an empty stub; the
+  sorting logic now lives in `fanupdate.js`; the file is kept so existing
+  `<script>` tags do not 404 (safe to remove once `header.php` is updated)
+- **`header.php`**:
+  - `<script src="js/standardista-table-sorting.js">` removed — no longer
+    needed; `js/standardista-table-sorting.js` can be deleted from the server
+  - `type="text/javascript"` removed from remaining `<script>` tags —
+    redundant since HTML5
+  - DOCTYPE updated from XHTML 1.0 Strict to `<!DOCTYPE html>`
+  - `<html xmlns= xml:lang= lang=>` simplified to `<html lang="en">`
+  - `<meta http-equiv="Content-Type" ...>` replaced with `<meta charset="UTF-8"/>`
+
+### Files changed
+
+- `js/fanupdate.js`
+- `js/fanupdate-admin.js`
+- `js/fanupdate-comment-admin.js`
+- `js/fanupdate-post-admin.js`
+- `js/fanupdate-comment-submit.js`
+- `js/select-all.js`
+- `js/standardista-table-sorting.js` (now a stub — safe to delete)
+- `header.php`
+
+---
+
+## [Redux 1.5.2] — May 31, 2026 — Layout Containment Fix
+
+### Fixed
+
+- **`div#fanupdate` breaking out of its container on pages using `show-cat.php`**
+  — the `$listingid` guard (`!isset($listingid) || !is_numeric($listingid)`)
+  was placed *inside* the PHP block that follows the opening `<div id="fanupdate">`
+  tag. When `$listingid` was missing or non-numeric the script called `exit`
+  after the opening `<div>` had already been sent to the browser, leaving it
+  permanently unclosed. The browser then treated everything that followed on the
+  host page as a child of `#fanupdate`, causing it and all its descendants to
+  escape their intended container.
+
+  Both defects are fixed:
+  - The guard is now evaluated entirely in PHP *before* any HTML is emitted, so
+    an unclosed `<div>` is never produced.
+  - `exit` replaced with `return` so the host page continues executing normally
+    when the guard fires.
+
+### Files changed
+
+- `show-cat.php`
+
+---
+
 ## [Redux 1.5.1] — May 29, 2026 — Timezone Fix & Options Cleanup
 
 ### Fixed

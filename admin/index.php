@@ -19,8 +19,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/gpl-3.0.html>.
  ******************************************************************************/
 
-require_once('blog-config.php');
-require_once('functions.php');
+require_once(__DIR__ . '/../blog-config.php');
+require_once(__DIR__ . '/../functions.php');
 
 $fu = FanUpdate::instance();
 $fu->addOptFromDb();
@@ -36,9 +36,9 @@ $fu->getHeader('Dashboard');
 
     <?php $fu->checkUpdates(); ?>
     <?php
-    if (file_exists(__DIR__ . '/install.php')) {
+    if (file_exists(__DIR__ . '/../install.php')) {
         echo '<p class="error"><strong>Security risk:</strong> <code>install.php</code> is still present on your server. '
-            . '<a href="install.php">Delete it now</a> or remove it via FTP/file manager.</p>' . "\n";
+            . '<a href="../install.php">Delete it now</a> or remove it via FTP/file manager.</p>' . "\n";
     }
     ?>
     <?php

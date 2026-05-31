@@ -11,8 +11,8 @@ declare(strict_types=1);
  * See <https://www.gnu.org/licenses/gpl-3.0.html> for details.
  ******************************************************************************/
 
-require_once('blog-config.php');
-require_once('functions.php');
+require_once(__DIR__ . '/../blog-config.php');
+require_once(__DIR__ . '/../functions.php');
 
 $fu = FanUpdate::instance();
 $fu->addOptFromDb();

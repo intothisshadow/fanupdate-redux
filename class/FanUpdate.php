@@ -341,7 +341,7 @@ class FanUpdate
 
     public function makeSmiley(string $txt, string $img): string
     {
-        return '<img src="' . $this->getOpt('install_url') . '/img/' . $img . '" alt="' . htmlspecialchars($txt) . '" />';
+        return '<img src="' . $this->getOpt('install_url') . '/assets/images/smilies/' . $img . '" alt="' . htmlspecialchars($txt) . '" />';
     }
 
     public function replaceSmilies(string $txt): string

@@ -14,6 +14,7 @@
  *  - Replaced for loop with querySelectorAll + forEach
  *  - onclick assignment → addEventListener
  *  - new Array() → array literal
+ *  - Image paths updated: css/ → ../images/ (restructure to assets/)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -38,13 +39,13 @@ function confirmDeleteInit() {
 }
 
 const myWysiwyg = [
-    new wysiwygButton('bold',  'css/text_bold.png',        'make bold',            e => { formatText(getEventTarget(e).className, '<strong>', '</strong>'); return false; }),
-    new wysiwygButton('italic','css/text_italic.png',       'make italic',          e => { formatText(getEventTarget(e).className, '<em>', '</em>');         return false; }),
-    new wysiwygButton('h2',    'css/text_heading_2.png',    'make heading level 2', e => { formatText(getEventTarget(e).className, '<h2>', '</h2>');          return false; }),
-    new wysiwygButton('h3',    'css/text_heading_3.png',    'make heading level 3', e => { formatText(getEventTarget(e).className, '<h3>', '</h3>');          return false; }),
-    new wysiwygButton('quote', 'css/text_signature.png',    'make blockquote',      e => { formatText(getEventTarget(e).className, '<blockquote>', '</blockquote>'); return false; }),
-    new wysiwygButton('rm',    'css/text_horizontalrule.png','insert read more break', e => { formatText(getEventTarget(e).className, '<!-- MORE -->', '');  return false; }),
-    new wysiwygButton('link',  'css/link.png',              'insert link',          e => { insertLink(getEventTarget(e).className);                          return false; }),
+    new wysiwygButton('bold',  '../assets/images/text_bold.png',         'make bold',              e => { formatText(getEventTarget(e).className, '<strong>', '</strong>'); return false; }),
+    new wysiwygButton('italic','../assets/images/text_italic.png',        'make italic',            e => { formatText(getEventTarget(e).className, '<em>', '</em>');         return false; }),
+    new wysiwygButton('h2',    '../assets/images/text_heading_2.png',     'make heading level 2',   e => { formatText(getEventTarget(e).className, '<h2>', '</h2>');          return false; }),
+    new wysiwygButton('h3',    '../assets/images/text_heading_3.png',     'make heading level 3',   e => { formatText(getEventTarget(e).className, '<h3>', '</h3>');          return false; }),
+    new wysiwygButton('quote', '../assets/images/text_signature.png',     'make blockquote',        e => { formatText(getEventTarget(e).className, '<blockquote>', '</blockquote>'); return false; }),
+    new wysiwygButton('rm',    '../assets/images/text_horizontalrule.png','insert read more break', e => { formatText(getEventTarget(e).className, '<!-- MORE -->', '');     return false; }),
+    new wysiwygButton('link',  '../assets/images/link.png',               'insert link',            e => { insertLink(getEventTarget(e).className);                          return false; }),
 ];
 
 window.addEventListener('load', () => {

@@ -25,8 +25,8 @@ declare(strict_types=1);
  * any later version.
  ******************************************************************************/
 
-require_once('blog-config.php');
-require_once('functions.php');
+require_once(__DIR__ . '/../blog-config.php');
+require_once(__DIR__ . '/../functions.php');
 
 $fu = FanUpdate::instance();
 $fu->addOptFromDb();
@@ -70,7 +70,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'change_username') {
 
     if ($fu->noErr()) {
 
-        $configFile = __DIR__ . '/blog-config.php';
+        $configFile = __DIR__ . '/../blog-config.php';
 
         if (!is_writable($configFile)) {
             $fu->addErr(
@@ -144,7 +144,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'change_password') {
     if ($fu->noErr()) {
 
         $newHash    = password_hash($newPassword, PASSWORD_BCRYPT);
-        $configFile = __DIR__ . '/blog-config.php';
+        $configFile = __DIR__ . '/../blog-config.php';
 
         if (!is_writable($configFile)) {
             $fu->addErr(

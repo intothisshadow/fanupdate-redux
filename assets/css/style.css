@@ -349,7 +349,7 @@ a:focus
 
 h1
 {
-	background: url(fanupdate.png) left center no-repeat;
+	background: url(../images/fanupdate.png) left center no-repeat;
 	font-size: 2em;
 	font-weight: normal;
 	height: 72px;
@@ -489,7 +489,7 @@ img.gravatar
 
 .feed
 {
-	background-image: url(feed.png);
+	background-image: url(../images/feed.png);
 	background-position: center left;
 	background-repeat: no-repeat;
 	padding-left: 18px;
@@ -940,21 +940,21 @@ tbody tr:hover td.highlight
 .submit
 {
 	background-color: #0c0;
-	background-image: url(gradient-green.png);
+	background-image: url(../images/gradient-green.png);
 	border-color: #0c0;
 }
 
 .button
 {
 	background-color: #09c;
-	background-image: url(gradient-teal.png);
+	background-image: url(../images/gradient-teal.png);
 	border-color: #09c;
 }
 
 .delete
 {
 	background-color: #c00;
-	background-image: url(gradient-red.png);
+	background-image: url(../images/gradient-red.png);
 	border-color: #c00;
 }
 
@@ -972,7 +972,7 @@ tbody tr:hover td.highlight
 .submit:focus
 {
 	background-color: #333;
-	background-image: url(gradient-black.png);
+	background-image: url(../images/gradient-black.png);
 	border-color: #333;
 	color: #fff !important;
 }
@@ -1055,7 +1055,7 @@ div.comment p.commenter
 
 #newUpdate a
 {
-	background: url(new-entry-button.png) top left no-repeat;
+	background: url(../images/new-entry-button.png) top left no-repeat;
 	display: block;
 	height: 44px;
 	width: 253px;

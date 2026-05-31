@@ -28,7 +28,7 @@ if (!defined('DATE_ATOM')) {
     define('DATE_ATOM', 'Y-m-d\TH:i:sP');
 }
 
-require_once('FeedItem.php');
+require_once(__DIR__ . '/FeedItem.php');
 
 class FeedWriter
 {

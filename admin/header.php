@@ -17,9 +17,8 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/gpl-3.0.html>.
  ******************************************************************************/
-?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
-
-<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+?><!DOCTYPE html>
+<html lang="en">
 
 <head>
 
@@ -32,12 +31,11 @@
           title="FanUpdate <?php echo $this->getOpt('version'); ?>"/>
     <link rel="shortcut icon" href="favicon.ico"/>
 
-    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
+    <meta charset="UTF-8"/>
     <meta name="robots" content="noindex,nofollow"/>
 
-    <script src="js/fanupdate.js" type="text/javascript"></script>
-    <script src="js/fanupdate-admin.js" type="text/javascript"></script>
-    <script src="js/standardista-table-sorting.js" type="text/javascript"></script>
+    <script src="js/fanupdate.js"></script>
+    <script src="js/fanupdate-admin.js"></script>
 
 </head>
 

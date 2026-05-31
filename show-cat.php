@@ -16,25 +16,35 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/gpl-3.0.html>.
- *
- * Redux 1.5.1 fix: replaced DATE_ADD(CURRENT_TIMESTAMP(), INTERVAL X HOUR)
- * with UTC_TIMESTAMP(). See show-blog.php for full explanation.
  ******************************************************************************/
+
+// Guard moved above the opening <div> so that an invalid/missing $listingid
+// never leaves an unclosed <div id="fanupdate"> in the host page's output.
+// Changed from exit to return so the host page continues running normally.
+if (!isset($listingid) || !is_numeric($listingid)) {
+    return;
+}
 ?>
 <div id="fanupdate">
+
     <?php
 
     require_once('blog-config.php');
     require_once('functions.php');
 
-    $fu = FanUpdate::instance();
+    $fu =& FanUpdate::instance();
     $fu->addOptFromDb();
 
-    if (!isset($listingid)) {
-        $listingid = 0;
-    }
-    if (!isset($main_limit)) {
-        $main_limit = 5;
+    $query = 'SELECT * FROM ' . $fu->getOpt('catoptions_table') . ' WHERE cat_id=' . (int)$listingid . ' LIMIT 1';
+
+    $cat = $fu->db->GetRecord($query);
+
+    if (is_array($cat)) {
+        foreach ($cat as $key => $value) {
+            if ($value != '') { // don't update defaults!
+                $fu->AddOpt($key, $value);
+            }
+        }
     }
 
     // ____________________________________________________________ ARCHIVES
@@ -43,41 +53,39 @@
 
         ?>
         <h2>Archives</h2>
-        <ul>
-            <?php
+        <?php
 
-            $query = 'SELECT b.entry_id, b.title, b.added
+        $query = 'SELECT b.entry_id, b.added, b.title
     FROM ' . $fu->getOpt('blog_table') . ' b
     JOIN ' . $fu->getOpt('catjoin_table') . ' j ON b.entry_id=j.entry_id
-    WHERE b.is_public > 0 AND b.added <= UTC_TIMESTAMP() AND j.cat_id=' . $listingid . '
+    WHERE b.is_public > 0 AND b.added <= DATE_ADD(CURRENT_TIMESTAMP(), INTERVAL ' . (0 - $fu->getOpt('_server_tz_offset')) . ' HOUR) AND j.cat_id=' . $listingid . '
     ORDER BY b.added DESC';
 
-            $fu->db->Execute($query);
+        $fu->db->Execute($query);
 
-            $lastyear = null;
+        $lastyear = '';
 
-            while ($row = $fu->db->ReadRecord()) {
+        while ($row = $fu->db->ReadRecord()) {
 
-                $post = new FanUpdate_Post($row, $fu, $fu->getOpt('blog_page'));
+            $post = new FanUpdate_Post($row, $fu);
 
-                $year = $post->getYear();
-
-                if ($year !== $lastyear) {
-                    if ($lastyear !== null) {
-                        echo "</ul>\n";
-                    }
-                    echo '<h3>' . $year . "</h3>\n";
-                    echo "<ul>\n";
+            $year = $post->getYear();
+            if ($year != $lastyear) {
+                if (!empty($lastyear)) {
+                    echo "</ul>\n";
                 }
-
-                echo '<li><span class="date">' . $post->getDateFormatted() . ':</span> <a href="' . $post->getUrl() . '">' . $post->getTitle() . "</a></li>\n";
-
-                $lastyear = $year;
-
+                echo '<h3>' . $year . "</h3>\n";
+                echo "<ul>\n";
             }
-            $fu->db->FreeResult();
 
-            echo "</ul>\n";
+            echo '<li><span class="date">' . $post->getDateForMatted() . ':</span> <a href="' . $post->getURL() . '">' . $post->getTitle() . "</a></li>\n";
+
+            $lastyear = $year;
+
+        }
+        $fu->db->FreeResult();
+
+        echo "</ul>\n";
 
     } else {
 
@@ -88,7 +96,7 @@
         $query = 'SELECT b.*
     FROM ' . $fu->getOpt('blog_table') . ' b
     JOIN ' . $fu->getOpt('catjoin_table') . ' j ON b.entry_id=j.entry_id
-    WHERE b.is_public > 0 AND b.added <= UTC_TIMESTAMP() AND j.cat_id=' . $listingid;
+    WHERE b.is_public > 0 AND b.added <= DATE_ADD(CURRENT_TIMESTAMP(), INTERVAL ' . (0 - $fu->getOpt('_server_tz_offset')) . ' HOUR) AND j.cat_id=' . $listingid;
 
         if (!empty($_GET['id'])) {
 

@@ -23,7 +23,7 @@ declare(strict_types=1);
 // ── release identity ─────────────────────────────────────────────────────────
 
 /** Human-readable version string displayed in the UI, footer, and RSS feeds. */
-const FU_VERSION      = 'Redux 1.5.1';
+const FU_VERSION      = 'Redux 1.7.0';
 
 /** Database schema version — update only when install.php adds/alters tables. */
 const FU_DB_VERSION   = '2.2.1b2';

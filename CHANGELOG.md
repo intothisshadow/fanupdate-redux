@@ -5,6 +5,42 @@ All notable changes to this project are documented here.
 
 ---
 
+## [Redux 1.8.0] — May 31, 2026 — Email Management & Options Cleanup
+
+### Changed
+
+- **`admin_email` moved from `admin/options.php` to `admin/account.php`** —
+  the notification email address is now managed alongside username and password
+  under **Admin → Account**, where it belongs conceptually. It no longer appears
+  in the general options form.
+- **`admin/account.php`** — new "Change Email" section added above "Change
+  Username":
+  - Reads the current `admin_email` value from the database via
+    `$fu->getOpt('admin_email', true)` (literal flag prevents `no@example.com`
+    being misread as boolean `false`)
+  - Validates with `filter_var($email, FILTER_VALIDATE_EMAIL)` before writing
+  - Writes back to the database with a standard `UPDATE` query
+  - Uses `<input type="email">` for browser-side format hints
+- **`admin/options.php`** — `admin_email` excluded at the SQL level
+  (`AND optkey != 'admin_email'`) and added to `OPTIONS_PRIVATE_KEYS` as a
+  defence-in-depth guard so a crafted POST cannot overwrite it via the options
+  form
+- **`install.php`** — `$setting[20]` (`_last_update_check`) and `$setting[21]`
+  (`_last_update_version`) removed from the `$setting` array; these were
+  remnants of the defunct `prism-perfect.net` update-polling feature and are no
+  longer inserted on fresh installs
+- **`install.php`** — upgrade path now issues `DELETE` statements to remove
+  `_last_update_check` and `_last_update_version` from any existing database
+  automatically
+
+### Files changed
+
+- `admin/account.php`
+- `admin/options.php`
+- `install.php`
+
+---
+
 ## [Redux 1.7.0] — May 31, 2026 — Directory Restructure & Path Fixes
 
 Reorganisation of static assets into a unified `assets/` hierarchy, moving

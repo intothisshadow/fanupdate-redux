@@ -6,7 +6,7 @@ collective of fan websites. Works equally well as a standalone blog.
 Originally written by **Jenny Ferenc** in 2005. Ported to PHP 7 by **Ekaterina**
 (scripts.robotess.net) in 2020. 
 
-This Redux release updates the codebase to **PHP 8.2+** (current release: Redux 1.7.0).
+This Redux release updates the codebase to **PHP 8.2+** (current release: Redux 1.8.0).
 
 ---
 
@@ -143,6 +143,14 @@ To show only "Whole Collective" entries, set `$listingid = 0`.
 
 ## Upgrading
 
+### From Redux 1.7.0
+
+1. Back up your files.
+2. Upload `admin/account.php` and `admin/options.php`.
+3. No database changes; `install.php` does not need to be re-run.
+4. Your `admin_email` setting is still in the database — it will now appear
+   under **Admin → Account → Change Email** instead of the Options page.
+
 ### From Redux 1.6.0
 
 1. Back up your files.
@@ -227,16 +235,18 @@ running the installer. The old format is not compatible.
 
 ## Changing your admin credentials
 
-Use **Admin → Account** in the admin panel. The page has two sections:
+Use **Admin → Account** in the admin panel. The page has three sections:
 
+- **Change Email** — update the email address used for comment notifications.
+  Validated with `filter_var()` before saving.
 - **Change Username** — enter a new username and confirm it. No current value
   required since you are already authenticated.
 - **Change Password** — enter your current password, then the new password
   (minimum 8 characters) and a confirmation. The new bcrypt hash is written to
   `blog-config.php` automatically and your session stays active.
 
-If `blog-config.php` is not writable, both forms display the ready-to-paste
-value so you can update the file manually in a text editor.
+If `blog-config.php` is not writable, the username and password forms display
+the ready-to-paste value so you can update the file manually in a text editor.
 
 ---
 
@@ -468,7 +478,7 @@ fanupdate/
 │   ├── templates.php        # Admin: template editor
 │   ├── smilies.php          # Admin: smilies
 │   ├── blacklist.php        # Admin: spam blacklist
-│   ├── account.php          # Admin: change username and password
+│   ├── account.php          # Admin: change email, username, and password
 │   ├── credits.php          # Admin: version info and credits
 │   ├── get-code.php         # Display snippet generator
 │   ├── header.php           # Admin panel header

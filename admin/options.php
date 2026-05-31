@@ -41,6 +41,7 @@ $clean = [];
 const OPTIONS_PRIVATE_KEYS = [
     '_db_version',       // schema version used by install.php — read-only
     '_server_tz_offset', // removed in Redux 1.5.1
+    'admin_email',       // managed in account.php
 ];
 
 // ── UPDATE HANDLER ────────────────────────────────────────────────────────────
@@ -114,7 +115,7 @@ $fu->reportErrors();
 // The SQL WHERE clause handles templates; the PHP loop handles the '_' prefix.
 
 $query = 'SELECT * FROM ' . $fu->getOpt('options_table')
-    . " WHERE optkey NOT LIKE '%template%' ORDER BY optkey ASC";
+    . " WHERE optkey NOT LIKE '%template%' AND optkey != 'admin_email' ORDER BY optkey ASC";
 
 $fu->db->Execute($query);
 

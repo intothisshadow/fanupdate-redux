@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 /*****************************************************************************
  * FanUpdate — account.php
@@ -75,11 +76,11 @@ if (isset($_POST['action']) && $_POST['action'] === 'change_username') {
         if (!is_writable($configFile)) {
             $fu->addErr(
                 '<strong>blog-config.php</strong> is not writable. '
-                . 'Please <code>chmod 644</code> (or temporarily <code>chmod 666</code>) the file and try again, '
-                . 'or update the username manually:<br>'
-                . '<code>$fanupdate[\'admin_username\'] = \''
-                . htmlspecialchars($newUsername, ENT_QUOTES, 'UTF-8')
-                . '\';</code>'
+                    . 'Please <code>chmod 644</code> (or temporarily <code>chmod 666</code>) the file and try again, '
+                    . 'or update the username manually:<br>'
+                    . '<code>$fanupdate[\'admin_username\'] = \''
+                    . htmlspecialchars($newUsername, ENT_QUOTES, 'UTF-8')
+                    . '\';</code>'
             );
         } else {
             $configContent = (string) file_get_contents($configFile);
@@ -149,11 +150,11 @@ if (isset($_POST['action']) && $_POST['action'] === 'change_password') {
         if (!is_writable($configFile)) {
             $fu->addErr(
                 '<strong>blog-config.php</strong> is not writable. '
-                . 'Please <code>chmod 644</code> (or temporarily <code>chmod 666</code>) the file and try again, '
-                . 'or set the password manually:<br>'
-                . '<code>$fanupdate[\'admin_password\'] = \''
-                . htmlspecialchars($newHash, ENT_QUOTES, 'UTF-8')
-                . '\';</code>'
+                    . 'Please <code>chmod 644</code> (or temporarily <code>chmod 666</code>) the file and try again, '
+                    . 'or set the password manually:<br>'
+                    . '<code>$fanupdate[\'admin_password\'] = \''
+                    . htmlspecialchars($newHash, ENT_QUOTES, 'UTF-8')
+                    . '\';</code>'
             );
         } else {
             $configContent = (string) file_get_contents($configFile);
@@ -193,6 +194,36 @@ if (isset($_POST['action']) && $_POST['action'] === 'change_password') {
     }
 }
 
+
+// ── handle email change ──────────────────────────────────────────────────────
+
+if (isset($_POST['action']) && $_POST['action'] === 'change_email') {
+
+    $clean = clean_input($_POST);
+
+    $newEmail = trim((string) ($clean['new_email'] ?? ''));
+
+    if ($newEmail === '') {
+        $fu->addErr('Please enter an email address.');
+    } elseif (!filter_var($newEmail, FILTER_VALIDATE_EMAIL)) {
+        $fu->addErr('Please enter a valid email address.');
+    } elseif (strlen($newEmail) > 255) {
+        $fu->addErr('Email address must be 255 characters or fewer.');
+    }
+
+    if ($fu->noErr()) {
+        $sql_email = $fu->db->Escape($newEmail);
+        $query = 'UPDATE ' . $fu->getOpt('options_table')
+            . " SET optvalue='$sql_email' WHERE optkey='admin_email'";
+
+        if ($fu->db->Execute($query) && $fu->db->AffectedRows() > 0) {
+            $fu->addOpt('admin_email', $newEmail);
+            $fu->addSuccess('Email address updated successfully.');
+        } else {
+            $fu->addErr('Failed to update email address.');
+        }
+    }
+}
 // ── render page ──────────────────────────────────────────────────────────────
 
 $fu->getHeader('Account');
@@ -209,105 +240,133 @@ $fu->reportErrors();
 ?>
 
 <div id="options">
+    <h3>Change Email</h3>
 
-<h3>Change Username</h3>
+    <form action="account.php" method="post">
+        <input type="hidden" name="action" value="change_email" />
 
-<form action="account.php" method="post">
-    <input type="hidden" name="action" value="change_username" />
+        <div class="option odd">
+            <p>
+                <label for="new_email">Email address:
+                    <span class="help">Used to receive comment notifications.</span>
+                </label>
+                <input type="email"
+                    id="new_email"
+                    name="new_email"
+                    size="50"
+                    maxlength="255"
+                    value="<?php echo htmlspecialchars((string) $fu->getOpt('admin_email', true), ENT_QUOTES, 'UTF-8'); ?>"
+                    autocomplete="email" />
+            </p>
+        </div>
 
-    <div class="option odd">
-        <p>
-            <label for="new_username">New username:
-                <span class="help">Letters, numbers, and underscores only. Maximum 50 characters.</span>
-            </label>
-            <input type="text"
-                   id="new_username"
-                   name="new_username"
-                   size="30"
-                   maxlength="50"
-                   autocomplete="username" />
+        <p style="margin-top: 1em;">
+            <input type="submit"
+                name="submit_email"
+                value="Change Email"
+                class="update" />
         </p>
-    </div>
 
-    <div class="option even">
-        <p>
-            <label for="confirm_username">Confirm new username:
-                <span class="help">Re-enter the new username.</span>
-            </label>
-            <input type="text"
-                   id="confirm_username"
-                   name="confirm_username"
-                   size="30"
-                   maxlength="50"
-                   autocomplete="username" />
+    </form>
+
+    <h3>Change Username</h3>
+
+    <form action="account.php" method="post">
+        <input type="hidden" name="action" value="change_username" />
+
+        <div class="option odd">
+            <p>
+                <label for="new_username">New username:
+                    <span class="help">Letters, numbers, and underscores only. Maximum 50 characters.</span>
+                </label>
+                <input type="text"
+                    id="new_username"
+                    name="new_username"
+                    size="30"
+                    maxlength="50"
+                    autocomplete="username" />
+            </p>
+        </div>
+
+        <div class="option even">
+            <p>
+                <label for="confirm_username">Confirm new username:
+                    <span class="help">Re-enter the new username.</span>
+                </label>
+                <input type="text"
+                    id="confirm_username"
+                    name="confirm_username"
+                    size="30"
+                    maxlength="50"
+                    autocomplete="username" />
+            </p>
+        </div>
+
+        <p style="margin-top: 1em;">
+            <input type="submit"
+                name="submit_username"
+                value="Change Username"
+                class="update" />
         </p>
-    </div>
 
-    <p style="margin-top: 1em;">
-        <input type="submit"
-               name="submit_username"
-               value="Change Username"
-               class="update" />
-    </p>
+    </form>
 
-</form>
+    <h3>Change Password</h3>
 
-<h3>Change Password</h3>
+    <form action="account.php" method="post">
+        <input type="hidden" name="action" value="change_password" />
 
-<form action="account.php" method="post">
-    <input type="hidden" name="action" value="change_password" />
+        <div class="option odd">
+            <p>
+                <label for="current_password">Current password:
+                    <span class="help">Enter your existing password to confirm your identity.</span>
+                </label>
+                <input type="password"
+                    id="current_password"
+                    name="current_password"
+                    size="30"
+                    maxlength="255"
+                    autocomplete="current-password" />
+            </p>
+        </div>
 
-    <div class="option odd">
-        <p>
-            <label for="current_password">Current password:
-                <span class="help">Enter your existing password to confirm your identity.</span>
-            </label>
-            <input type="password"
-                   id="current_password"
-                   name="current_password"
-                   size="30"
-                   maxlength="255"
-                   autocomplete="current-password" />
+        <div class="option even">
+            <p>
+                <label for="new_password">New password:
+                    <span class="help">Minimum 8 characters.</span>
+                </label>
+                <input type="password"
+                    id="new_password"
+                    name="new_password"
+                    size="30"
+                    maxlength="255"
+                    autocomplete="new-password" />
+            </p>
+        </div>
+
+        <div class="option odd">
+            <p>
+                <label for="confirm_password">Confirm new password:
+                    <span class="help">Re-enter the new password.</span>
+                </label>
+                <input type="password"
+                    id="confirm_password"
+                    name="confirm_password"
+                    size="30"
+                    maxlength="255"
+                    autocomplete="new-password" />
+            </p>
+        </div>
+
+        <p style="margin-top: 1em;">
+            <input type="submit"
+                name="submit_password"
+                value="Change Password"
+                class="update"
+                accesskey="s" />
         </p>
-    </div>
 
-    <div class="option even">
-        <p>
-            <label for="new_password">New password:
-                <span class="help">Minimum 8 characters.</span>
-            </label>
-            <input type="password"
-                   id="new_password"
-                   name="new_password"
-                   size="30"
-                   maxlength="255"
-                   autocomplete="new-password" />
-        </p>
-    </div>
-
-    <div class="option odd">
-        <p>
-            <label for="confirm_password">Confirm new password:
-                <span class="help">Re-enter the new password.</span>
-            </label>
-            <input type="password"
-                   id="confirm_password"
-                   name="confirm_password"
-                   size="30"
-                   maxlength="255"
-                   autocomplete="new-password" />
-        </p>
-    </div>
-
-    <p style="margin-top: 1em;">
-        <input type="submit"
-               name="submit_password"
-               value="Change Password"
-               class="update"
-               accesskey="s" />
-    </p>
-
-</form>
+    </form>
 
 </div><!-- END #options -->
 

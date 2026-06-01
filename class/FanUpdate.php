@@ -588,6 +588,132 @@ class FanUpdate
                 echo '<div id="post' . $post->getID() . '" class="post">';
                 $post->printPost();
                 echo "</div>\n";
+
+                // ── single-post view: render comments + comment form ──────────
+                if ($single_page) {
+
+                    echo '<div id="comments">' . "\n";
+
+                    if ($post->allowComments()) {
+
+                        // ── approved comments ─────────────────────────────────
+                        $query_display =
+                            'SELECT * FROM ' . $this->getOpt('comments_table')
+                            . ' WHERE entry_id=' . $post->getID()
+                            . ' AND approved > 0 ORDER BY added ASC';
+
+                        $this->db->Execute($query_display);
+
+                        while ($cmt_row = $this->db->ReadRecord()) {
+                            $cmt = new FanUpdate_Comment($cmt_row, $this, $this->getOpt('blog_page'));
+                            $cmt->printComment();
+                        }
+                        $this->db->FreeResult();
+
+                        // ── comment form ──────────────────────────────────────
+                        echo '<div class="comments-form">' . "\n";
+                        echo '<form id="comments-form" action="'
+                            . htmlspecialchars((string) $this->getOpt('install_url'), ENT_QUOTES, 'UTF-8')
+                            . '/process.php" method="post">' . "\n";
+
+                        // read back the comment_form_template from options
+                        $form_template = (string) $this->getOpt('comment_form_template');
+
+                        if ($form_template === '') {
+                            // fallback default (matches install.php default)
+                            $form_template =
+                                '<h3 id="postcomment">Post A Comment</h3>' . "\n"
+                                . '<!-- MODERATION -->' . "\n"
+                                . '<p id="cmt-moderation"><strong>Comment moderation is currently turned on.</strong> '
+                                . 'Your comment will not be displayed until it has been approved by the site owner.</p>' . "\n"
+                                . '<!-- END MODERATION -->' . "\n"
+                                . '<p><label for="name">Name:</label>' . "\n"
+                                . '<input type="text" id="name" name="name" maxlength="20" size="25" value="{{fanuname}}" />'
+                                . '<label for="remember_me" class="checkbox"><input type="checkbox" id="remember_me" name="remember_me" value="1" checked="checked" /> Remember?</label></p>' . "\n"
+                                . '<p><label for="email">Email:</label>' . "\n"
+                                . '<input type="text" id="email" name="email" maxlength="70" size="25" value="{{fanuemail}}" /></p>' . "\n"
+                                . '<p><label for="url">URL:</label>' . "\n"
+                                . '<input type="text" id="url" name="url" maxlength="70" size="25" value="{{fanuurl}}" /></p>' . "\n"
+                                . '<p><label for="myta">Comment:</label>' . "\n"
+                                . '<textarea id="myta" name="comment" cols="50" rows="8"></textarea></p>' . "\n"
+                                . '<!-- CAPTCHA -->' . "\n"
+                                . '<p><label for="captcha">Captcha:</label>' . "\n"
+                                . '<img id="captcha-img" src="{{captcha_image}}" alt="" />' . "\n"
+                                . '<input type="text" id="captcha" name="captcha" /></p>' . "\n"
+                                . '<!-- END CAPTCHA -->' . "\n"
+                                . '<p><input type="submit" id="submit" name="submit_comment" value="Post Comment" class="submit" /></p>' . "\n"
+                                . '<p id="cmt-rules">Your email is only for accessing <a href="http://www.gravatar.com/">gravatar.com</a>. '
+                                . 'No <abbr title="HyperText Markup Language">HTML</abbr> allowed; '
+                                . 'some formatting can be applied via the buttons above the textarea.</p>';
+                        }
+
+                        // Strip the <!-- MODERATION --> block when moderation is off
+                        if (!$this->getOpt('moderate_comments')) {
+                            $form_template = preg_replace(
+                                '/<!--\s*MODERATION\s*-->.*?<!--\s*END MODERATION\s*-->/s',
+                                '',
+                                $form_template
+                            );
+                        }
+
+                        // Strip the <!-- CAPTCHA --> block when captcha is off
+                        if (!$this->getOpt('captcha_on')) {
+                            $form_template = preg_replace(
+                                '/<!--\s*CAPTCHA\s*-->.*?<!--\s*END CAPTCHA\s*-->/s',
+                                '',
+                                $form_template
+                            );
+                        }
+
+                        // Replace {{fanuname}}, {{fanuemail}}, {{fanuurl}} with
+                        // remembered-commenter cookie values (JS-readable; set by process.php)
+                        $fanuname  = htmlspecialchars(
+                            isset($_COOKIE['fanuname'])  ? (string) $_COOKIE['fanuname']  : '',
+                            ENT_QUOTES,
+                            'UTF-8'
+                        );
+                        $fanuemail = htmlspecialchars(
+                            isset($_COOKIE['fanuemail']) ? (string) $_COOKIE['fanuemail'] : '',
+                            ENT_QUOTES,
+                            'UTF-8'
+                        );
+                        $fanuurl   = htmlspecialchars(
+                            isset($_COOKIE['fanuurl'])   ? (string) $_COOKIE['fanuurl']   : '',
+                            ENT_QUOTES,
+                            'UTF-8'
+                        );
+
+                        $captcha_url = htmlspecialchars(
+                            (string) $this->getOpt('install_url') . '/captcha.php',
+                            ENT_QUOTES,
+                            'UTF-8'
+                        );
+
+                        $form_template = str_replace('{{fanuname}}',     $fanuname,     $form_template);
+                        $form_template = str_replace('{{fanuemail}}',    $fanuemail,    $form_template);
+                        $form_template = str_replace('{{fanuurl}}',      $fanuurl,      $form_template);
+                        $form_template = str_replace('{{captcha_image}}', $captcha_url, $form_template);
+
+                        echo $form_template . "\n";
+
+                        // Hidden fields required by process.php
+                        $return_url = htmlspecialchars(
+                            $this->getCleanSelf() . '?id=' . $post->getID(),
+                            ENT_QUOTES,
+                            'UTF-8'
+                        );
+                        echo '<input type="hidden" name="entry" value="' . $post->getID() . '" />' . "\n";
+                        echo '<input type="hidden" name="returnto" value="' . $return_url . '" />' . "\n";
+
+                        echo '</form>' . "\n";
+                        echo '</div><!-- END .comments-form -->' . "\n";
+                    } else {
+                        echo '<p>Comments are currently closed for this post.</p>' . "\n";
+                    }
+
+                    echo '</div><!-- END #comments -->' . "\n";
+                }
+                // ── end single-post block ─────────────────────────────────────
             }
         } else {
             echo '<p>No entries found.</p>' . "\n";

@@ -6,7 +6,7 @@ collective of fan websites. Works equally well as a standalone blog.
 Originally written by **Jenny Ferenc** in 2005. Ported to PHP 7 by **Ekaterina**
 (scripts.robotess.net) in 2020. 
 
-This Redux release updates the codebase to **PHP 8.2+** (current release: Redux 1.8.0).
+This Redux release updates the codebase to **PHP 8.2+** (current release: Redux 1.9.0).
 
 ---
 
@@ -142,6 +142,12 @@ To show only "Whole Collective" entries, set `$listingid = 0`.
 ---
 
 ## Upgrading
+
+### From Redux 1.8.0
+
+1. Back up your files.
+2. Upload `class/FileHandler.php`.
+3. No database changes; `install.php` does not need to be re-run.
 
 ### From Redux 1.7.0
 

@@ -5,10 +5,80 @@ All notable changes to this project are documented here.
 
 ---
 
-## [Redux 1.8.0] — May 31, 2026 — Email Management & Options Cleanup
+## [Redux 1.9.0] — June 1, 2026 — FileHandler PHP 8.2+ Refactor
+
+Completes the PHP 8.2+ compatibility pass across all class files. `FileHandler`
+was the last class still carrying untyped properties and missing return types.
 
 ### Changed
 
+- **`class/FileHandler.php`** — full PHP 8.2+ refactor:
+  - `declare(strict_types=1)` added
+  - `$_allowed_ext` explicitly declared as `public array` — PHP 8.2 deprecated
+    the creation of "dynamic properties" (properties assigned but never declared)
+  - All methods now carry strict PHP 8.x parameter types and return types:
+    - `__construct(array $allowed_ext = []): void`
+    - `getExtension(string $filename): string`
+    - `getMimeType(string $filename): string`
+    - `fixFilename(string $orig_name): string`
+    - `getDimensions(string $path): string`
+    - `getSize(string $path): int`
+    - `getHumanSize(string $path): string`
+    - `checkExtension(string $filename): bool`
+  - `getMimeType()` rewritten as a PHP 8.0 `match` expression — cleaner,
+    exhaustive, and no fall-through risk
+  - `getDimensions()` — added `@` suppression and a `false` guard on
+    `getimagesize()` so a bad path returns `''` rather than a PHP warning
+  - `getSize()` — now returns `int` (0 on failure) instead of `int|false`
+  - `getHumanSize()` — added `$size <= 0` guard to prevent `log(0)` being
+    passed to `floor()`; the `(string) strrchr()` cast in `getExtension()`
+    suppresses the PHP 8.1 union-type deprecation on `strrchr()`
+  - `checkExtension()` — loose `==` comparison with allowed extension values
+    replaced with strict `===` after `(string)` cast; return type `bool`
+  - `fixFilename()` — `preg_replace()` return value cast to `string` to satisfy
+    strict return type (PHP 8 `preg_replace` can return `null` on error)
+  - No `utf8_encode()` / `utf8_decode()` usage present or introduced
+- **Security audit** — no backdoors, `eval()`, `exec()`, `shell_exec()`,
+  `system()`, `passthru()`, `popen()`, `proc_open()`, obfuscated
+  `base64_decode()` payloads, or variable-function calls found in any class file
+
+### Files changed
+
+- `class/FileHandler.php`
+
+---
+
+## [Redux 1.8.0] — May 31, 2026 — Email Management & Options Cleanup
+
+### Fixed
+
+- **`admin/options.php` private-key filter was hiding too many keys** — the
+  old check `strpos($row['optkey'], '_') !== false` hid any option key
+  *containing* an underscore (e.g. `ajax_comments`, `points_approval_threshold`)
+  rather than only keys *starting* with one. Replaced with
+  `str_starts_with($optkey, '_')`, which is both correct and the idiomatic
+  PHP 8.0+ form.
+
+### Changed
+
+- **`admin/options.php`** — full PHP 8.2+ refactor:
+  - `declare(strict_types=1)` added
+  - `OPTIONS_PRIVATE_KEYS` constant introduced as an explicit deny-list for the
+    POST handler; replaces the previous ad-hoc approach
+  - `str_starts_with()` replaces `strpos() !== false` for private-key detection
+    (see Fixed above)
+  - All DB row values explicitly cast to `(string)` before use — PHP 8.2 is
+    stricter about passing mixed types to string functions
+  - `=== 'update'` / `=== 'even'` strict comparisons replace loose `==`
+    throughout
+  - `htmlspecialchars(..., ENT_QUOTES, 'UTF-8')` charset argument added to all
+    calls (was relying on the server default)
+  - `is_array()` guards added around `$clean['key']` and `$clean['value']`
+    before the `foreach` — a malformed POST no longer triggers a PHP warning
+  - `array_key_exists($id, $clean['value'])` guard added to handle mismatched
+    key/value array lengths in a crafted submission
+  - `$class` explicitly initialised to `'odd'` before the loop — removes the
+    `isset()` dance and avoids a PHP 8.2 uninitialised-variable notice
 - **`admin_email` moved from `admin/options.php` to `admin/account.php`** —
   the notification email address is now managed alongside username and password
   under **Admin → Account**, where it belongs conceptually. It no longer appears

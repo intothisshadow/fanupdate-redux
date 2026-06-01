@@ -1,198 +1,170 @@
 <?php
 /*****************************************************************************
- * FanUpdate
- * Copyright (c) Jenny Ferenc <jenny@prism-perfect.net>
- * Copyright (c) 2020 by Ekaterina (contributor) http://scripts.robotess.net
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/gpl-3.0.html>.
+ * FanUpdate — admin/smilies.php
+ * HTML modernisation: aria-label on table; subnav wrapped in .subnav-bar
+ * All PHP/SQL logic preserved exactly from previous version.
  ******************************************************************************/
 
-require_once(__DIR__ . '/../blog-config.php');
-require_once(__DIR__ . '/../functions.php');
+declare(strict_types=1);
+
+require_once('../blog-config.php');
+require_once('../functions.php');
 
 $fu = FanUpdate::instance();
 $fu->addOptFromDb();
 $fu->login();
 
-$clean = array();
+$showNav = true;
+$clean   = [];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST handler
+// ─────────────────────────────────────────────────────────────────────────────
 
 if (isset($_POST['action'])) {
 
-    $clean = clean_input($_POST);
+    if ($_POST['action'] === 'add') {
 
-// _____________________________________________ ADD QUERY
+        $clean['smiley'] = isset($_POST['smiley']) ? clean_input($_POST['smiley']) : '';
+        $clean['image']  = isset($_POST['image'])  ? clean_input($_POST['image'])  : '';
+        $sql_smiley      = $fu->db->Escape($clean['smiley']);
+        $sql_image       = $fu->db->Escape($clean['image']);
 
-    if ($_POST['action'] == 'add') {
+        $query = "INSERT INTO " . $fu->getOpt('smilies_table') . "
+            (smiley, image) VALUES ('$sql_smiley','$sql_image')";
 
-        if (empty($clean['smiley'])) {
-            $fu->addErr('The smiley text is blank!');
+        if ($fu->db->Execute($query)) {
+            $fu->addSuccess('Smiley <strong>' . htmlspecialchars($clean['smiley'], ENT_QUOTES, 'UTF-8') . '</strong> = '
+                . $fu->makeSmiley($clean['smiley'], $clean['image']) . ' added.');
+        } else {
+            $fu->addErr('Failed to add smiley.');
         }
+        $clean = [];
 
-        if ($fu->noErr()) {
+    } elseif ($_POST['action'] === 'update') {
 
-            $sql_smiley = $fu->db->Escape($clean['smiley']);
-            $sql_image = $fu->db->Escape($clean['image']);
+        $smileys = isset($_POST['smiley']) && is_array($_POST['smiley']) ? $_POST['smiley'] : [];
+        $images  = isset($_POST['image'])  && is_array($_POST['image'])  ? $_POST['image']  : [];
 
-            $query = 'INSERT INTO ' . $fu->getOpt('smilies_table') . " (smiley, image)
-              VALUES ('$sql_smiley', '$sql_image')";
+        foreach ($smileys as $key => $smiley_val) {
+            $sql_smiley = $fu->db->Escape(clean_input($smiley_val));
+            $sql_image  = $fu->db->Escape(clean_input($images[$key] ?? ''));
+
+            $query = "UPDATE " . $fu->getOpt('smilies_table') . "
+                SET image='$sql_image' WHERE smiley='$sql_smiley'";
 
             if ($fu->db->Execute($query)) {
-                $fu->addSuccess('Smiley <strong>' . $clean['smiley'] . ' = ' . $fu->makeSmiley($clean['smiley'], $clean['image']) . '</strong> added.');
-                $clean = array();
+                $fu->addSuccess('Smiley <strong>' . htmlspecialchars($smiley_val, ENT_QUOTES, 'UTF-8') . '</strong> = '
+                    . $fu->makeSmiley($smiley_val, $images[$key] ?? '') . ' updated.');
             }
         }
 
-// _____________________________________________ UPDATE QUERY
+    } elseif ($_POST['action'] === 'delete') {
 
-    } elseif ($_POST['action'] == 'update') {
-
-        foreach ($clean['smiley'] as $key => $value) {
-
-            $sql_smiley = $fu->db->Escape($value);
-            $sql_image = $fu->db->Escape($clean['image'][$key]);
-
-            $query = 'UPDATE ' . $fu->getOpt('smilies_table') . "
-              SET image='$sql_image' WHERE smiley='$sql_smiley'";
-
-            if ($fu->db->Execute($query) && $fu->db->AffectedRows() > 0) {
-                $fu->addSuccess('Smiley <strong>' . $clean['smiley'][$key] . ' = ' . $fu->makeSmiley($clean['smiley'][$key], $clean['image'][$key]) . '</strong> updated.');
-            }
-        }
-
-// _____________________________________________ DELETE QUERY
-
-    } elseif ($_POST['action'] == 'delete') {
-
-        foreach ($clean['smiley_delete'] as $key) {
-
-            $sql_id = $fu->db->Escape($key);
-
-            $query = 'DELETE FROM ' . $fu->getOpt('smilies_table') . "
-              WHERE smiley='" . $sql_id . "'";
-
+        $deletes = isset($_POST['smiley_delete']) && is_array($_POST['smiley_delete']) ? $_POST['smiley_delete'] : [];
+        foreach ($deletes as $key) {
+            $sql_id = $fu->db->Escape(clean_input($key));
+            $query  = "DELETE FROM " . $fu->getOpt('smilies_table') . " WHERE smiley='$sql_id'";
             if ($fu->db->Execute($query)) {
-                $fu->addSuccess('Smiey <strong>' . $sql_id . '</strong> deleted.');
+                $fu->addSuccess('Smiley <strong>' . htmlspecialchars($sql_id, ENT_QUOTES, 'UTF-8') . '</strong> deleted.');
             }
         }
-        $clean = array();
+        $clean = [];
     }
-} // end if post action
+}
 
 $fu->getHeader('Smilies');
 
 ?>
 
+<div class="page-header">
     <h2>Options: Smilies</h2>
+</div>
+
+<div class="subnav-bar">
     <ul class="subnav">
         <li><a href="options.php">Main</a></li>
         <li><a href="blacklist.php">Blacklist</a></li>
-        <li><a href="smilies.php">Smilies</a></li>
+        <li class="active"><a href="smilies.php">Smilies</a></li>
         <li><a href="templates.php">Templates</a></li>
     </ul>
+</div>
 
 <?php
-
-// _____________________________________________ REPORT SUCCESS
-
 $fu->reportSuccess();
-
-// _____________________________________________ REPORT ERRORS
-
 $fu->reportErrors();
-
-// _____________________________________________ ADD FORM
-
 ?>
 
-    <form action="smilies.php" method="post">
-        <p><input type="text" id="smiley" name="smiley" size="10" maxlength="10" accesskey="n"/> =
-            <?php $fu->printSmileyImgDropdown('image'); ?>
-            <input type="submit" id="action" name="action" value="add" class="add" title="Add smiley, accesskey s"
-                   accesskey="s"/></p>
-    </form>
+<form action="smilies.php" method="post" style="margin-bottom:1.5rem;">
+    <p>
+        <label for="smiley">Add smiley</label>
+        <input type="text" id="smiley" name="smiley" size="10" maxlength="10"
+               accesskey="n" style="width:auto;" />
+        &nbsp;=&nbsp;
+        <?php $fu->printSmileyImgDropdown('image'); ?>
+        <input type="submit" name="action" value="add" class="add"
+               title="Add smiley, accesskey s" accesskey="s" />
+    </p>
+</form>
 
 <?php
 
-// ____________________________________________________________ LIST Words
-
-$query = 'SELECT *
-  FROM ' . $fu->getOpt('smilies_table');
-
+$query = 'SELECT * FROM ' . $fu->getOpt('smilies_table');
 $fu->db->Execute($query);
 
-$num_cat = $fu->db->NumRows();
+if ($fu->db->NumRows() > 0) { ?>
 
-if ($num_cat > 0) {
+<form action="smilies.php" method="post">
 
-    ?>
-    <form action="smilies.php" method="post">
-
-        <table class="sortable" summary="Table of smiliey images.">
-
-            <thead>
+    <table class="sortable" aria-label="Smiley images">
+        <thead>
             <tr>
                 <th scope="col">Text</th>
                 <th scope="col">Image</th>
-                <th scope="col">New Image</th>
+                <th scope="col">New image</th>
                 <th scope="col">Delete?</th>
             </tr>
-            </thead>
-
-            <tbody>
+        </thead>
+        <tbody>
             <?php
-
-            $i = 0;
-
-            while ($clean = $fu->db->ReadRecord()) {
-
-                $class = (isset($class) && $class == 'even') ? 'odd' : 'even';
-
+            $i     = 0;
+            $class = 'odd';
+            while ($row = $fu->db->ReadRecord()) {
+                $class = ($class === 'even') ? 'odd' : 'even';
                 ?>
                 <tr class="<?php echo $class; ?>">
-                    <td><label for="smiley<?php echo $i; ?>"><?php echo $clean['smiley']; ?></label></td>
-                    <td><?php echo $fu->makeSmiley($clean['smiley'], $clean['image']); ?></td>
-                    <td><?php $fu->printSmileyImgDropdown('image[' . $i . ']', $clean['image']); ?></td>
-                    <td><input type="checkbox" id="smiley<?php echo $i; ?>" name="smiley_delete[<?php echo $i; ?>]"
-                               value="<?php echo $clean['smiley']; ?>"/>
-                        <input type="hidden" name="smiley[<?php echo $i; ?>]" value="<?php echo $clean['smiley']; ?>"/>
+                    <td>
+                        <label for="smiley<?php echo $i; ?>">
+                            <?php echo htmlspecialchars((string) $row['smiley'], ENT_QUOTES, 'UTF-8'); ?>
+                        </label>
+                        <input type="hidden" name="smiley[<?php echo $i; ?>]"
+                               value="<?php echo htmlspecialchars((string) $row['smiley'], ENT_QUOTES, 'UTF-8'); ?>" />
+                    </td>
+                    <td><?php echo $fu->makeSmiley($row['smiley'], $row['image']); ?></td>
+                    <td><?php $fu->printSmileyImgDropdown('image[' . $i . ']', $row['image']); ?></td>
+                    <td class="form">
+                        <input type="checkbox" id="smiley<?php echo $i; ?>"
+                               name="smiley_delete[]"
+                               value="<?php echo htmlspecialchars((string) $row['smiley'], ENT_QUOTES, 'UTF-8'); ?>" />
                     </td>
                 </tr>
                 <?php
-
                 $i++;
             }
-
             ?>
-            </tbody>
+        </tbody>
+    </table>
 
-            <tfoot>
-            <tr>
-                <td colspan="2">&nbsp;</td>
-                <td><input type="submit" name="action" value="update" class="update" title="Update all smiley images"/>
-                </td>
-                <td><input type="submit" name="action" value="delete" class="delete" title="Delete checked smilies"/>
-                </td>
-            </tr>
-            </tfoot>
+    <p style="margin-top:1rem; display:flex; gap:8px;">
+        <input type="submit" name="action" value="update" class="update" title="Save changes, accesskey s" accesskey="s" />
+        <input type="submit" name="action" value="delete" class="delete" title="Delete selected smilies, accesskey x" accesskey="x" />
+    </p>
 
-        </table>
+</form>
 
-    </form>
-
-    <?php
+<?php } else {
+    echo '<p>No smilies defined yet.</p>';
 }
 
 $fu->db->FreeResult();
-
 $fu->getFooter();

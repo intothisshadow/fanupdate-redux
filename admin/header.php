@@ -22,31 +22,63 @@
 
 <head>
 
-    <title><?php if (isset($pageTitle)) {
-            echo $pageTitle . ' | ';
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex,nofollow" />
+
+    <title><?php
+        $pageTitle = $pageTitle ?? ($GLOBALS['pageTitle'] ?? null);
+        if ($pageTitle) {
+            echo htmlspecialchars($pageTitle, ENT_QUOTES, 'UTF-8') . ' | ';
             $pageID = strtolower(str_replace(' ', '-', $pageTitle));
-        } ?>FanUpdate ADMIN</title>
+        }
+    ?>FanUpdate Admin</title>
 
-    <link rel="stylesheet" type="text/css" media="screen" href="../assets/css/style.css"
-          title="FanUpdate <?php echo $this->getOpt('version'); ?>"/>
-    <link rel="shortcut icon" href="../favicon.ico"/>
-
-    <meta charset="UTF-8"/>
-    <meta name="robots" content="noindex,nofollow"/>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=Playfair+Display:ital,wght@0,500;1,400&display=swap" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="../assets/css/style.css" />
+    <link rel="shortcut icon" href="../favicon.ico" />
 
     <script src="../assets/js/fanupdate.js"></script>
     <script src="../assets/js/fanupdate-admin.js"></script>
 
 </head>
 
-<body<?php if (!empty($pageID)) {
-    echo ' id="' . $pageID . '"';
-} ?>>
+<body<?php
+    $pageID = $pageID ?? ($GLOBALS['pageID'] ?? null);
+    if (!empty($pageID)) {
+        echo ' id="' . htmlspecialchars($pageID, ENT_QUOTES, 'UTF-8') . '"';
+    }
+?>>
 
 <div id="wrap">
 
-    <div id="header">
-        <h1><a href="index.php"><span>FanUpdate</span></a></h1>
-    </div>
+    <header id="header">
+        <div id="header-inner">
 
-    <div id="main">
+            <h1><a href="index.php">Fan<span>Update</span></a></h1>
+
+            <?php $showNav = $showNav ?? ($GLOBALS['showNav'] ?? false); if ($showNav === true) { ?>
+            <nav id="nav" aria-label="Main navigation">
+                <ul>
+                    <li><a href="index.php"    class="dashboard"><i class="ti ti-layout-dashboard" aria-hidden="true"></i> Dashboard</a></li>
+                    <li><a href="blog.php"      class="entries"><i class="ti ti-pencil" aria-hidden="true"></i> Entries</a></li>
+                    <li><a href="comment.php"   class="comments"><i class="ti ti-message-circle" aria-hidden="true"></i> Comments</a></li>
+                    <li><a href="category.php"  class="categories"><i class="ti ti-tag" aria-hidden="true"></i> Categories</a></li>
+                    <li><a href="options.php"   class="options"><i class="ti ti-settings" aria-hidden="true"></i> Options</a></li>
+                </ul>
+
+                <div id="nav-end">
+                    <a href="account.php"           class="nav-icon-btn" title="Account"><i class="ti ti-user" aria-label="Account"></i></a>
+                    <a href="credits.php"            class="nav-icon-btn" title="Credits"><i class="ti ti-info-circle" aria-label="Credits"></i></a>
+                    <a href="index.php?action=logout" class="nav-icon-btn" title="Logout"><i class="ti ti-logout" aria-label="Logout"></i></a>
+                </div>
+            </nav>
+            <?php } ?>
+
+        </div>
+    </header>
+
+    <main id="main">

@@ -1,127 +1,104 @@
 <?php
-declare(strict_types=1);
 /*****************************************************************************
- * FanUpdate — credits.php
- *
- * Copyright (c) Jenny Ferenc <jenny@prism-perfect.net>
- * Copyright (c) 2020 by Ekaterina (contributor) http://scripts.robotess.net
- * Copyright (c) 2026 Redux contributor
- *
- * GNU General Public License v3 or later.
- * See <https://www.gnu.org/licenses/gpl-3.0.html> for details.
+ * FanUpdate — admin/credits.php
+ * HTML modernisation:
+ *  - Inline style="" attributes replaced with .credits-section / .credits-meta classes
+ *  - page-header row added
+ *  - All PHP logic preserved exactly
  ******************************************************************************/
 
-require_once(__DIR__ . '/../blog-config.php');
-require_once(__DIR__ . '/../functions.php');
+declare(strict_types=1);
+
+require_once('../blog-config.php');
+require_once('../functions.php');
+require_once('../version.php');
 
 $fu = FanUpdate::instance();
 $fu->addOptFromDb();
 $fu->login();
 
+$showNav = true;
+
 $fu->getHeader('Credits');
 
 ?>
 
-<h2>Credits &amp; Version Info</h2>
+<div class="page-header">
+    <h2>Credits</h2>
+</div>
 
-<div class="col12">
+<!-- ── Version ────────────────────────────────────────────────────────── -->
 
-    <h3>This installation</h3>
-
-    <table>
-        <tbody>
-            <tr class="odd">
-                <th scope="row">Version</th>
-                <td><?php echo htmlspecialchars(FU_VERSION, ENT_QUOTES, 'UTF-8'); ?></td>
-            </tr>
-            <tr>
-                <th scope="row">Release</th>
-                <td><?php echo htmlspecialchars(FU_RELEASE_NAME, ENT_QUOTES, 'UTF-8'); ?></td>
-            </tr>
-            <tr class="odd">
-                <th scope="row">Released</th>
-                <td><?php echo htmlspecialchars(FU_RELEASE_DATE, ENT_QUOTES, 'UTF-8'); ?></td>
-            </tr>
-            <tr>
-                <th scope="row">DB schema</th>
-                <td><?php echo htmlspecialchars(FU_DB_VERSION, ENT_QUOTES, 'UTF-8'); ?></td>
-            </tr>
-            <tr class="odd">
-                <th scope="row">PHP</th>
-                <td><?php echo htmlspecialchars(PHP_VERSION, ENT_QUOTES, 'UTF-8'); ?></td>
-            </tr>
-        </tbody>
-    </table>
-
-    <h3>Contributors</h3>
-
-    <?php foreach (FU_CONTRIBUTORS as $i => $person): ?>
-    <div class="option <?php echo ($i % 2 === 0) ? 'odd' : 'even'; ?>">
-        <p>
-            <strong>
-                <?php if (!empty($person['url'])): ?>
-                    <a href="<?php echo htmlspecialchars($person['url'], ENT_QUOTES, 'UTF-8'); ?>"
-                       target="_blank"><?php echo htmlspecialchars($person['name'], ENT_QUOTES, 'UTF-8'); ?></a>
-                <?php else: ?>
-                    <?php echo htmlspecialchars($person['name'], ENT_QUOTES, 'UTF-8'); ?>
-                <?php endif; ?>
-            </strong>
-            — <?php echo htmlspecialchars($person['role'], ENT_QUOTES, 'UTF-8'); ?>
-            (<?php echo htmlspecialchars($person['years'], ENT_QUOTES, 'UTF-8'); ?>)
-        </p>
-        <p style="margin: 0.25em 0 0 0; color: #666; font-size: 0.9em;">
-            <?php echo htmlspecialchars($person['contribution'], ENT_QUOTES, 'UTF-8'); ?>
-        </p>
-        <?php if (!empty($person['email'])): ?>
-        <p style="margin: 0.25em 0 0 0; font-size: 0.9em;">
-            <a href="mailto:<?php echo htmlspecialchars($person['email'], ENT_QUOTES, 'UTF-8'); ?>">
-                <?php echo htmlspecialchars($person['email'], ENT_QUOTES, 'UTF-8'); ?>
-            </a>
-        </p>
-        <?php endif; ?>
-    </div>
-    <?php endforeach; ?>
-
-</div><!-- END .col12 -->
-
-<div class="col22">
-
-    <h3>Third-party libraries</h3>
-    <p style="font-size: 0.9em; color: #666;">
-        FanUpdate incorporates or is derived from the following open-source works.
-        All are used with permission under their respective licences.
-    </p>
-
-    <?php foreach (FU_LIBRARIES as $i => $lib): ?>
-    <div class="option <?php echo ($i % 2 === 0) ? 'odd' : 'even'; ?>">
-        <p>
-            <strong>
-                <a href="<?php echo htmlspecialchars($lib['url'], ENT_QUOTES, 'UTF-8'); ?>"
-                   target="_blank"><?php echo htmlspecialchars($lib['name'], ENT_QUOTES, 'UTF-8'); ?></a>
-            </strong>
-            — &copy; <?php echo htmlspecialchars($lib['years'], ENT_QUOTES, 'UTF-8'); ?>
-            <?php echo htmlspecialchars($lib['author'], ENT_QUOTES, 'UTF-8'); ?>
-        </p>
-        <p style="margin: 0.25em 0 0 0; color: #666; font-size: 0.9em;">
-            <?php echo htmlspecialchars($lib['used_in'], ENT_QUOTES, 'UTF-8'); ?>
-        </p>
-    </div>
-    <?php endforeach; ?>
-
-    <h3>Licence</h3>
-
+<div class="credits-section">
+    <h3>Version</h3>
     <p>
-        FanUpdate is free software released under the
-        <a href="<?php echo htmlspecialchars(FU_LICENCE_URL, ENT_QUOTES, 'UTF-8'); ?>"
-           target="_blank"><?php echo htmlspecialchars(FU_LICENCE, ENT_QUOTES, 'UTF-8'); ?></a>.
+        <strong>FanUpdate <?php echo htmlspecialchars(FU_VERSION, ENT_QUOTES, 'UTF-8'); ?></strong>
+        (<?php echo htmlspecialchars(FU_RELEASE_NAME, ENT_QUOTES, 'UTF-8'); ?>,
+        released <?php echo htmlspecialchars(FU_RELEASE_DATE, ENT_QUOTES, 'UTF-8'); ?>)
     </p>
-
-    <p style="font-size: 0.9em; color: #666;">
-        Third-party class files (SqlConnection, FeedWriter, FeedItem) retain
-        their original authors' licence declarations and are not affected by
-        this project's licence upgrade.
+    <p class="credits-meta">
+        <a href="<?php echo htmlspecialchars(FU_URL_ORIGINAL, ENT_QUOTES, 'UTF-8'); ?>" target="_blank" rel="noopener">Original project</a>
+        &middot;
+        <a href="<?php echo htmlspecialchars(FU_URL_ROBOTESS, ENT_QUOTES, 'UTF-8'); ?>" target="_blank" rel="noopener">Robotess fork</a>
+        &middot;
+        Licence: <a href="<?php echo htmlspecialchars(FU_LICENCE_URL, ENT_QUOTES, 'UTF-8'); ?>" target="_blank" rel="noopener"><?php echo htmlspecialchars(FU_LICENCE, ENT_QUOTES, 'UTF-8'); ?></a>
     </p>
+</div>
 
-</div><!-- END .col22 -->
+<!-- ── Contributors ───────────────────────────────────────────────────── -->
 
-<?php $fu->getFooter(); ?>
+<div class="credits-section">
+    <h3>Contributors</h3>
+    <?php foreach (FU_CONTRIBUTORS as $person) { ?>
+    <div style="margin-bottom:1.25rem; padding-bottom:1.25rem; border-bottom:0.5px solid var(--fu-border);">
+        <p style="margin-bottom:2px;">
+            <strong>
+                <?php if (!empty($person['url'])) { ?>
+                <a href="<?php echo htmlspecialchars($person['url'], ENT_QUOTES, 'UTF-8'); ?>" target="_blank" rel="noopener">
+                    <?php echo htmlspecialchars($person['name'], ENT_QUOTES, 'UTF-8'); ?>
+                </a>
+                <?php } else {
+                    echo htmlspecialchars($person['name'], ENT_QUOTES, 'UTF-8');
+                } ?>
+            </strong>
+            &mdash;
+            <?php echo htmlspecialchars($person['role'], ENT_QUOTES, 'UTF-8'); ?>
+            <span class="credits-meta">(<?php echo htmlspecialchars($person['years'], ENT_QUOTES, 'UTF-8'); ?>)</span>
+        </p>
+        <p class="small muted"><?php echo htmlspecialchars($person['contribution'], ENT_QUOTES, 'UTF-8'); ?></p>
+    </div>
+    <?php } ?>
+</div>
+
+<!-- ── Libraries ──────────────────────────────────────────────────────── -->
+
+<div class="credits-section">
+    <h3>Libraries &amp; third-party code</h3>
+    <?php foreach (FU_LIBRARIES as $lib) { ?>
+    <div style="margin-bottom:0.875rem;">
+        <p style="margin-bottom:2px;">
+            <strong>
+                <?php if (!empty($lib['url'])) { ?>
+                <a href="<?php echo htmlspecialchars($lib['url'], ENT_QUOTES, 'UTF-8'); ?>" target="_blank" rel="noopener">
+                    <?php echo htmlspecialchars($lib['name'], ENT_QUOTES, 'UTF-8'); ?>
+                </a>
+                <?php } else {
+                    echo htmlspecialchars($lib['name'], ENT_QUOTES, 'UTF-8');
+                } ?>
+            </strong>
+            <?php if (!empty($lib['author'])) { ?>
+            <span class="credits-meta">by <?php echo htmlspecialchars($lib['author'], ENT_QUOTES, 'UTF-8'); ?></span>
+            <?php } ?>
+            <?php if (!empty($lib['licence'])) { ?>
+            &middot; <span class="credits-meta"><?php echo htmlspecialchars($lib['licence'], ENT_QUOTES, 'UTF-8'); ?></span>
+            <?php } ?>
+        </p>
+        <?php if (!empty($lib['note'])) { ?>
+        <p class="small muted"><?php echo htmlspecialchars($lib['note'], ENT_QUOTES, 'UTF-8'); ?></p>
+        <?php } ?>
+    </div>
+    <?php } ?>
+</div>
+
+<?php
+$fu->getFooter();

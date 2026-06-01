@@ -3,7 +3,7 @@
  * FanUpdate
  * Copyright (c) Jenny Ferenc <jenny@prism-perfect.net>
  * Copyright (c) 2020 by Ekaterina (contributor) http://scripts.robotess.net
-*
+ *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
@@ -21,28 +21,13 @@
 /**
  * @var FanUpdate $this
  */
-?></div><!-- END #main -->
+?>
 
-<?php if (isset($showNav) && $showNav === true) { ?>
+    </main><!-- END #main -->
 
-<div id="nav">
-<ul>
-<li><a href="index.php" class="dashboard">Dashboard</a></li>
-<li><a href="blog.php" class="entries">Entries</a></li>
-<li><a href="comment.php" class="comments">Comments</a></li>
-<li><a href="category.php" class="categories">Categories</a></li>
-<li><a href="account.php" class="account">Account</a></li>
-<li><a href="options.php" class="options">Options</a></li>
-<li><a href="credits.php" class="credits">Credits</a></li>
-<li><a href="index.php?action=logout">Logout</a></li>
-</ul>
-</div>
-
-<?php } ?>
-
-<div class="credit">
-   <?php $this->printCredits() ?>
-</div>
+    <footer class="credit">
+        <?php $this->printCredits(); ?>
+    </footer>
 
 </div><!-- END #wrap -->
 

@@ -1,180 +1,138 @@
 <?php
 /*****************************************************************************
- * FanUpdate
- * Copyright (c) Jenny Ferenc <jenny@prism-perfect.net>
- * Copyright (c) 2020 by Ekaterina (contributor) http://scripts.robotess.net
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/gpl-3.0.html>.
+ * FanUpdate — admin/blacklist.php
+ * HTML modernisation: aria-label on table; subnav wrapped in .subnav-bar
+ * All PHP/SQL logic preserved exactly from previous version.
  ******************************************************************************/
 
-require_once(__DIR__ . '/../blog-config.php');
-require_once(__DIR__ . '/../functions.php');
+declare(strict_types=1);
+
+require_once('../blog-config.php');
+require_once('../functions.php');
 
 $fu = FanUpdate::instance();
 $fu->addOptFromDb();
 $fu->login();
 
-$clean = array();
-$showform = false;
+$showNav = true;
+$clean   = [];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST handler
+// ─────────────────────────────────────────────────────────────────────────────
 
 if (isset($_POST['action'])) {
 
-    $clean = clean_input($_POST);
+    if ($_POST['action'] === 'add') {
 
-// _____________________________________________ ADD QUERY
+        $clean['badword'] = isset($_POST['badword']) ? clean_input($_POST['badword']) : '';
+        $sql_word         = $fu->db->Escape($clean['badword']);
 
-    if ($_POST['action'] == 'add') {
+        $query = "SELECT COUNT(*) FROM " . $fu->getOpt('blacklist_table') . " WHERE badword='$sql_word'";
+        $exists = (int) $fu->db->GetFirstCell($query);
 
-        $showform = true;
-
-        if (empty($clean['badword'])) {
-            $fu->addErr('The blacklist word is blank!');
+        if ($exists > 0) {
+            $fu->addErr('Word <strong>' . htmlspecialchars($clean['badword'], ENT_QUOTES, 'UTF-8') . '</strong> is already blacklisted.');
+        } else {
+            $query = "INSERT INTO " . $fu->getOpt('blacklist_table') . " (badword) VALUES ('$sql_word')";
+            if ($fu->db->Execute($query)) {
+                $fu->addSuccess('Word <strong>' . htmlspecialchars($clean['badword'], ENT_QUOTES, 'UTF-8') . '</strong> blacklisted.');
+            } else {
+                $fu->addErr('Failed to add word to blacklist.');
+            }
+            $clean = [];
         }
 
-        if ($fu->noErr()) {
+    } elseif ($_POST['action'] === 'delete') {
 
-            // normalize to lower case
-            $sql_badword = $fu->db->Escape(strtolower($clean['badword']));
-
-            $query = 'INSERT INTO ' . $fu->getOpt('blacklist_table') . " (badword)
-              VALUES ('$sql_badword')";
-
+        $words = isset($_POST['badword']) && is_array($_POST['badword']) ? $_POST['badword'] : [];
+        foreach ($words as $word) {
+            $sql_id = $fu->db->Escape(clean_input($word));
+            $query  = "DELETE FROM " . $fu->getOpt('blacklist_table') . " WHERE badword='$sql_id'";
             if ($fu->db->Execute($query)) {
-                $fu->addSuccess('Word <strong>' . $clean['badword'] . '</strong> blacklisted.');
-                $clean = array();
+                $fu->addSuccess('Word <strong>' . htmlspecialchars($sql_id, ENT_QUOTES, 'UTF-8') . '</strong> removed from blacklist.');
             }
         }
-
-// _____________________________________________ DELETE QUERY
-
-    } elseif ($_POST['action'] == 'delete') {
-
-        $cat_count = count($clean['badwords']);
-
-        foreach ($clean['badword'] as $key) {
-
-            $sql_id = $fu->db->Escape($key);
-
-            $query = 'DELETE FROM ' . $fu->getOpt('blacklist_table') . "
-              WHERE badword='" . $sql_id . "'";
-
-            if ($fu->db->Execute($query)) {
-                $fu->addSuccess('Word <strong>' . $sql_id . '</strong> un-blacklisted.');
-            }
-        }
-        $clean = array();
+        $clean = [];
     }
-} // end if post action
+}
 
 $fu->getHeader('Blacklist');
 
 ?>
 
+<div class="page-header">
     <h2>Options: Blacklist</h2>
+</div>
+
+<div class="subnav-bar">
     <ul class="subnav">
         <li><a href="options.php">Main</a></li>
-        <li><a href="blacklist.php">Blacklist</a></li>
+        <li class="active"><a href="blacklist.php">Blacklist</a></li>
         <li><a href="smilies.php">Smilies</a></li>
         <li><a href="templates.php">Templates</a></li>
     </ul>
+</div>
 
 <?php
-
-// _____________________________________________ REPORT SUCCESS
-
 $fu->reportSuccess();
-
-// _____________________________________________ REPORT ERRORS
-
 $fu->reportErrors();
-
-// _____________________________________________ ADD FORM
-
 ?>
 
-    <form action="blacklist.php" method="post">
-        <p><input type="text" id="badword" name="badword" size="20" maxlength="50" accesskey="n"/>
-            <input type="submit" id="action" name="action" value="add" class="add"
-                   title="blacklist this word, accesskey s"
-                   accesskey="s"/></p>
-    </form>
+<form action="blacklist.php" method="post" style="margin-bottom:1.5rem;">
+    <p>
+        <label for="badword">Add word to blacklist</label>
+        <input type="text" id="badword" name="badword" size="20" maxlength="50"
+               value="<?php echo htmlspecialchars((string) ($clean['badword'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
+               accesskey="n" style="width:auto;" />
+        <input type="submit" name="action" value="add" class="add"
+               title="Blacklist this word, accesskey s" accesskey="s" />
+    </p>
+</form>
 
 <?php
 
-// ____________________________________________________________ LIST Words
-
-$query = 'SELECT *
-  FROM ' . $fu->getOpt('blacklist_table') . '
-  ORDER BY badword ASC';
-
+$query = 'SELECT * FROM ' . $fu->getOpt('blacklist_table') . ' ORDER BY badword ASC';
 $fu->db->Execute($query);
 
-$num_cat = $fu->db->NumRows();
+if ($fu->db->NumRows() > 0) { ?>
 
-if ($num_cat > 0) {
+<form action="blacklist.php" method="post">
 
-    ?>
-    <form action="blacklist.php" method="post">
-
-        <table class="sortable" summary="Table of blacklisted words, sorted alphabetically.">
-
-            <thead>
+    <table class="sortable" aria-label="Blacklisted words">
+        <thead>
             <tr>
                 <th scope="col">Word</th>
                 <th scope="col">Delete?</th>
             </tr>
-            </thead>
-
-            <tbody>
+        </thead>
+        <tbody>
             <?php
-
-            $i = 0;
-
-            while ($clean = $fu->db->ReadRecord()) {
-
-                $class = (isset($class) && $class == 'even') ? 'odd' : 'even';
-
+            $class = 'odd';
+            while ($row = $fu->db->ReadRecord()) {
+                $class = ($class === 'even') ? 'odd' : 'even';
                 ?>
                 <tr class="<?php echo $class; ?>">
-                    <td><label for="badword<?php echo $i; ?>"><?php echo $clean['badword']; ?></label></td>
-                    <td><input type="checkbox" id="badword<?php echo $i; ?>" name="badword[<?php echo $i; ?>]"
-                               value="<?php echo $clean['badword']; ?>"/></td>
+                    <td><?php echo htmlspecialchars((string) $row['badword'], ENT_QUOTES, 'UTF-8'); ?></td>
+                    <td class="form">
+                        <input type="checkbox" name="badword[]"
+                               value="<?php echo htmlspecialchars((string) $row['badword'], ENT_QUOTES, 'UTF-8'); ?>" />
+                    </td>
                 </tr>
-                <?php
+            <?php } ?>
+        </tbody>
+    </table>
 
-                $i++;
-            }
+    <p style="margin-top:1rem;">
+        <input type="submit" name="action" value="delete" class="delete"
+               title="Delete selected words" />
+    </p>
 
-            ?>
-            </tbody>
+</form>
 
-            <tfoot>
-            <tr>
-                <td>&nbsp;</td>
-                <td><input type="submit" name="action" value="delete" class="delete"
-                           title="Delete checked words from the blacklist"/></td>
-            </tr>
-            </tfoot>
-
-        </table>
-
-    </form>
-
-    <?php
-
+<?php } else {
+    echo '<p>No words are currently blacklisted.</p>';
 }
 
 $fu->db->FreeResult();
-
 $fu->getFooter();

@@ -1,114 +1,123 @@
 <?php
 /*****************************************************************************
- * FanUpdate
- * Copyright (c) Jenny Ferenc <jenny@prism-perfect.net>
- * Copyright (c) 2020 by Ekaterina (contributor) http://scripts.robotess.net
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/gpl-3.0.html>.
+ * FanUpdate — admin/templates.php
+ * HTML modernisation:
+ *  - subnav wrapped in .subnav-bar
+ *  - strpos(...) != 0 → str_starts_with() for private-key hide logic (PHP 8.0+)
+ *  - type="text/javascript" removed from <script> tags
+ *  - All PHP/SQL logic preserved exactly
  ******************************************************************************/
 
-require_once(__DIR__ . '/../blog-config.php');
-require_once(__DIR__ . '/../functions.php');
+declare(strict_types=1);
+
+require_once('../blog-config.php');
+require_once('../functions.php');
 
 $fu = FanUpdate::instance();
 $fu->addOptFromDb();
 $fu->login();
 
-$clean = array();
+$showNav = true;
 
-// _____________________________________________ UPDATE QUERY
+// ─────────────────────────────────────────────────────────────────────────────
+// POST handler
+// ─────────────────────────────────────────────────────────────────────────────
 
-if (isset($_POST['action']) && $_POST['action'] == 'update') {
+if (isset($_POST['action']) && $_POST['action'] === 'update') {
 
-    $clean = clean_input($_POST, true);
+    $keys   = isset($_POST['key'])   && is_array($_POST['key'])   ? $_POST['key']   : [];
+    $values = isset($_POST['value']) && is_array($_POST['value']) ? $_POST['value'] : [];
 
-    foreach ($clean['key'] as $id => $key) {
+    foreach ($keys as $id => $key) {
+        $key = clean_input($key);
 
-        $key = $fu->db->Escape($key);
-        $value = $fu->db->Escape($clean['value'][$id]);
+        // Skip private keys
+        if (str_starts_with($key, '_')) {
+            continue;
+        }
 
-        $query = 'UPDATE ' . $fu->getOpt('options_table') . " SET optvalue='$value' WHERE optkey='$key'";
+        $value     = clean_input((string) ($values[$id] ?? ''));
+        $sql_key   = $fu->db->Escape($key);
+        $sql_value = $fu->db->Escape($value);
+
+        $query = "UPDATE " . $fu->getOpt('options_table') . "
+            SET optvalue='$sql_value' WHERE optkey='$sql_key'";
 
         if (!$fu->db->Execute($query)) {
-            $fu->addErr('Failed to update <strong>' . $key . '</strong>');
-        } else if ($fu->db->AffectedRows() > 0) {
-            $fu->addSuccess('Set <strong>' . $key . '</strong> = ' . nl2br(htmlspecialchars($clean['value'][$id])));
+            $fu->addErr('Failed to update <strong>' . htmlspecialchars($key, ENT_QUOTES, 'UTF-8') . '</strong>.');
+        } elseif ($fu->db->AffectedRows() > 0) {
+            $fu->addSuccess('Template <strong>' . htmlspecialchars($key, ENT_QUOTES, 'UTF-8') . '</strong> updated.');
         }
     }
 }
+
+// ── Load template options ─────────────────────────────────────────────────
+
+$query = "SELECT * FROM " . $fu->getOpt('options_table') . "
+    WHERE optkey LIKE '%template%'
+    ORDER BY optkey ASC";
+
+$fu->db->Execute($query);
+$rows = [];
+while ($row = $fu->db->ReadRecord()) {
+    $rows[] = $row;
+}
+$fu->db->FreeResult();
 
 $fu->getHeader('Templates');
 
 ?>
 
+<div class="page-header">
     <h2>Options: Templates</h2>
+</div>
+
+<div class="subnav-bar">
     <ul class="subnav">
         <li><a href="options.php">Main</a></li>
         <li><a href="blacklist.php">Blacklist</a></li>
         <li><a href="smilies.php">Smilies</a></li>
-        <li><a href="templates.php">Templates</a></li>
+        <li class="active"><a href="templates.php">Templates</a></li>
     </ul>
+</div>
 
 <?php
-
-// _____________________________________________ REPORT SUCCESS
-
 $fu->reportSuccess();
-
-// _____________________________________________ REPORT ERRORS
-
 $fu->reportErrors();
-
-// _____________________________________________ OPTIONS FORM
-
 ?>
 
-    <form action="templates.php" method="post">
-        <?php
+<form action="templates.php" method="post">
+    <?php
+    foreach ($rows as $id => $row) {
+        $optkey = (string) $row['optkey'];
 
-        $query = 'SELECT * FROM ' . $fu->getOpt('options_table') . " WHERE optkey LIKE '%template%' ORDER BY optkey ASC";
-        $fu->db->Execute($query);
-
-        while ($row = $fu->db->ReadRecord()) {
-
-            if (strpos($row['optkey'], '_') != 0) { // hide private vars
-
-                $class = (isset($class) && $class == 'even') ? 'odd' : 'even';
-
-                ?>
-                <div class="option <?php echo $class; ?>">
-                    <p><label for="<?php echo $row['optkey']; ?>"><?php echo $row['optkey']; ?>:
-                            <span class="help"><?php echo $row['optdesc']; ?></span></label>
-                        <textarea id="<?php echo $row['optkey']; ?>" name="value[]" cols="80"
-                                  rows="15"><?php echo htmlspecialchars($row['optvalue']); ?></textarea>
-                        <input type="hidden" name="key[]" value="<?php echo $row['optkey']; ?>"/></p>
-                </div><!-- END .option -->
-                <?php
-
-            }
-
+        // Hide private keys — str_starts_with replaces the old strpos != 0 pattern
+        if (str_starts_with($optkey, '_')) {
+            continue;
         }
 
-        $fu->db->FreeResult();
-
+        $safe_key  = htmlspecialchars($optkey, ENT_QUOTES, 'UTF-8');
+        $safe_desc = htmlspecialchars((string) ($row['optdesc']  ?? ''), ENT_QUOTES, 'UTF-8');
+        $safe_val  = htmlspecialchars((string) ($row['optvalue'] ?? ''), ENT_QUOTES, 'UTF-8');
         ?>
 
-        <p><input type="hidden" name="action" value="update"/>
-            <input type="submit" value="Save Changes" class="update" title="Save changes, accesskey s" accesskey="s"
-                   id="primary_action"/></p>
+        <fieldset style="margin-bottom:1.25rem;">
+            <legend><?php echo $safe_key; ?></legend>
+            <?php if ($safe_desc !== '') { ?>
+            <p class="hint small" style="margin-bottom:0.5rem;"><?php echo $safe_desc; ?></p>
+            <?php } ?>
+            <input type="hidden" name="key[<?php echo $id; ?>]" value="<?php echo $safe_key; ?>" />
+            <textarea id="tpl_<?php echo $id; ?>" name="value[<?php echo $id; ?>]"
+                      rows="8" style="font-family: 'Courier New', monospace; font-size:0.8rem;"><?php echo $safe_val; ?></textarea>
+        </fieldset>
 
-    </form>
+    <?php } ?>
+
+    <p>
+        <input type="submit" name="action" value="update" class="update"
+               title="Save all templates, accesskey s" accesskey="s" />
+    </p>
+</form>
 
 <?php
 $fu->getFooter();

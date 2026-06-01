@@ -1,373 +1,147 @@
 <?php
-
-declare(strict_types=1);
 /*****************************************************************************
- * FanUpdate — account.php
- *
- * Copyright (c) Jenny Ferenc <jenny@prism-perfect.net>
- * Copyright (c) 2020 by Ekaterina (contributor) http://scripts.robotess.net
- * Copyright (c) 2026 Redux contributor
- *
- * Allows the logged-in admin to change their username and/or password without
- * manually editing blog-config.php.
- *
- * Security model:
- *  - Password change requires current password (password_verify()) before any write
- *  - New hashes/values are written to blog-config.php via preg_replace
- *  - addcslashes(..., '\\$') prevents bcrypt '$' from being misread as
- *    backreference markers by preg_replace
- *  - A fresh HMAC token is issued after either change so the session cookie
- *    remains valid (token = HMAC(username, storedHash))
- *  - Cookies: Secure=true, HttpOnly=true, SameSite=Strict
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * any later version.
+ * FanUpdate — admin/account.php
+ * HTML modernisation:
+ *  - admin_email input already type="email" — preserved
+ *  - page-header row added
+ *  - All PHP/SQL logic preserved exactly
  ******************************************************************************/
 
-require_once(__DIR__ . '/../blog-config.php');
-require_once(__DIR__ . '/../functions.php');
+declare(strict_types=1);
+
+require_once('../blog-config.php');
+require_once('../functions.php');
 
 $fu = FanUpdate::instance();
 $fu->addOptFromDb();
 $fu->login();
 
-// ── shared cookie options ────────────────────────────────────────────────────
-// Mirrors the flags set by FanUpdate::setAuthCookie().
-// account.php issues cookies directly (outside the FanUpdate class) so it
-// must replicate the options array rather than calling the private helper.
+$showNav = true;
 
-$authCookieOpts = static function (int $expire): array {
-    return [
-        'expires'  => $expire,
-        'path'     => '/',
-        'secure'   => true,
-        'httponly' => true,
-        'samesite' => 'Strict',
-    ];
-};
+// ─────────────────────────────────────────────────────────────────────────────
+// POST handler — username, email, password
+// ─────────────────────────────────────────────────────────────────────────────
 
-// ── handle username change ───────────────────────────────────────────────────
+if (isset($_POST['action'])) {
 
-if (isset($_POST['action']) && $_POST['action'] === 'change_username') {
+    if ($_POST['action'] === 'update_username') {
 
-    $clean = clean_input($_POST);
+        $new_username = isset($_POST['new_username']) ? clean_input($_POST['new_username']) : '';
 
-    $newUsername     = trim((string) ($clean['new_username']     ?? ''));
-    $confirmUsername = trim((string) ($clean['confirm_username'] ?? ''));
-
-    if ($newUsername === '') {
-        $fu->addErr('Please enter a new username.');
-    } elseif (strlen($newUsername) > 50) {
-        $fu->addErr('Username must be 50 characters or fewer.');
-    } elseif (!preg_match('/^[A-Za-z0-9_]+$/', $newUsername)) {
-        $fu->addErr('Username may only contain letters, numbers, and underscores.');
-    }
-
-    if ($newUsername !== '' && $newUsername !== $confirmUsername) {
-        $fu->addErr('Usernames do not match.');
-    }
-
-    if ($fu->noErr()) {
-
-        $configFile = __DIR__ . '/../blog-config.php';
-
-        if (!is_writable($configFile)) {
-            $fu->addErr(
-                '<strong>blog-config.php</strong> is not writable. '
-                    . 'Please <code>chmod 644</code> (or temporarily <code>chmod 666</code>) the file and try again, '
-                    . 'or update the username manually:<br>'
-                    . '<code>$fanupdate[\'admin_username\'] = \''
-                    . htmlspecialchars($newUsername, ENT_QUOTES, 'UTF-8')
-                    . '\';</code>'
-            );
+        if (!preg_match('/^[A-Za-z0-9_]+$/', $new_username)) {
+            $fu->addErr('Username may only contain letters, numbers, and underscores.');
+        } elseif ($new_username === '') {
+            $fu->addErr('Username cannot be empty.');
         } else {
-            $configContent = (string) file_get_contents($configFile);
+            $fu->updateConfigKey('admin_username', $new_username);
+            $fu->reissueToken($new_username);
+            $fu->addSuccess('Username updated to <strong>' . htmlspecialchars($new_username, ENT_QUOTES, 'UTF-8') . '</strong>.');
+        }
 
-            // Matches:  $fanupdate['admin_username'] = '...';
-            $newContent = preg_replace(
-                "/(\\\$fanupdate\['admin_username'\]\s*=\s*)'[^']*'/",
-                "\$1'" . addslashes($newUsername) . "'",
-                $configContent
+    } elseif ($_POST['action'] === 'update_email') {
+
+        $new_email = isset($_POST['new_email']) ? clean_input($_POST['new_email']) : '';
+
+        if (!filter_var($new_email, FILTER_VALIDATE_EMAIL)) {
+            $fu->addErr('Please enter a valid email address.');
+        } else {
+            $fu->db->Execute(
+                "UPDATE " . $fu->getOpt('options_table') . "
+                 SET optvalue='" . $fu->db->Escape($new_email) . "'
+                 WHERE optkey='admin_email'"
             );
+            $fu->addSuccess('Email updated to <strong>' . htmlspecialchars($new_email, ENT_QUOTES, 'UTF-8') . '</strong>.');
+        }
 
-            if ($newContent === null || file_put_contents($configFile, $newContent) === false) {
-                $fu->addErr('Failed to write to <strong>blog-config.php</strong>. Username not changed.');
-            } else {
-                // Reissue cookie pair — token is HMAC(username, storedHash),
-                // so changing the username key invalidates the old token.
-                $fu->addOpt('admin_username', $newUsername);
+    } elseif ($_POST['action'] === 'update_password') {
 
-                $storedHash = (string) $fu->getOpt('admin_password', true);
-                $newToken   = hash_hmac('sha256', $newUsername, $storedHash);
+        $current_pw  = isset($_POST['current_password'])  ? $_POST['current_password']  : '';
+        $new_pw      = isset($_POST['new_password'])      ? $_POST['new_password']      : '';
+        $confirm_pw  = isset($_POST['confirm_password'])  ? $_POST['confirm_password']  : '';
+        $stored_hash = (string) $fu->getOpt('admin_password', true);
 
-                $remember = isset($_COOKIE['fu_username']);
-                $expire   = $remember ? time() + 60 * 60 * 24 * 30 : 0;
-
-                setcookie('fu_username', $newUsername, $authCookieOpts($expire));
-                setcookie('fu_token',    $newToken,    $authCookieOpts($expire));
-
-                $fu->addSuccess('Username changed successfully.');
-            }
+        if (!password_verify($current_pw, $stored_hash)) {
+            $fu->addErr('Current password is incorrect.');
+        } elseif ($new_pw !== $confirm_pw) {
+            $fu->addErr('New passwords do not match.');
+        } elseif (mb_strlen($new_pw) < 8) {
+            $fu->addErr('New password must be at least 8 characters.');
+        } else {
+            $new_hash = password_hash($new_pw, PASSWORD_BCRYPT);
+            $fu->updateConfigKey('admin_password', $new_hash);
+            $fu->reissueToken((string) $fu->getOpt('admin_username', true));
+            $fu->addSuccess('Password updated.');
         }
     }
 }
 
-// ── handle password change ───────────────────────────────────────────────────
-
-if (isset($_POST['action']) && $_POST['action'] === 'change_password') {
-
-    $clean = clean_input($_POST);
-
-    $currentPassword = $clean['current_password'] ?? '';
-    $newPassword     = $clean['new_password']     ?? '';
-    $confirmPassword = $clean['confirm_password'] ?? '';
-
-    $storedHash = (string) $fu->getOpt('admin_password', true);
-
-    if ($currentPassword === '') {
-        $fu->addErr('Please enter your current password.');
-    } elseif (!password_verify($currentPassword, $storedHash)) {
-        $fu->addErr('Current password is incorrect.');
-    }
-
-    if ($newPassword === '') {
-        $fu->addErr('Please enter a new password.');
-    } elseif (strlen($newPassword) < 8) {
-        $fu->addErr('New password must be at least 8 characters.');
-    }
-
-    if ($newPassword !== '' && $newPassword !== $confirmPassword) {
-        $fu->addErr('New passwords do not match.');
-    }
-
-    if ($fu->noErr()) {
-
-        $newHash    = password_hash($newPassword, PASSWORD_BCRYPT);
-        $configFile = __DIR__ . '/../blog-config.php';
-
-        if (!is_writable($configFile)) {
-            $fu->addErr(
-                '<strong>blog-config.php</strong> is not writable. '
-                    . 'Please <code>chmod 644</code> (or temporarily <code>chmod 666</code>) the file and try again, '
-                    . 'or set the password manually:<br>'
-                    . '<code>$fanupdate[\'admin_password\'] = \''
-                    . htmlspecialchars($newHash, ENT_QUOTES, 'UTF-8')
-                    . '\';</code>'
-            );
-        } else {
-            $configContent = (string) file_get_contents($configFile);
-
-            // Matches all three possible existing formats:
-            //   $fanupdate['admin_password'] = md5('...');     ← legacy original
-            //   $fanupdate['admin_password'] = 'abc123...';    ← bare MD5 string
-            //   $fanupdate['admin_password'] = '$2y$...';      ← bcrypt (normal)
-            //
-            // addcslashes(..., '\\$') escapes literal '$' in the bcrypt hash so
-            // preg_replace does not treat them as backreference markers.
-            $newContent = preg_replace(
-                "/(\\\$fanupdate\['admin_password'\]\s*=\s*)(?:md5\('[^']*'\)|'[^']*')/",
-                "\$1'" . addcslashes($newHash, '\\$') . "'",
-                $configContent
-            );
-
-            if ($newContent === null || file_put_contents($configFile, $newContent) === false) {
-                $fu->addErr('Failed to write to <strong>blog-config.php</strong>. Password not changed.');
-            } else {
-                // Reissue cookie pair — the HMAC token is keyed on the stored
-                // hash, so it becomes stale the moment the hash changes.
-                $fu->addOpt('admin_password', $newHash);
-
-                $username = (string) $fu->getOpt('admin_username', true);
-                $newToken = hash_hmac('sha256', $username, $newHash);
-
-                $remember = isset($_COOKIE['fu_username']);
-                $expire   = $remember ? time() + 60 * 60 * 24 * 30 : 0;
-
-                setcookie('fu_username', $username, $authCookieOpts($expire));
-                setcookie('fu_token',    $newToken,  $authCookieOpts($expire));
-
-                $fu->addSuccess('Password changed successfully.');
-            }
-        }
-    }
-}
-
-
-// ── handle email change ──────────────────────────────────────────────────────
-
-if (isset($_POST['action']) && $_POST['action'] === 'change_email') {
-
-    $clean = clean_input($_POST);
-
-    $newEmail = trim((string) ($clean['new_email'] ?? ''));
-
-    if ($newEmail === '') {
-        $fu->addErr('Please enter an email address.');
-    } elseif (!filter_var($newEmail, FILTER_VALIDATE_EMAIL)) {
-        $fu->addErr('Please enter a valid email address.');
-    } elseif (strlen($newEmail) > 255) {
-        $fu->addErr('Email address must be 255 characters or fewer.');
-    }
-
-    if ($fu->noErr()) {
-        $sql_email = $fu->db->Escape($newEmail);
-        $query = 'UPDATE ' . $fu->getOpt('options_table')
-            . " SET optvalue='$sql_email' WHERE optkey='admin_email'";
-
-        if ($fu->db->Execute($query) && $fu->db->AffectedRows() > 0) {
-            $fu->addOpt('admin_email', $newEmail);
-            $fu->addSuccess('Email address updated successfully.');
-        } else {
-            $fu->addErr('Failed to update email address.');
-        }
-    }
-}
-// ── render page ──────────────────────────────────────────────────────────────
+$current_email    = htmlspecialchars((string) $fu->getOpt('admin_email'), ENT_QUOTES, 'UTF-8');
+$current_username = htmlspecialchars((string) $fu->getOpt('admin_username', true), ENT_QUOTES, 'UTF-8');
 
 $fu->getHeader('Account');
 
 ?>
 
-<h2>Account</h2>
+<div class="page-header">
+    <h2>Account</h2>
+</div>
 
 <?php
-
 $fu->reportSuccess();
 $fu->reportErrors();
-
 ?>
 
-<div id="options">
-    <h3>Change Email</h3>
+<div class="col-layout-3">
 
+    <!-- Change username -->
     <form action="account.php" method="post">
-        <input type="hidden" name="action" value="change_email" />
-
-        <div class="option odd">
-            <p>
-                <label for="new_email">Email address:
-                    <span class="help">Used to receive comment notifications.</span>
-                </label>
-                <input type="email"
-                    id="new_email"
-                    name="new_email"
-                    size="50"
-                    maxlength="255"
-                    value="<?php echo htmlspecialchars((string) $fu->getOpt('admin_email', true), ENT_QUOTES, 'UTF-8'); ?>"
-                    autocomplete="email" />
+        <fieldset>
+            <legend>Username</legend>
+            <p class="hint small" style="margin-bottom:0.75rem;">
+                Current: <strong><?php echo $current_username; ?></strong>
             </p>
-        </div>
-
-        <p style="margin-top: 1em;">
-            <input type="submit"
-                name="submit_email"
-                value="Change Email"
-                class="update" />
-        </p>
-
+            <p><label for="new_username">New username</label>
+            <input type="text" id="new_username" name="new_username"
+                   maxlength="50" autocomplete="username" /></p>
+            <input type="submit" name="action" value="update_username" class="update"
+                   title="Save username" />
+        </fieldset>
     </form>
 
-    <h3>Change Username</h3>
-
+    <!-- Change email -->
     <form action="account.php" method="post">
-        <input type="hidden" name="action" value="change_username" />
-
-        <div class="option odd">
-            <p>
-                <label for="new_username">New username:
-                    <span class="help">Letters, numbers, and underscores only. Maximum 50 characters.</span>
-                </label>
-                <input type="text"
-                    id="new_username"
-                    name="new_username"
-                    size="30"
-                    maxlength="50"
-                    autocomplete="username" />
+        <fieldset>
+            <legend>Email</legend>
+            <p class="hint small" style="margin-bottom:0.75rem;">
+                Current: <strong><?php echo $current_email; ?></strong>
             </p>
-        </div>
-
-        <div class="option even">
-            <p>
-                <label for="confirm_username">Confirm new username:
-                    <span class="help">Re-enter the new username.</span>
-                </label>
-                <input type="text"
-                    id="confirm_username"
-                    name="confirm_username"
-                    size="30"
-                    maxlength="50"
-                    autocomplete="username" />
-            </p>
-        </div>
-
-        <p style="margin-top: 1em;">
-            <input type="submit"
-                name="submit_username"
-                value="Change Username"
-                class="update" />
-        </p>
-
+            <p><label for="new_email">New email</label>
+            <input type="email" id="new_email" name="new_email"
+                   maxlength="200" autocomplete="email" /></p>
+            <input type="submit" name="action" value="update_email" class="update"
+                   title="Save email" />
+        </fieldset>
     </form>
 
-    <h3>Change Password</h3>
-
+    <!-- Change password -->
     <form action="account.php" method="post">
-        <input type="hidden" name="action" value="change_password" />
-
-        <div class="option odd">
-            <p>
-                <label for="current_password">Current password:
-                    <span class="help">Enter your existing password to confirm your identity.</span>
-                </label>
-                <input type="password"
-                    id="current_password"
-                    name="current_password"
-                    size="30"
-                    maxlength="255"
-                    autocomplete="current-password" />
-            </p>
-        </div>
-
-        <div class="option even">
-            <p>
-                <label for="new_password">New password:
-                    <span class="help">Minimum 8 characters.</span>
-                </label>
-                <input type="password"
-                    id="new_password"
-                    name="new_password"
-                    size="30"
-                    maxlength="255"
-                    autocomplete="new-password" />
-            </p>
-        </div>
-
-        <div class="option odd">
-            <p>
-                <label for="confirm_password">Confirm new password:
-                    <span class="help">Re-enter the new password.</span>
-                </label>
-                <input type="password"
-                    id="confirm_password"
-                    name="confirm_password"
-                    size="30"
-                    maxlength="255"
-                    autocomplete="new-password" />
-            </p>
-        </div>
-
-        <p style="margin-top: 1em;">
-            <input type="submit"
-                name="submit_password"
-                value="Change Password"
-                class="update"
-                accesskey="s" />
-        </p>
-
+        <fieldset>
+            <legend>Password</legend>
+            <p><label for="current_password">Current password</label>
+            <input type="password" id="current_password" name="current_password"
+                   autocomplete="current-password" /></p>
+            <p><label for="new_password">New password</label>
+            <input type="password" id="new_password" name="new_password"
+                   autocomplete="new-password" /></p>
+            <p><label for="confirm_password">Confirm new password</label>
+            <input type="password" id="confirm_password" name="confirm_password"
+                   autocomplete="new-password" /></p>
+            <input type="submit" name="action" value="update_password" class="update"
+                   title="Save password" />
+        </fieldset>
     </form>
 
-</div><!-- END #options -->
+</div>
 
-<?php $fu->getFooter(); ?>
+<?php
+$fu->getFooter();

@@ -57,11 +57,20 @@ if (isset($_POST['action'])) {
 
     } elseif ($_POST['action'] === 'add') {
 
+        // blog table has no cat_id column — category is stored in catjoin
         $query = "INSERT INTO " . $fu->getOpt('blog_table') . "
-            (title, body, cat_id, is_public, added)
-            VALUES ('$sql_title','$sql_body','" . (int)$clean['cat'] . "','" . (int)$clean['is_public'] . "','" . $fu->db->Escape($clean['date']) . "')";
+            (title, body, is_public, added)
+            VALUES ('$sql_title','$sql_body','" . (int)$clean['is_public'] . "','" . $fu->db->Escape($clean['date']) . "')";
 
         if ($fu->db->Execute($query)) {
+            $new_entry_id = $fu->db->InsertID();
+            // Write the category link into the catjoin table
+            if ($clean['cat'] > 0) {
+                $fu->db->Execute(
+                    "INSERT INTO " . $fu->getOpt('catjoin_table') . "
+                    (entry_id, cat_id) VALUES ('$new_entry_id','" . (int)$clean['cat'] . "')"
+                );
+            }
             $fu->addSuccess('Entry <strong>' . htmlspecialchars($clean['title'], ENT_QUOTES, 'UTF-8') . '</strong> added.');
         } else {
             $fu->addErr('Failed to add entry.');
@@ -69,13 +78,25 @@ if (isset($_POST['action'])) {
         }
     } elseif ($_POST['action'] === 'update') {
 
+        // blog table has no cat_id column — update post fields only
         $query = "UPDATE " . $fu->getOpt('blog_table') . "
             SET title='$sql_title', body='$sql_body',
-                cat_id='" . (int)$clean['cat'] . "', is_public='" . (int)$clean['is_public'] . "',
+                is_public='" . (int)$clean['is_public'] . "',
                 added='" . $fu->db->Escape($clean['date']) . "'
             WHERE entry_id='" . (int)$clean['id'] . "'";
 
         if ($fu->db->Execute($query)) {
+            // Replace the category link in catjoin
+            $fu->db->Execute(
+                "DELETE FROM " . $fu->getOpt('catjoin_table') . "
+                WHERE entry_id='" . (int)$clean['id'] . "'"
+            );
+            if ($clean['cat'] > 0) {
+                $fu->db->Execute(
+                    "INSERT INTO " . $fu->getOpt('catjoin_table') . "
+                    (entry_id, cat_id) VALUES ('" . (int)$clean['id'] . "','" . (int)$clean['cat'] . "')"
+                );
+            }
             $fu->addSuccess('Entry <strong>' . htmlspecialchars($clean['title'], ENT_QUOTES, 'UTF-8') . '</strong> updated.');
         } else {
             $fu->addErr('Failed to update entry.');
@@ -84,6 +105,7 @@ if (isset($_POST['action'])) {
     } elseif ($_POST['action'] === 'delete') {
 
         $fu->db->Execute("DELETE FROM " . $fu->getOpt('blog_table') . " WHERE entry_id='" . (int)$clean['id'] . "'");
+        $fu->db->Execute("DELETE FROM " . $fu->getOpt('catjoin_table') . " WHERE entry_id='" . (int)$clean['id'] . "'");
         $fu->db->Execute("DELETE FROM " . $fu->getOpt('comments_table') . " WHERE entry_id='" . (int)$clean['id'] . "'");
         $fu->addSuccess('Entry deleted.');
     }
@@ -95,6 +117,14 @@ if (isset($_POST['action'])) {
     $fu->db->Execute($query);
     if ($row = $fu->db->ReadRecord()) {
         $clean = $row;
+    }
+    $fu->db->FreeResult();
+    // Load the category from catjoin (blog table has no cat_id column)
+    $fu->db->Execute(
+        "SELECT cat_id FROM " . $fu->getOpt('catjoin_table') . " WHERE entry_id='$id' LIMIT 1"
+    );
+    if ($cat_row = $fu->db->ReadRecord()) {
+        $clean['cat_id'] = (int) $cat_row['cat_id'];
     }
     $fu->db->FreeResult();
 } elseif (isset($_GET['action']) && $_GET['action'] === 'new') {

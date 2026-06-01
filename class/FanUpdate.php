@@ -677,23 +677,4 @@ class FanUpdate
         // Hook for theme customisation; no-op in the default implementation.
     }
 
-    // ── back-compat aliases ─────────────────────────────────────────────────
-
-    /** @deprecated Use addOpt() */
-    public function AddOpt(string $key, mixed $value): void
-    {
-        $this->addOpt($key, $value);
-    }
-
-    /** @deprecated Use addErr() */
-    public function AddErr(string $msg, mixed $key = null, string $type = ''): void
-    {
-        $this->addErr($msg, $key, $type);
-    }
-
-    /** @deprecated Use addSuccess() */
-    public function AddSuccess(string $msg, mixed $key = null): void
-    {
-        $this->addSuccess($msg, $key);
-    }
 }

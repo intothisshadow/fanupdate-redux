@@ -63,7 +63,7 @@ if (isset($_POST['action'])) {
             VALUES ('$sql_title','$sql_body','" . (int)$clean['is_public'] . "','" . $fu->db->Escape($clean['date']) . "')";
 
         if ($fu->db->Execute($query)) {
-            $new_entry_id = $fu->db->InsertID();
+            $new_entry_id = $fu->db->GetLastSequence();
             // Write the category link into the catjoin table
             if ($clean['cat'] > 0) {
                 $fu->db->Execute(

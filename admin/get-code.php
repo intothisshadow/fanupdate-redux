@@ -25,6 +25,8 @@ $fu = FanUpdate::instance();
 $fu->addOptFromDb();
 $fu->login();
 
+$showNav = true;
+
 $fu->getHeader('Snippet');
 
 // ____________________________________________________________ DISPLAY CODE
@@ -52,26 +54,19 @@ if (!empty($_GET['id'])) {
     <p>Edit the variables in this snippet according to the instructions below, then copy an paste it into the
         PHP-enabled page where you'd like to display the blog for <strong><?php echo $subject; ?></strong>.</p>
 
-    <p><textarea cols="90" rows="11">&lt;?php
-
-// FanUpdate <?php echo $fu->getOpt('version'); ?> blog
+    <p><textarea cols="90" rows="<?php echo isset($_GET['id']) ? 8 : 7; ?>">&lt;?php
+// FanUpdate blog
 // subject: <?php echo $subject; ?>
 
 <?php if (!empty($_GET['id'])) { ?>
 $listingid = <?php echo $sql_id; ?>;
 <?php } ?>
-<?php if (!empty($_GET['id'])) { ?>
-$main_limit = 1;
-<?php } else { ?>
-$main_limit = 5;
-<?php } ?>
-
+$main_limit = <?php echo !empty($_GET['id']) ? 1 : 5; ?>;
 <?php if (isset($_GET['id'])) { ?>
 require_once('<?php echo $fu->getOpt('install_path'); ?>/show-cat.php');
 <?php } else { ?>
 require_once('<?php echo $fu->getOpt('install_path'); ?>/show-blog.php');
 <?php } ?>
-
 ?&gt;</textarea></p>
 
     <h3>Explanation of Variables</h3>
@@ -90,11 +85,11 @@ require_once('<?php echo $fu->getOpt('install_path'); ?>/show-blog.php');
     <h2>CSS Rules</h2>
 
     <p>You may want to include these <abbr title="Cascading Style Sheet">CSS</abbr> rules in your site style sheet if
-        you are using the default templates. You can of course <a href="templates.php">change the templates</a> and/or
-        modify this styling however you see fit.</p>
+        you are using the default templates. You can of course <a href="templates.php">change the
+        templates</a> and/or modify this styling however you see fit.</p>
 
     <p><textarea cols="90" rows="16">
-/*	====	FanUpdate <?php echo $fu->getOpt('version'); ?>	====	*/
+/*	====	FanUpdate	====	*/
 
 div#fanupdate {}
 

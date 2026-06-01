@@ -2,12 +2,23 @@
 
 /*****************************************************************************
  * FanUpdate — admin/blog.php
- * HTML modernisation:
- *  - PNG tick/cross images → CSS badge spans (tick.png / cross.png deleted)
+ *
+ * Bug fix (Redux 1.5.2):
+ *  - Added class="wysiwyg" to the body <textarea> so fanupdate-admin.js
+ *    can attach the WYSIWYG toolbar (makeWysiwyg targets textarea.wysiwyg).
+ *    Previously the textarea had no class, so the toolbar was never inserted
+ *    and the JS call to makeWysiwyg was silently a no-op.
+ *  - Category <select> on new-entry form was using $clean['cat_id'] for
+ *    selected state, but on a new entry $clean has no 'cat_id' key.  Changed
+ *    to check $clean['cat'] first (set on POST) then $clean['cat_id'] (set
+ *    when editing an existing entry loaded from DB).
+ *
+ * HTML modernisation (unchanged from prior version):
+ *  - PNG tick/cross images → CSS badge spans
  *  - <table summary=""> → <table aria-label="">
  *  - type="text/javascript" removed from <script> tags
  *  - page-header row with new-entry-btn replacing new-entry-button.png
- *  - All PHP/SQL logic preserved exactly
+ *  - All other PHP/SQL logic preserved exactly
  ******************************************************************************/
 
 declare(strict_types=1);
@@ -134,9 +145,9 @@ if ($showform) {
 
                     <p><label for="body">Body</label>
                         <?php $fu->printWysiwyg('body'); ?>
-                        <textarea id="body" name="body" rows="16"><?php
-                                                                    echo htmlspecialchars((string) ($clean['body'] ?? ''), ENT_QUOTES, 'UTF-8');
-                                                                    ?></textarea>
+                        <textarea id="body" name="body" rows="16" class="wysiwyg"><?php
+                            echo htmlspecialchars((string) ($clean['body'] ?? ''), ENT_QUOTES, 'UTF-8');
+                        ?></textarea>
                     </p>
                 </fieldset>
             </div>
@@ -148,10 +159,21 @@ if ($showform) {
                     <p><label for="cat">Category</label>
                         <select name="cat" id="cat">
                             <?php
-                            $fu->db->Execute('SELECT ' . $fu->getOpt('col_id') . ' AS cat_id, ' . $fu->getOpt('col_subj') . ' AS cat_name FROM ' . $fu->getOpt('collective_table') . ' ORDER BY cat_name ASC');
+                            $fu->db->Execute(
+                                'SELECT ' . $fu->getOpt('col_id') . ' AS cat_id, '
+                                . $fu->getOpt('col_subj') . ' AS cat_name FROM '
+                                . $fu->getOpt('collective_table') . ' ORDER BY cat_name ASC'
+                            );
+                            // Determine the currently selected category:
+                            // - On POST (preview/retry): $clean['cat'] is set
+                            // - On edit (GET ?id=N): $clean['cat_id'] is the DB column
+                            // - On new (GET ?action=new): neither is set → 0
+                            $selected_cat = (int) ($clean['cat'] ?? $clean['cat_id'] ?? 0);
                             while ($cat_row = $fu->db->ReadRecord()) {
-                                $sel = ((int)($clean['cat_id'] ?? 0) === (int)$cat_row['cat_id']) ? ' selected' : '';
-                                echo '<option value="' . (int)$cat_row['cat_id'] . '"' . $sel . '>' . htmlspecialchars((string)$cat_row['cat_name'], ENT_QUOTES, 'UTF-8') . '</option>';
+                                $sel = ($selected_cat === (int) $cat_row['cat_id']) ? ' selected' : '';
+                                echo '<option value="' . (int) $cat_row['cat_id'] . '"' . $sel . '>'
+                                    . htmlspecialchars((string) $cat_row['cat_name'], ENT_QUOTES, 'UTF-8')
+                                    . '</option>';
                             }
                             $fu->db->FreeResult();
                             ?>
@@ -165,8 +187,8 @@ if ($showform) {
 
                     <p><label for="is_public">Status</label>
                         <select id="is_public" name="is_public">
-                            <option value="1" <?php echo ((int)($clean['is_public'] ?? 1)) === 1 ? ' selected' : ''; ?>>Published</option>
-                            <option value="0" <?php echo ((int)($clean['is_public'] ?? 1)) === 0 ? ' selected' : ''; ?>>Draft</option>
+                            <option value="1" <?php echo ((int) ($clean['is_public'] ?? 1)) === 1 ? ' selected' : ''; ?>>Published</option>
+                            <option value="0" <?php echo ((int) ($clean['is_public'] ?? 1)) === 0 ? ' selected' : ''; ?>>Draft</option>
                         </select>
                     </p>
                 </fieldset>
@@ -225,13 +247,13 @@ if ($showform) {
                     <?php
                     $fu->db->Execute(
                         'SELECT ' . $fu->getOpt('col_id') . ' AS cat_id, '
-                            . $fu->getOpt('col_subj') . ' AS cat_name FROM '
-                            . $fu->getOpt('collective_table') . ' ORDER BY cat_name ASC'
+                        . $fu->getOpt('col_subj') . ' AS cat_name FROM '
+                        . $fu->getOpt('collective_table') . ' ORDER BY cat_name ASC'
                     );
                     while ($cat_row = $fu->db->ReadRecord()) {
-                        $selected = ($filter_cat === (int)$cat_row['cat_id']) ? ' selected' : '';
-                        echo '<option value="' . (int)$cat_row['cat_id'] . '"'
-                            . $selected . '>' . htmlspecialchars((string)$cat_row['cat_name'], ENT_QUOTES, 'UTF-8') . '</option>';
+                        $selected = ($filter_cat === (int) $cat_row['cat_id']) ? ' selected' : '';
+                        echo '<option value="' . (int) $cat_row['cat_id'] . '"'
+                            . $selected . '>' . htmlspecialchars((string) $cat_row['cat_name'], ENT_QUOTES, 'UTF-8') . '</option>';
                     }
                     $fu->db->FreeResult();
                     ?>
@@ -257,7 +279,7 @@ if ($showform) {
     <form action="blog.php" method="post" id="blog-select-form">
 
         <?php
-        // Build the query matching the original blog.php structure exactly:
+        // Build the query:
         // catjoin LEFT JOIN to get cat info, comments LEFT JOIN for counts.
         // Category filter requires an additional JOIN to avoid ambiguous cat_id.
         $entry_query = 'SELECT b.entry_id, b.title, b.is_public, b.comments_on, b.added,

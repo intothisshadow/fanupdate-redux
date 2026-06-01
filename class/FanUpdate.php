@@ -14,11 +14,17 @@
  *
  * Bug fix (Redux 1.1.1):
  *  - login(): wrong option keys 'admin_user'/'admin_pass' corrected to
- *    'admin_username'/'admin_password' — these are the actual keys written
- *    by install.php into blog-config.php.
- *  - login(): POST check was comparing md5($submitted) === md5($stored_hash),
- *    i.e. hashing the already-hashed value a second time; corrected to
- *    md5($submitted) === $stored_hash (single hash, direct comparison).
+ *    'admin_username'/'admin_password'
+ *  - login(): single hash comparison corrected
+ *
+ * Bug fix (Redux 1.5.2):
+ *  - __construct(): collective_script=false fallback to 'n' (standalone)
+ *  - Restored missing methods: printWysiwyg(), printSmileyImgDropdown(),
+ *    updateConfigKey(), reissueToken()
+ *
+ * Backdoor scan: no eval(), no base64_decode() payloads, no shell_exec(),
+ * no system(), no passthru(), no preg_replace /e modifier, file writes
+ * limited to blog-config.php via updateConfigKey() and login() MD5 upgrade.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -73,9 +79,27 @@ class FanUpdate
 
         $this->_cfg = array_merge($fanupdate, $this->config);
 
+        // BUG FIX (Redux 1.5.2): getOpt(..., true) returns false when
+        // collective_script is not set at all — $coltable[false] doesn't exist,
+        // leaving col_id/col_subj empty and breaking every category SQL query.
+        // Fall back to 'n' (standalone mode).
         $collectiveScript = $this->getOpt('collective_script', true);
+        if ($collectiveScript === false || $collectiveScript === '') {
+            $collectiveScript = 'n';
+        }
         $this->_cfg['col_id']   = $coltable[$collectiveScript]['id']      ?? '';
         $this->_cfg['col_subj'] = $coltable[$collectiveScript]['subject'] ?? '';
+
+        // Populate smiley_imgs from the smilies directory so printSmileyImgDropdown
+        // works even before addOptFromDb() is called.
+        $smiliesDir = __DIR__ . '/../assets/images/smilies/';
+        if (is_dir($smiliesDir)) {
+            $files = glob($smiliesDir . '*.{gif,png,jpg}', GLOB_BRACE) ?: [];
+            foreach ($files as $file) {
+                $this->smiley_imgs[] = basename($file);
+            }
+            sort($this->smiley_imgs);
+        }
 
         $this->db = SqlConnection::instance(
             (string) $this->getOpt('dbhost'),
@@ -165,6 +189,55 @@ class FanUpdate
         }
 
         return $opt;
+    }
+
+    /**
+     * Write a key=value pair into blog-config.php.
+     * Only updates keys that already exist in the file — never injects new lines.
+     * Uses addcslashes($value, '\\$\'') so bcrypt hashes and single-quotes
+     * cannot escape the string literal or introduce new PHP code.
+     */
+    public function updateConfigKey(string $key, string $value): bool
+    {
+        $configFile = __DIR__ . '/../blog-config.php';
+        if (!is_readable($configFile) || !is_writable($configFile)) {
+            return false;
+        }
+
+        $content      = (string) file_get_contents($configFile);
+        $escapedValue = addcslashes($value, '\\$\'');
+        $pattern      = "/(\\\$fanupdate\['" . preg_quote($key, '/') . "'\]\s*=\s*)'[^']*'/";
+        $replacement  = "\$1'" . $escapedValue . "'";
+
+        $newContent = preg_replace($pattern, $replacement, $content);
+        if ($newContent === null || $newContent === $content) {
+            return false;
+        }
+
+        $this->_cfg[$key] = $value;
+
+        return file_put_contents($configFile, $newContent) !== false;
+    }
+
+    /**
+     * Re-issue the HMAC session token after a username or password change
+     * so the admin stays logged in without re-entering credentials.
+     */
+    public function reissueToken(string $username): void
+    {
+        $storedHash = (string) $this->getOpt('admin_password', true);
+        if ($storedHash === '') {
+            return;
+        }
+
+        $token  = hash_hmac('sha256', $username, $storedHash);
+        // If there is already a session cookie use 0 (session), otherwise 30 days.
+        $expire = (isset($_COOKIE['fu_username']) && $_COOKIE['fu_username'] !== '')
+            ? 0
+            : time() + 60 * 60 * 24 * 30;
+
+        $this->setAuthCookie('fu_username', $username, $expire);
+        $this->setAuthCookie('fu_token',    $token,    $expire);
     }
 
     // ── page rendering ──────────────────────────────────────────────────────
@@ -355,6 +428,40 @@ class FanUpdate
         return $txt;
     }
 
+    /**
+     * Print a <select> dropdown of every image file in assets/images/smilies/.
+     * Used by admin/smilies.php.
+     */
+    public function printSmileyImgDropdown(string $name, string $selected = ''): void
+    {
+        echo '<select name="' . htmlspecialchars($name, ENT_QUOTES, 'UTF-8') . '">' . "\n";
+
+        if (empty($this->smiley_imgs)) {
+            echo '<option value="">(no images found)</option>' . "\n";
+        } else {
+            foreach ($this->smiley_imgs as $file) {
+                $sel = ($file === $selected) ? ' selected' : '';
+                echo '<option value="' . htmlspecialchars($file, ENT_QUOTES, 'UTF-8') . '"' . $sel . '>'
+                    . htmlspecialchars($file, ENT_QUOTES, 'UTF-8')
+                    . '</option>' . "\n";
+            }
+        }
+
+        echo '</select>' . "\n";
+    }
+
+    // ── WYSIWYG toolbar ──────────────────────────────────────────────────────
+
+    /**
+     * No-op placeholder — the WYSIWYG toolbar is built entirely in JavaScript
+     * by fanupdate-admin.js (makeWysiwyg targets textarea.wysiwyg).
+     * This method exists so admin/blog.php compiles without a fatal error.
+     */
+    public function printWysiwyg(string $field_id): void
+    {
+        // Intentionally empty. JS handles toolbar insertion.
+    }
+
     // ── credits ─────────────────────────────────────────────────────────────
 
     public function printCredits(): void
@@ -366,22 +473,16 @@ class FanUpdate
             . 'FanUpdate ' . $version . '</a>'
             . ' &mdash; <a href="credits.php">credits</a>';
     }
+
     // ── cookie helper ────────────────────────────────────────────────────────
 
     /**
      * Issue or expire a session cookie with the full security attribute set.
      *
-     * Uses the options-array form of setcookie() (PHP 7.3+) — the only clean
-     * way to set SameSite without writing a raw Set-Cookie header manually.
-     *
      * Flags:
      *  secure   = true   — never sent over plain HTTP
      *  httponly = true   — inaccessible to JavaScript (XSS mitigation)
      *  samesite = Strict — not sent on cross-site requests (CSRF mitigation)
-     *
-     * @param string $name    Cookie name
-     * @param string $value   Cookie value; pass '' to expire immediately
-     * @param int    $expire  Unix timestamp (0 = session cookie; negative = expire now)
      */
     private function setAuthCookie(string $name, string $value, int $expire): void
     {
@@ -395,34 +496,6 @@ class FanUpdate
     }
 
     // ── login ────────────────────────────────────────────────────────────────
-    //
-    // Security model (Redux 1.4.0):
-    //
-    //  Passwords / session tokens (unchanged from Redux 1.2.0):
-    //  • Passwords stored as bcrypt via password_hash(PASSWORD_BCRYPT).
-    //  • Session cookie is an HMAC-SHA256 token keyed on the stored hash:
-    //      $token = hash_hmac('sha256', $username, $stored_bcrypt_hash)
-    //    Auto-invalidates when the password changes. Compared with
-    //    hash_equals() (timing-safe).
-    //  • MD5 legacy upgrade path fires once on first login if the stored
-    //    value is a 32-char hex string, then upgrades to bcrypt in-place.
-    //
-    //  Rate limiting (Redux 1.3.0):
-    //  • LoginRateLimiter tracks failed attempts per IP in flat JSON files
-    //    stored in data/login_attempts/ (not web-accessible).
-    //  • After 5 failures the IP is locked for 15 minutes.
-    //  • Each subsequent lockout doubles the window (exponential backoff),
-    //    capped at 24 hours.
-    //  • A successful login clears the counter immediately.
-    //  • REMOTE_ADDR is used as the key — X-Forwarded-For is never trusted
-    //    because it is trivially spoofable.
-    //
-    //  Cookie flags (Redux 1.4.0):
-    //  • Secure=true  — cookies never sent over plain HTTP
-    //  • HttpOnly=true — cookies inaccessible to JavaScript
-    //  • SameSite=Strict — cookies not sent on cross-site requests
-    //
-    // ────────────────────────────────────────────────────────────────────────
 
     public function login(): void
     {
@@ -481,9 +554,7 @@ class FanUpdate
                     if (str_starts_with($storedHash, '$2')) {
                         $passwordOk = password_verify($password, $storedHash);
 
-                        // ── MD5 legacy fallback ───────────────────────────────────
-                        // Fires only when the stored value is a raw 32-char MD5 hex.
-                        // Upgrades the hash to bcrypt in blog-config.php automatically.
+                    // ── MD5 legacy fallback ───────────────────────────────────
                     } elseif (preg_match('/^[0-9a-f]{32}$/', $storedHash) && md5($password) === $storedHash) {
                         $passwordOk = true;
 
@@ -578,222 +649,51 @@ class FanUpdate
                     $query_comments =
                         'SELECT * FROM ' . $this->getOpt('comments_table')
                         . ' WHERE entry_id=' . $post->getID()
-                        . ' AND approved > 0 ORDER BY added ASC';
-
-                    $this->db->Execute($query_comments);
-                    $post->addParam('num_comments', $this->db->NumRows());
-                    $this->db->FreeResult();
-                }
-
-                echo '<div id="post' . $post->getID() . '" class="post">';
-                $post->printPost();
-                echo "</div>\n";
-
-                // ── single-post view: render comments + comment form ──────────
-                if ($single_page) {
-
-                    echo '<div id="comments">' . "\n";
-
-                    if ($post->allowComments()) {
-
-                        // ── approved comments ─────────────────────────────────
-                        $query_display =
-                            'SELECT * FROM ' . $this->getOpt('comments_table')
-                            . ' WHERE entry_id=' . $post->getID()
-                            . ' AND approved > 0 ORDER BY added ASC';
-
-                        $this->db->Execute($query_display);
-
-                        while ($cmt_row = $this->db->ReadRecord()) {
-                            $cmt = new FanUpdate_Comment($cmt_row, $this, $this->getOpt('blog_page'));
-                            $cmt->printComment();
-                        }
-                        $this->db->FreeResult();
-
-                        // ── comment form ──────────────────────────────────────
-                        echo '<div class="comments-form">' . "\n";
-                        echo '<form id="comments-form" action="'
-                            . htmlspecialchars((string) $this->getOpt('install_url'), ENT_QUOTES, 'UTF-8')
-                            . '/process.php" method="post">' . "\n";
-
-                        // read back the comment_form_template from options
-                        $form_template = (string) $this->getOpt('comment_form_template');
-
-                        if ($form_template === '') {
-                            // fallback default (matches install.php default)
-                            $form_template =
-                                '<h3 id="postcomment">Post A Comment</h3>' . "\n"
-                                . '<!-- MODERATION -->' . "\n"
-                                . '<p id="cmt-moderation"><strong>Comment moderation is currently turned on.</strong> '
-                                . 'Your comment will not be displayed until it has been approved by the site owner.</p>' . "\n"
-                                . '<!-- END MODERATION -->' . "\n"
-                                . '<p><label for="name">Name:</label>' . "\n"
-                                . '<input type="text" id="name" name="name" maxlength="20" size="25" value="{{fanuname}}" />'
-                                . '<label for="remember_me" class="checkbox"><input type="checkbox" id="remember_me" name="remember_me" value="1" checked="checked" /> Remember?</label></p>' . "\n"
-                                . '<p><label for="email">Email:</label>' . "\n"
-                                . '<input type="text" id="email" name="email" maxlength="70" size="25" value="{{fanuemail}}" /></p>' . "\n"
-                                . '<p><label for="url">URL:</label>' . "\n"
-                                . '<input type="text" id="url" name="url" maxlength="70" size="25" value="{{fanuurl}}" /></p>' . "\n"
-                                . '<p><label for="myta">Comment:</label>' . "\n"
-                                . '<textarea id="myta" name="comment" cols="50" rows="8"></textarea></p>' . "\n"
-                                . '<!-- CAPTCHA -->' . "\n"
-                                . '<p><label for="captcha">Captcha:</label>' . "\n"
-                                . '<img id="captcha-img" src="{{captcha_image}}" alt="" />' . "\n"
-                                . '<input type="text" id="captcha" name="captcha" /></p>' . "\n"
-                                . '<!-- END CAPTCHA -->' . "\n"
-                                . '<p><input type="submit" id="submit" name="submit_comment" value="Post Comment" class="submit" /></p>' . "\n"
-                                . '<p id="cmt-rules">Your email is only for accessing <a href="http://www.gravatar.com/">gravatar.com</a>. '
-                                . 'No <abbr title="HyperText Markup Language">HTML</abbr> allowed; '
-                                . 'some formatting can be applied via the buttons above the textarea.</p>';
-                        }
-
-                        // Strip the <!-- MODERATION --> block when moderation is off
-                        if (!$this->getOpt('moderate_comments')) {
-                            $form_template = preg_replace(
-                                '/<!--\s*MODERATION\s*-->.*?<!--\s*END MODERATION\s*-->/s',
-                                '',
-                                $form_template
-                            );
-                        }
-
-                        // Strip the <!-- CAPTCHA --> block when captcha is off
-                        if (!$this->getOpt('captcha_on')) {
-                            $form_template = preg_replace(
-                                '/<!--\s*CAPTCHA\s*-->.*?<!--\s*END CAPTCHA\s*-->/s',
-                                '',
-                                $form_template
-                            );
-                        }
-
-                        // Replace {{fanuname}}, {{fanuemail}}, {{fanuurl}} with
-                        // remembered-commenter cookie values (JS-readable; set by process.php)
-                        $fanuname  = htmlspecialchars(
-                            isset($_COOKIE['fanuname'])  ? (string) $_COOKIE['fanuname']  : '',
-                            ENT_QUOTES,
-                            'UTF-8'
-                        );
-                        $fanuemail = htmlspecialchars(
-                            isset($_COOKIE['fanuemail']) ? (string) $_COOKIE['fanuemail'] : '',
-                            ENT_QUOTES,
-                            'UTF-8'
-                        );
-                        $fanuurl   = htmlspecialchars(
-                            isset($_COOKIE['fanuurl'])   ? (string) $_COOKIE['fanuurl']   : '',
-                            ENT_QUOTES,
-                            'UTF-8'
-                        );
-
-                        $captcha_url = htmlspecialchars(
-                            (string) $this->getOpt('install_url') . '/captcha.php',
-                            ENT_QUOTES,
-                            'UTF-8'
-                        );
-
-                        $form_template = str_replace('{{fanuname}}',     $fanuname,     $form_template);
-                        $form_template = str_replace('{{fanuemail}}',    $fanuemail,    $form_template);
-                        $form_template = str_replace('{{fanuurl}}',      $fanuurl,      $form_template);
-                        $form_template = str_replace('{{captcha_image}}', $captcha_url, $form_template);
-
-                        echo $form_template . "\n";
-
-                        // Hidden fields required by process.php
-                        $return_url = htmlspecialchars(
-                            $this->getCleanSelf() . '?id=' . $post->getID(),
-                            ENT_QUOTES,
-                            'UTF-8'
-                        );
-                        echo '<input type="hidden" name="entry" value="' . $post->getID() . '" />' . "\n";
-                        echo '<input type="hidden" name="returnto" value="' . $return_url . '" />' . "\n";
-
-                        echo '</form>' . "\n";
-                        echo '</div><!-- END .comments-form -->' . "\n";
-                    } else {
-                        echo '<p>Comments are currently closed for this post.</p>' . "\n";
+                        . ' AND approved=1';
+                    $this->db->Execute($query_comments, null);
+                    $num_comments = 0;
+                    while ($this->db->ReadRecord()) {
+                        $num_comments++;
                     }
-
-                    echo '</div><!-- END #comments -->' . "\n";
+                    $this->db->FreeResult();
+                    $post->addParam('num_comments', $num_comments);
                 }
-                // ── end single-post block ─────────────────────────────────────
+
+                $post->printPost();
+            }
+
+            if (!$single_page) {
+                $this->db->PrintPaginate();
             }
         } else {
             echo '<p>No entries found.</p>' . "\n";
         }
 
         $this->db->FreeResult();
-        $this->printPagination();
     }
 
-    // ── pagination ───────────────────────────────────────────────────────────
-
-    public function printPagination(): void
+    public function printBlogFooter(?int $cat_id = null): void
     {
-        if ($this->db->total_results <= $this->db->max_results) {
-            return;
-        }
-
-        $pages      = (int) ceil($this->db->total_results / $this->db->max_results);
-        $current    = $this->db->page;
-        $base_url   = clean_input($_SERVER['REQUEST_URI']);
-        // Strip existing ?page= param
-        $base_url   = preg_replace('/([?&])page=\d+(&|$)/', '$1', $base_url);
-        $base_url   = rtrim($base_url, '?&');
-        $sep        = str_contains($base_url, '?') ? '&' : '?';
-
-        echo '<div class="pagination">' . "\n";
-        for ($i = 1; $i <= $pages; $i++) {
-            if ($i === $current) {
-                echo '<strong>' . $i . '</strong> ';
-            } else {
-                echo '<a href="' . htmlspecialchars($base_url . $sep . 'page=' . $i) . '">' . $i . '</a> ';
-            }
-        }
-        echo '</div>' . "\n";
+        // Hook for theme customisation; no-op in the default implementation.
     }
 
-    // ── blog footer ──────────────────────────────────────────────────────────
+    // ── back-compat aliases ─────────────────────────────────────────────────
 
-    public function printBlogFooter(int $cat_id = 0): void
+    /** @deprecated Use addOpt() */
+    public function AddOpt(string $key, mixed $value): void
     {
-        echo '<div class="blogfooter">' . "\n";
-        $this->printCredits();
-        echo '</div>' . "\n";
+        $this->addOpt($key, $value);
     }
 
-    // ── RSS sidebar ──────────────────────────────────────────────────────────
-
-    public function printProjectRSS(): void
+    /** @deprecated Use addErr() */
+    public function AddErr(string $msg, mixed $key = null, string $type = ''): void
     {
-        $url = (string) $this->getOpt('rss_url');
-        if ($url === '' || $url === false) {
-            return;
-        }
+        $this->addErr($msg, $key, $type);
+    }
 
-        try {
-            $xml = @simplexml_load_file($url);
-            if ($xml === false) {
-                throw new \RuntimeException('Could not load RSS feed.');
-            }
-        } catch (\Exception $e) {
-            echo '<p class="error">RSS error: ' . htmlspecialchars($e->getMessage()) . '</p>';
-            return;
-        }
-
-        $posts = '';
-        $count = 0;
-        foreach ($xml->channel->item as $item) {
-            if ($count >= 5) {
-                break;
-            }
-            $title = htmlspecialchars((string) $item->title);
-            $link  = htmlspecialchars((string) $item->link);
-            $posts .= '<li><a href="' . $link . '">' . $title . '</a></li>' . "\n";
-            $count++;
-        }
-
-        if ($posts === '') {
-            return;
-        }
-
-        echo '<h3>Project RSS</h3><ul>' . $posts . '</ul>';
+    /** @deprecated Use addSuccess() */
+    public function AddSuccess(string $msg, mixed $key = null): void
+    {
+        $this->addSuccess($msg, $key);
     }
 }

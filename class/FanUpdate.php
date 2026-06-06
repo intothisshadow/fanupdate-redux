@@ -17,6 +17,66 @@
  *    'admin_username'/'admin_password'
  *  - login(): single hash comparison corrected
  *
+ * Bug fix (Redux 2.0.1):
+ *  - printBlog(): window.addEventListener('load') in fanupdate-comment-submit.js
+ *    never fires when scripts are injected mid-page — the load event has
+ *    already fired by the time the <script> tags are parsed. Fixed by emitting
+ *    an inline init script after the two <script src> tags that calls
+ *    submitCmtInit() directly, bypassing the load listener entirely.
+ *    submitCmtInit() extracted from the load handler in
+ *    fanupdate-comment-submit.js so it can be called on demand.
+ *
+ * Bug fix (Redux 2.0.3):
+ *  - printBlog(): comment form submit did nothing — three compounding issues:
+ *    (1) Default form had id="commentform" but fanupdate-comment-submit.js
+ *        looks for id="comments-form"; the submit listener was never attached
+ *        so clicking the button did a plain HTML POST to process.php which
+ *        renders the admin panel shell and produces a broken page.
+ *    (2) The AJAX response target div id="newComment" was never output, so
+ *        submitCmtCallback() could not inject the server response.
+ *    (3) fanupdate.js and fanupdate-comment-submit.js were never included on
+ *        the public single-post page; the submit handler simply did not exist.
+ *    All three fixed: form id corrected, newComment div added, both script
+ *    tags emitted once after the comments block.
+ *
+ * Bug fix (Redux 2.0.2):
+ *  - printBlog(): comments list and comment form were never rendered on
+ *    single-post pages ($single_page = true). The method counted comments
+ *    for the {{comment_link}} token but stopped there. Now, when
+ *    $single_page is true, printBlog() fetches and renders all approved
+ *    comments via FanUpdate_Comment::printComment(), then builds and outputs
+ *    the comment form from the comment_form_template option (stripping
+ *    <!-- MODERATION --> and <!-- CAPTCHA --> blocks as configured), or
+ *    shows a "Comments are closed" notice when allowComments() is false.
+ *
+ * Bug fix (Redux 2.0.5):
+ *  - printBlog(): built-in default comment form was missing the remember_me
+ *    checkbox. fanupdate-comment-submit.js reads f.remember_me.checked; when
+ *    the field is absent f.remember_me is undefined and .checked throws a
+ *    TypeError that silently kills the submit handler — the form appeared to
+ *    do nothing. Fixed by adding the checkbox to the default form and applying
+ *    optional chaining (f.remember_me?.checked) in the JS so custom templates
+ *    that omit the field also work safely.
+ *
+ * Bug fix (Redux 2.0.6):
+ *  - printBlog(): three further issues that prevented comment submission when
+ *    a custom comment_form_template is stored in the database:
+ *    (1) The stored template (original FanUpdate default) is inner-content only
+ *        — no <form> tag. printBlog() assumed the template contained the
+ *        <form> wrapper. Fixed: when the resolved template does not already
+ *        contain a <form element, printBlog() wraps the content in
+ *        <form action="{{process_url}}" method="post" id="comments-form">.
+ *    (2) MODERATION / CAPTCHA strip regexes expected <!-- /MODERATION --> and
+ *        <!-- /CAPTCHA --> (slash style) but the stored template and the
+ *        original FanUpdate install.php default use <!-- END MODERATION --> and
+ *        <!-- END CAPTCHA --> (END style). Neither block was ever stripped.
+ *        Fixed: regexes now accept both <!-- END X --> and <!-- /X --> forms.
+ *    (3) The stored template has no {{entry_id}} or {{returnto}} hidden inputs.
+ *        Without entry_id process.php rejects the submission as spam. Fixed:
+ *        when the resolved form body lacks name="entry" or name="returnto",
+ *        the two hidden inputs are injected before the closing </form> tag (or
+ *        appended when no </form> tag is present).
+ *
  * Bug fix (Redux 1.5.2):
  *  - __construct(): collective_script=false fallback to 'n' (standalone)
  *  - Restored missing methods: printWysiwyg(), printSmileyImgDropdown(),
@@ -660,6 +720,178 @@ class FanUpdate
                 }
 
                 $post->printPost();
+
+                // ── Single-post page: render comments + comment form ─────────
+                if ($single_page) {
+                    echo '<div id="comments">' . "\n";
+
+                    if ($post->allowComments()) {
+
+                        // ── approved comments list ───────────────────────────
+                        $query_comments =
+                            'SELECT * FROM ' . $this->getOpt('comments_table')
+                            . ' WHERE entry_id=' . $post->getID()
+                            . ' AND approved=1'
+                            . ' ORDER BY added ASC';
+                        $this->db->Execute($query_comments, null);
+
+                        $has_comments = false;
+                        while ($cmt_row = $this->db->ReadRecord()) {
+                            if (!$has_comments) {
+                                echo '<h3>Comments</h3>' . "\n";
+                                $has_comments = true;
+                            }
+                            $cmt = new FanUpdate_Comment($cmt_row, $this);
+                            $cmt->printComment();
+                        }
+                        $this->db->FreeResult();
+
+                        // ── comment form ─────────────────────────────────────
+                        $form_tpl = (string) $this->getOpt('comment_form_template');
+
+                        if ($form_tpl === '') {
+                            // Built-in default form — no option set yet.
+                            // This template includes its own <form> wrapper.
+                            // IMPORTANT: keep name="remember_me" in sync with
+                            // fanupdate-comment-submit.js which reads f.remember_me?.checked.
+                            $form_tpl =
+                                '<form action="{{process_url}}" method="post" id="comments-form">' . "\n"
+                                . '<h3>Leave a comment</h3>' . "\n"
+                                . '<p><label for="cname">Name</label>'
+                                . '<input type="text" id="cname" name="name" value="{{fanuname}}" /></p>' . "\n"
+                                . '<p><label for="cemail">Email</label>'
+                                . '<input type="email" id="cemail" name="email" value="{{fanuemail}}" /></p>' . "\n"
+                                . '<p><label for="curl">Website</label>'
+                                . '<input type="url" id="curl" name="url" value="{{fanuurl}}" /></p>' . "\n"
+                                . '<!-- CAPTCHA --><p><label for="ccaptcha">CAPTCHA</label>'
+                                . '<img src="{{captcha_image}}" alt="CAPTCHA" id="captcha-img" />'
+                                . '<input type="text" id="ccaptcha" name="captcha" /></p><!-- END CAPTCHA -->' . "\n"
+                                . '<p><label for="ccomment">Comment</label>'
+                                . '<textarea id="ccomment" name="comment" rows="8"></textarea></p>' . "\n"
+                                . '<!-- MODERATION --><p class="hint">Comments are moderated.</p><!-- END MODERATION -->' . "\n"
+                                . '<p>'
+                                . '<input type="checkbox" id="cremember" name="remember_me" value="y" />'
+                                . '<label for="cremember">Remember me</label>'
+                                . '</p>' . "\n"
+                                . '<p>'
+                                . '<input type="hidden" name="entry" value="{{entry_id}}" />'
+                                . '<input type="hidden" name="returnto" value="{{returnto}}" />'
+                                . '<input type="submit" name="submit_comment" value="Post comment" />'
+                                . '</p>' . "\n"
+                                . '</form>';
+                        }
+
+                        // ── Strip conditional blocks ──────────────────────────
+                        // Accepts both <!-- END X --> (original FanUpdate style)
+                        // and <!-- /X --> (alternate style) as closing markers.
+
+                        // Strip <!-- MODERATION --> block when auto-approve is on
+                        // (comment_moderation option false means auto-approve)
+                        if (!$this->getOpt('comment_moderation')) {
+                            $form_tpl = preg_replace(
+                                '/<!--\s*MODERATION\s*-->.*?<!--\s*(?:END\s+|\/)?MODERATION\s*-->/s',
+                                '',
+                                $form_tpl
+                            );
+                        }
+
+                        // Strip <!-- CAPTCHA --> block when CAPTCHA is disabled
+                        if (!$this->getOpt('captcha_on')) {
+                            $form_tpl = preg_replace(
+                                '/<!--\s*CAPTCHA\s*-->.*?<!--\s*(?:END\s+|\/)?CAPTCHA\s*-->/s',
+                                '',
+                                $form_tpl
+                            );
+                        }
+
+                        // ── Populate token values ─────────────────────────────
+                        $fanuname  = htmlspecialchars((string) ($_COOKIE['fanuname']  ?? ''), ENT_QUOTES, 'UTF-8');
+                        $fanuemail = htmlspecialchars((string) ($_COOKIE['fanuemail'] ?? ''), ENT_QUOTES, 'UTF-8');
+                        $fanuurl   = htmlspecialchars((string) ($_COOKIE['fanuurl']   ?? ''), ENT_QUOTES, 'UTF-8');
+
+                        $install_url = rtrim((string) $this->getOpt('install_url'), '/');
+                        $process_url = htmlspecialchars($install_url . '/process.php', ENT_QUOTES, 'UTF-8');
+                        $returnto    = htmlspecialchars($this->getCleanSelf() . '?id=' . $post->getID(), ENT_QUOTES, 'UTF-8');
+                        $captcha_url = htmlspecialchars($install_url . '/captcha.php', ENT_QUOTES, 'UTF-8');
+                        $entry_id    = (string) $post->getID();
+
+                        $form_tpl = str_replace('{{fanuname}}',      $fanuname,    $form_tpl);
+                        $form_tpl = str_replace('{{fanuemail}}',      $fanuemail,   $form_tpl);
+                        $form_tpl = str_replace('{{fanuurl}}',        $fanuurl,     $form_tpl);
+                        $form_tpl = str_replace('{{process_url}}',    $process_url, $form_tpl);
+                        $form_tpl = str_replace('{{entry_id}}',       $entry_id,    $form_tpl);
+                        $form_tpl = str_replace('{{returnto}}',       $returnto,    $form_tpl);
+                        $form_tpl = str_replace('{{captcha_image}}',  $captcha_url, $form_tpl);
+
+                        // ── Ensure the template is wrapped in a <form> ────────
+                        // The original FanUpdate comment_form_template option
+                        // stores only the inner content — no <form> tag. Wrap it
+                        // so submitCmtInit() can find id="comments-form".
+                        $has_form_tag = (bool) preg_match('/<form\b/i', $form_tpl);
+
+                        if (!$has_form_tag) {
+                            $form_tpl =
+                                '<form action="' . $process_url . '" method="post" id="comments-form">'
+                                . "\n" . $form_tpl . "\n"
+                                . '</form>';
+                        }
+
+                        // ── Inject missing hidden fields ──────────────────────
+                        // The stored template may not contain {{entry_id}} or
+                        // {{returnto}} tokens. Without entry, process.php treats
+                        // the submission as spam and discards it.
+                        $hidden_fields = '';
+                        if (!preg_match('/name=["\']entry["\']/', $form_tpl)) {
+                            $hidden_fields .=
+                                '<input type="hidden" name="entry" value="' . htmlspecialchars($entry_id, ENT_QUOTES, 'UTF-8') . '" />' . "\n";
+                        }
+                        if (!preg_match('/name=["\']returnto["\']/', $form_tpl)) {
+                            $hidden_fields .=
+                                '<input type="hidden" name="returnto" value="' . $returnto . '" />' . "\n";
+                        }
+
+                        if ($hidden_fields !== '') {
+                            // Insert before </form> if present, otherwise append.
+                            if (stripos($form_tpl, '</form>') !== false) {
+                                $form_tpl = preg_replace(
+                                    '/<\/form>/i',
+                                    $hidden_fields . '</form>',
+                                    $form_tpl,
+                                    1
+                                );
+                            } else {
+                                $form_tpl .= "\n" . $hidden_fields;
+                            }
+                        }
+
+                        echo '<div id="newComment"></div>' . "\n";
+                        echo $form_tpl . "\n";
+
+                        // Scripts are injected mid-page so window 'load' has
+                        // already fired — submitCmtInit() is called directly
+                        // after both files are parsed instead of relying on
+                        // the load listener in fanupdate-comment-submit.js.
+                        $js_url = htmlspecialchars(
+                            rtrim((string) $this->getOpt('install_url'), '/') . '/assets/js',
+                            ENT_QUOTES, 'UTF-8'
+                        );
+                        $fu_url = htmlspecialchars(
+                            rtrim((string) $this->getOpt('install_url'), '/'),
+                            ENT_QUOTES, 'UTF-8'
+                        );
+                        echo '<script>const fu_url = \'' . $fu_url . '\';</script>' . "\n";
+                        echo '<script src="' . $js_url . '/fanupdate.js"></script>' . "\n";
+                        echo '<script src="' . $js_url . '/fanupdate-comment-submit.js"></script>' . "\n";
+                        echo '<script>submitCmtInit();</script>' . "\n";
+
+                    } else {
+                        // comments_on = 0 for this entry
+                        echo '<p class="comments-closed">Comments are currently closed.</p>' . "\n";
+                    }
+
+                    echo '</div><!-- #comments -->' . "\n";
+                }
+                // ── end single-post comments ─────────────────────────────────
             }
 
             if (!$single_page) {

@@ -38,8 +38,18 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=Playfair+Display:ital,wght@0,500;1,400&display=swap" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css" />
-    <link rel="stylesheet" href="../assets/css/style.css" />
+    <link rel="stylesheet" id="fu-theme-css" href="../assets/css/style.css" />
     <link rel="shortcut icon" href="../favicon.ico" />
+
+    <?php /* Apply saved theme before first paint to avoid flash of wrong theme */ ?>
+    <script>
+    (function () {
+        var saved = localStorage.getItem('fu_theme');
+        if (saved === 'night') {
+            document.getElementById('fu-theme-css').href = '../assets/css/style-night.css';
+        }
+    }());
+    </script>
 
     <script src="../assets/js/fanupdate.js"></script>
     <script src="../assets/js/fanupdate-admin.js"></script>
@@ -71,8 +81,11 @@
                 </ul>
 
                 <div id="nav-end">
-                    <a href="account.php"           class="nav-icon-btn" title="Account"><i class="ti ti-user" aria-label="Account"></i></a>
-                    <a href="credits.php"            class="nav-icon-btn" title="Credits"><i class="ti ti-info-circle" aria-label="Credits"></i></a>
+                    <a href="account.php"            class="nav-icon-btn" title="Account"><i class="ti ti-user" aria-label="Account"></i></a>
+                    <a href="credits.php"             class="nav-icon-btn" title="Credits"><i class="ti ti-info-circle" aria-label="Credits"></i></a>
+                    <button type="button" id="fu-theme-toggle" class="nav-icon-btn" title="Toggle night theme" aria-pressed="false">
+                        <i class="ti ti-moon" aria-hidden="true"></i>
+                    </button>
                     <a href="index.php?action=logout" class="nav-icon-btn" title="Logout"><i class="ti ti-logout" aria-label="Logout"></i></a>
                 </div>
             </nav>

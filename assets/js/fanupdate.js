@@ -23,6 +23,27 @@
  *  - Standardista table-sorting code preserved verbatim (Neil Crosby, MIT 2006)
  *    except for its own addEvent calls replaced with addEventListener.
  *
+ * Redux 2.0.8:
+ *  - makeWysiwyg(): toolbar buttons now use inline SVG instead of external PNG
+ *    files. wysiwygButton.img is now an SVG string (or legacy src URL); the
+ *    builder detects which form is supplied and creates either an <svg> element
+ *    (via innerHTML on a wrapper) or an <img> element accordingly. This removes
+ *    the dependency on text_bold.png, text_italic.png, link.png etc. which were
+ *    never shipped reliably and caused the toolbar to render as broken-image
+ *    alt text.
+ *  - makeWysiwyg(): accepts optional second parameter `anchor` — insertion
+ *    point defaults to el itself (admin behaviour unchanged) but can be set to
+ *    a block-level parent so the toolbar sits above an entire label+field row
+ *    rather than inside a <p> beside a floated label (front-end comment form).
+ *  - makeWysiwyg(): double-init guard — stamps data-wysiwyg="1" on the
+ *    textarea after wiring; subsequent calls for the same element are no-ops.
+ *
+ * Redux 2.0.9:
+ *  - makeWysiwyg(): accepts optional third parameter `toolbarClass` — the CSS
+ *    class applied to the outer toolbar <span>. Defaults to 'wysiwygmenu' (admin
+ *    behaviour unchanged). The front-end comment form passes 'fu-wysiwygmenu'
+ *    so its self-contained scoped styles don't depend on the admin stylesheet.
+ *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
@@ -164,6 +185,16 @@ const css = {
 
 // ── WYSIWYG toolbar ───────────────────────────────────────────────────────────
 
+/**
+ * wysiwygButton — descriptor for one toolbar button.
+ *
+ * @param {string}   name   Short identifier (used as aria-label / alt text).
+ * @param {string}   img    Either an SVG string ('<svg …>…</svg>') or a legacy
+ *                          image URL ('.../foo.png'). makeWysiwyg detects which
+ *                          form is supplied.
+ * @param {string}   title  Tooltip text.
+ * @param {Function} func   Click handler.
+ */
 function wysiwygButton(name, img, title, func) {
     this.name  = name;
     this.img   = img;
@@ -171,28 +202,68 @@ function wysiwygButton(name, img, title, func) {
     this.title = title;
 }
 
-function makeWysiwyg(el) {
-    const p = document.createElement('span');
-    p.className = 'wysiwygmenu';
+/**
+ * makeWysiwyg — build the toolbar span and insert it into the DOM.
+ *
+ * Double-init guard: stamps data-wysiwyg="1" on the textarea on first call;
+ * subsequent calls for the same element are silent no-ops.
+ *
+ * SVG / image detection: if wysiwygButton.img starts with '<' it is treated as
+ * an inline SVG string; otherwise as a legacy URL (<img src>).
+ *
+ * @param {HTMLTextAreaElement} el            The textarea the toolbar controls.
+ * @param {Element}            [anchor]       Insertion point. Defaults to el.
+ * @param {string}             [toolbarClass] CSS class for the toolbar <span>.
+ *   Defaults to 'wysiwygmenu' (admin panel). Pass 'fu-wysiwygmenu' for the
+ *   front-end comment form so it uses self-contained scoped styles and doesn't
+ *   depend on the admin stylesheet being loaded on the public page.
+ */
+function makeWysiwyg(el, anchor, toolbarClass) {
+    // ── double-init guard ─────────────────────────────────────────────────────
+    if (el.dataset.wysiwyg === '1') { return; }
+    el.dataset.wysiwyg = '1';
+
+    const insertionPoint = anchor || el;
+    const toolbar = document.createElement('span');
+    toolbar.className = toolbarClass || 'wysiwygmenu';
 
     for (let i = 0; i < myWysiwyg.length; i++) {
         const button = myWysiwyg[i];
+
         const a = document.createElement('a');
         a.href      = '#';
         a.title     = button.title;
         a.className = el.id;
+        a.setAttribute('aria-label', button.name);
         a.addEventListener('click', button.func);
 
-        const img   = document.createElement('img');
-        img.src     = button.img;
-        img.alt     = button.name;
-        img.className = el.id;
+        // ── SVG vs legacy image ───────────────────────────────────────────────
+        if (button.img && button.img.trimStart().startsWith('<')) {
+            // Inline SVG — wrap in a <span> so we can set innerHTML safely
+            // without touching the <a> directly (which would clobber listeners).
+            const wrap = document.createElement('span');
+            wrap.className = el.id;
+            wrap.innerHTML = button.img;
+            wrap.setAttribute('aria-hidden', 'true');
+            const svgEl = wrap.firstElementChild;
+            if (svgEl) {
+                svgEl.className.baseVal = el.id; // propagate class for formatText lookup
+            }
+            a.appendChild(wrap);
+        } else {
+            // Legacy PNG/GIF path — kept for custom installs that still have
+            // the image files on disk.
+            const img     = document.createElement('img');
+            img.src       = button.img;
+            img.alt       = button.name;
+            img.className = el.id;
+            a.appendChild(img);
+        }
 
-        a.appendChild(img);
-        p.appendChild(a);
+        toolbar.appendChild(a);
     }
 
-    insertBefore(p, el);
+    insertBefore(toolbar, insertionPoint);
 }
 
 // ── Text formatting (WYSIWYG tag insertion) ───────────────────────────────────

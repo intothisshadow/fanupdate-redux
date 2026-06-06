@@ -5,6 +5,34 @@
  * Copyright (c) Jenny Ferenc <jenny@prism-perfect.net>
  * Copyright (c) 2020 by Ekaterina (contributor) http://scripts.robotess.net
  *
+ * Bug fix (Redux 2.0.4):
+ *  - Entry lookup used Execute() + NumRows() + GetRecord() in sequence.
+ *    GetRecord() calls ReadRecord() then FreeResult() internally, so by the
+ *    time NumRows() ran the result had already been freed — it always returned
+ *    0, the entry was never found, no comment was saved, and the AJAX
+ *    response was empty. Fixed: replaced the three-call sequence with a
+ *    single GetRecord() call which executes, fetches, and frees atomically.
+ *  - $result_string was only assigned inside deeply-nested conditionals;
+ *    any early exit left it undefined and triggered a PHP notice on echo.
+ *    Initialised to '' at the top of the POST block.
+ *
+ * Bug fix (Redux 2.0.7):
+ *  - Captcha session was destroyed unconditionally immediately after the
+ *    check — regardless of whether the check passed or failed. On HTTPS
+ *    sites where install_url was still set to http://, the PHPSESSID cookie
+ *    set by captcha.php (loaded as http://) would not be sent with the AJAX
+ *    POST to process.php (upgraded to https://) because the cookie lacked
+ *    the Secure flag. The session was therefore always empty and the captcha
+ *    check always failed silently with no output, causing the empty-response
+ *    symptom. Fixed:
+ *    (1) session_set_cookie_params() called before session_start() to add
+ *        Secure + SameSite=Lax so the PHPSESSID cookie is sent correctly
+ *        over HTTPS.
+ *    (2) Session is only destroyed after a successful captcha check, not on
+ *        failure — allowing the user to retry without reloading the page.
+ *    Also: captcha.php updated identically so both ends use the same session
+ *    cookie parameters.
+ *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
@@ -37,6 +65,8 @@ if (isset($_POST['submit_comment'])) {
 
     $clean = clean_input($_POST);
 
+    $result_string = '';
+
     // check for valid entry_id
     if (empty($clean['entry']) || !ctype_digit($clean['entry']) || $clean['entry'] <= 0) {
 
@@ -50,19 +80,19 @@ if (isset($_POST['submit_comment'])) {
 
         $fu->AddOptFromDb();
 
-        // find entry
-
+        // find entry — GetRecord() executes, fetches one row, and frees the
+        // result atomically. Do NOT call NumRows() after GetRecord(); the
+        // result is already freed by then and NumRows() would return 0.
         $sql_entry = (int)$clean['entry'];
 
-        $query_check = 'SELECT * FROM ' . $fu->getOpt('blog_table') . " b
+        $query_check = 'SELECT * FROM ' . $fu->getOpt('blog_table') . "
           WHERE entry_id=$sql_entry
           LIMIT 1";
 
-        $fu->db->Execute($query_check);
+        $row = $fu->db->GetRecord($query_check);
 
-        if ($fu->db->NumRows() > 0) {
+        if (!empty($row)) {
 
-            $row = $fu->db->GetRecord();
             $post = new FanUpdate_Post($row, $fu);
 
             // are comments even allowed?
@@ -73,16 +103,32 @@ if (isset($_POST['submit_comment'])) {
                 // check captcha, if enabled
                 if ($fu->getOpt('captcha_on')) {
 
+                    // Set Secure + SameSite=Lax before session_start() so the
+                    // PHPSESSID cookie is sent correctly over HTTPS. Without
+                    // Secure the cookie set by captcha.php (which also calls
+                    // session_start() with these same params) won't arrive
+                    // here when the page was originally loaded over HTTP and
+                    // Firefox auto-upgraded the AJAX POST to HTTPS.
+                    session_set_cookie_params([
+                        'lifetime' => 0,
+                        'path'     => '/',
+                        'secure'   => true,
+                        'httponly' => true,
+                        'samesite' => 'Lax',
+                    ]);
+
                     session_start();
 
                     if (!isset($_SESSION['security_code']) || $_POST['captcha'] != $_SESSION['security_code']) {
                         $pass_captcha = false;
                         $fu->addErr('The text you entered does not match the captcha image. Please try again.');
+                    } else {
+                        // Only destroy the session on success — keeps the
+                        // session alive so the user can retry on failure.
+                        setcookie(session_name(), '', time() - 36000, '/');
+                        $_SESSION = [];
+                        session_destroy();
                     }
-
-                    setcookie(session_name(), '', time() - 36000, '/');
-                    $_SESSION = array();
-                    session_destroy();
                 }
 
                 if ($pass_captcha) {
@@ -205,8 +251,7 @@ if (isset($_POST['submit_comment'])) {
                         //  secure   = true   — site is HTTPS-only
                         //  httponly = false  — must stay JS-readable so the comment form can pre-fill
                         //                      name/email/url fields on return visits
-                        //  samesite = Lax    — Lax not Strict: Strict would clear the cookies after
-                        //                      any cross-page navigation, breaking the pre-fill feature
+                        //  samesite = Lax    — Lax not Strict: Strict would break cross-page remembrance
 
                         if ($clean['remember_me'] == 'y') {
 
@@ -228,17 +273,17 @@ if (isset($_POST['submit_comment'])) {
 
                         $clean['added'] = gmdate('Y-m-d H:i:s');
 
-                        $sql_entry = (int)$clean['entry'];
-                        $sql_name = $fu->db->Escape($clean['name']);
-                        $sql_email = $fu->db->Escape($clean['email']);
-                        $sql_url = $fu->db->Escape($clean['url']);
+                        $sql_entry   = (int) $clean['entry'];
+                        $sql_name    = $fu->db->Escape($clean['name']);
+                        $sql_email   = $fu->db->Escape($clean['email']);
+                        $sql_url     = $fu->db->Escape($clean['url']);
                         $sql_comment = $fu->db->Escape($clean['comment']);
                         $sql_approved = $clean['approved'];
-                        $sql_added = $fu->db->Escape($clean['added']);
-                        $sql_points = $points;
+                        $sql_added   = $fu->db->Escape($clean['added']);
+                        $sql_points  = $points;
 
                         $sql_agent = $fu->db->Escape($_SERVER['HTTP_USER_AGENT']);
-                        $sql_ip = ip2long($_SERVER['REMOTE_ADDR']);
+                        $sql_ip    = ip2long($_SERVER['REMOTE_ADDR']);
 
                         $query = 'INSERT INTO ' . $fu->getOpt('comments_table') . " (entry_id, name, email, url, comment, approved, added, points)
 	                      VALUES ($sql_entry, '$sql_name', '$sql_email', '$sql_url', '$sql_comment', $sql_approved, '$sql_added', $sql_points)";
@@ -280,10 +325,10 @@ if (isset($_POST['submit_comment'])) {
                             $msg .= "==========\r\n\r\n";
 
                             $msg .= "Time:\t\t" . date('r') . "\r\n";
-                            $msg .= "Referrer:\t" . $_SERVER['HTTP_REFERER'] . "\r\n";
+                            $msg .= "Referrer:\t" . ($_SERVER['HTTP_REFERER'] ?? '') . "\r\n";
                             $msg .= "Sender IP:\t" . $_SERVER['REMOTE_ADDR'] . "\r\n";
                             $msg .= "Hostname:\t" . $ip_hostname . "\r\n";
-                            $msg .= "User Agent:\t" . $_SERVER['HTTP_USER_AGENT'] . "\r\n";
+                            $msg .= "User Agent:\t" . ($_SERVER['HTTP_USER_AGENT'] ?? '') . "\r\n";
 
                             $mailheaders = 'From: "FanUpdate ' . $fu->getOpt('version') . '" <' . $fu->getOpt('admin_email') . ">\r\n";
 
@@ -320,7 +365,7 @@ if (isset($_POST['submit_comment'])) {
     }
 
     if ($_POST['submit_comment'] != 'ajax') {
-        if ($clean['approved'] > 0) {
+        if (isset($clean['approved']) && $clean['approved'] > 0) {
             [$return] = explode('#', $clean['returnto']);
             header('Location: ' . $return . '#comment' . $clean['comment_id']);
         }

@@ -16,12 +16,21 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/gpl-3.0.html>.
+ *
+ * Redux 1.5.1 fix (applied late): replaced DATE_ADD(CURRENT_TIMESTAMP(), INTERVAL X HOUR)
+ * with UTC_TIMESTAMP(). The 1.5.1 timezone fix was applied to show-blog.php but missed
+ * show-cat.php. The _server_tz_offset option was removed from the database during that
+ * upgrade, so getOpt('_server_tz_offset') returns '' here, causing the INTERVAL
+ * arithmetic to silently hide all category posts on servers whose local clock is ahead
+ * of UTC. UTC_TIMESTAMP() is always correct regardless of server timezone.
  ******************************************************************************/
 
-// Guard moved above the opening <div> so that an invalid/missing $listingid
+// Guard moved above the opening <div> so that an invalid/missing $cat_id
 // never leaves an unclosed <div id="fanupdate"> in the host page's output.
 // Changed from exit to return so the host page continues running normally.
-if (!isset($listingid) || !is_numeric($listingid)) {
+// $cat_id is used (not $listingid) so it cannot collide with show-blog.php
+// when both are embedded on the same page.
+if (!isset($cat_id) || !is_numeric($cat_id)) {
     return;
 }
 ?>
@@ -35,7 +44,7 @@ if (!isset($listingid) || !is_numeric($listingid)) {
     $fu =& FanUpdate::instance();
     $fu->addOptFromDb();
 
-    $query = 'SELECT * FROM ' . $fu->getOpt('catoptions_table') . ' WHERE cat_id=' . (int)$listingid . ' LIMIT 1';
+    $query = 'SELECT * FROM ' . $fu->getOpt('catoptions_table') . ' WHERE cat_id=' . (int)$cat_id . ' LIMIT 1';
 
     $cat = $fu->db->GetRecord($query);
 
@@ -58,7 +67,7 @@ if (!isset($listingid) || !is_numeric($listingid)) {
         $query = 'SELECT b.entry_id, b.added, b.title
     FROM ' . $fu->getOpt('blog_table') . ' b
     JOIN ' . $fu->getOpt('catjoin_table') . ' j ON b.entry_id=j.entry_id
-    WHERE b.is_public > 0 AND b.added <= DATE_ADD(CURRENT_TIMESTAMP(), INTERVAL ' . (0 - $fu->getOpt('_server_tz_offset')) . ' HOUR) AND j.cat_id=' . $listingid . '
+    WHERE b.is_public > 0 AND b.added <= UTC_TIMESTAMP() AND j.cat_id=' . (int)$cat_id . '
     ORDER BY b.added DESC';
 
         $fu->db->Execute($query);
@@ -96,7 +105,7 @@ if (!isset($listingid) || !is_numeric($listingid)) {
         $query = 'SELECT b.*
     FROM ' . $fu->getOpt('blog_table') . ' b
     JOIN ' . $fu->getOpt('catjoin_table') . ' j ON b.entry_id=j.entry_id
-    WHERE b.is_public > 0 AND b.added <= DATE_ADD(CURRENT_TIMESTAMP(), INTERVAL ' . (0 - $fu->getOpt('_server_tz_offset')) . ' HOUR) AND j.cat_id=' . $listingid;
+    WHERE b.is_public > 0 AND b.added <= UTC_TIMESTAMP() AND j.cat_id=' . (int)$cat_id;
 
         if (!empty($_GET['id'])) {
 
@@ -122,7 +131,7 @@ if (!isset($listingid) || !is_numeric($listingid)) {
         $fu->printBlog($query, $main_limit, $single_page);
     }
 
-    $fu->printBlogFooter($listingid);
+    $fu->printBlogFooter($cat_id);
 
     ?>
 

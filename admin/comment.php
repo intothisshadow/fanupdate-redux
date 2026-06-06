@@ -29,7 +29,7 @@ $fu->addOptFromDb();
 $fu->login();
 
 $showNav  = true;
-$showform = true;
+$showform = false;   // default: show the list; only true when editing/adding
 $clean    = [];
 $cmt      = new FanUpdate_Comment([], $fu, $fu->getOpt('blog_page'));
 
@@ -59,6 +59,8 @@ if (isset($_POST['action'])) {
 
     if ($_POST['action'] === 'preview') {
 
+        $showform = true;
+
         $cmt = new FanUpdate_Comment([
             'comment_id' => $clean['id'],
             'name'       => $clean['name'],
@@ -70,6 +72,27 @@ if (isset($_POST['action'])) {
             'approved'   => $clean['approved'],
         ], $fu, $fu->getOpt('blog_page'));
 
+    } elseif ($_POST['action'] === 'add') {
+
+        if (empty($clean['comment'])) {
+            $fu->addErr('The comment body cannot be blank.');
+            $showform = true;
+        } else {
+            $date = !empty($clean['date']) ? $sql_date : gmdate('Y-m-d H:i:s');
+            $query = "INSERT INTO " . $fu->getOpt('comments_table') . "
+                (name, email, url, comment, entry_id, added, approved)
+                VALUES ('$sql_name','$sql_email','$sql_url','$sql_comment',
+                        '$sql_entry','$date','$sql_approved')";
+
+            if (!$fu->db->Execute($query)) {
+                $fu->addErr('Failed to add comment.');
+                $showform = true;
+            } else {
+                $fu->addSuccess('Comment added.');
+                $clean = [];
+            }
+        }
+
     } elseif ($_POST['action'] === 'update') {
 
         $query = "UPDATE " . $fu->getOpt('comments_table') . "
@@ -80,9 +103,10 @@ if (isset($_POST['action'])) {
 
         if (!$fu->db->Execute($query)) {
             $fu->addErr('Failed to update comment #<strong>' . $clean['id'] . '</strong>.');
+            $showform = true;
         } else {
             $fu->addSuccess('Comment #<strong>' . $clean['id'] . '</strong> updated.');
-            $showform = false;
+            $clean = [];
         }
 
     } elseif ($_POST['action'] === 'delete') {
@@ -94,26 +118,37 @@ if (isset($_POST['action'])) {
             $fu->addErr('Failed to delete comment #<strong>' . $clean['id'] . '</strong>.');
         } else {
             $fu->addSuccess('Comment #<strong>' . $clean['id'] . '</strong> deleted.');
-            $showform = false;
         }
         $clean = [];
     }
 }
 
-// Load existing comment for edit
-if ($showform && isset($_GET['id']) && is_numeric($_GET['id'])) {
+// ─────────────────────────────────────────────────────────────────────────────
+// Load existing comment for edit  (GET ?id=N)
+// ─────────────────────────────────────────────────────────────────────────────
+
+if (!$showform && isset($_GET['id']) && is_numeric($_GET['id'])) {
     $id    = (int) $_GET['id'];
     $query = "SELECT * FROM " . $fu->getOpt('comments_table') . " WHERE comment_id='$id'";
     $fu->db->Execute($query);
     if ($row = $fu->db->ReadRecord()) {
-        $cmt = new FanUpdate_Comment($row, $fu, $fu->getOpt('blog_page'));
-        $clean = $row;
+        $cmt      = new FanUpdate_Comment($row, $fu, $fu->getOpt('blog_page'));
+        $clean    = $row;
+        $showform = true;
     }
     $fu->db->FreeResult();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Determine filter
+// "New comment" button  (GET ?new=1)
+// ─────────────────────────────────────────────────────────────────────────────
+
+if (!$showform && isset($_GET['new'])) {
+    $showform = true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Determine filter for the list
 // ─────────────────────────────────────────────────────────────────────────────
 
 $show   = isset($_GET['show'])   ? clean_input($_GET['show'])   : '';
@@ -126,13 +161,14 @@ $fu->getHeader('Comments');
 <div class="page-header">
     <h2>Comments<?php
         if ($showform && $cmt->getID()) { echo ': Edit'; }
+        elseif ($showform && !$cmt->getID()) { echo ': Add'; }
         elseif ($show !== '')           { echo ': ' . ucwords(htmlspecialchars($show, ENT_QUOTES, 'UTF-8')); }
     ?></h2>
 </div>
 
 <div class="subnav-bar">
     <ul class="subnav">
-        <li<?php echo $show === '' ? ' class="active"' : ''; ?>><a href="comment.php">Approved</a></li>
+        <li<?php echo ($show === '' && !$showform) ? ' class="active"' : ''; ?>><a href="comment.php">Approved</a></li>
         <li<?php echo $show === 'pending' ? ' class="active"' : ''; ?>><a href="comment.php?show=pending">Pending</a></li>
         <li<?php echo $show === 'spam' ? ' class="active"' : ''; ?>><a href="comment.php?show=spam">Spam</a></li>
         <li class="form">

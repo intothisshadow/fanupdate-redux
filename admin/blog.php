@@ -3,6 +3,15 @@
 /*****************************************************************************
  * FanUpdate — admin/blog.php
  *
+ * Bug fix (Redux 2.0.1):
+ *  - Added "Allow comments" toggle to the new-entry and edit-entry forms.
+ *    The blog table has a comments_on column and FanUpdate_Post::commentsOn()
+ *    reads it, but the admin form never exposed it — every entry was saved
+ *    with comments_on = 0 (off) because the field was absent from the form
+ *    and therefore absent from both INSERT and UPDATE queries.
+ *    Fix: read comments_on from POST, include it in INSERT/UPDATE, and render
+ *    a <select> for it in the Settings fieldset.
+ *
  * Bug fix (Redux 1.5.2):
  *  - Added class="wysiwyg" to the body <textarea> so fanupdate-admin.js
  *    can attach the WYSIWYG toolbar (makeWysiwyg targets textarea.wysiwyg).
@@ -43,7 +52,8 @@ if (isset($_POST['action'])) {
     $clean['title']      = isset($_POST['title'])      ? clean_input($_POST['title'])      : '';
     $clean['body']       = isset($_POST['body'])        ? clean_input($_POST['body'])        : '';
     $clean['cat']        = isset($_POST['cat'])         ? (int) $_POST['cat']               : 0;
-    $clean['is_public']  = isset($_POST['is_public'])   ? (int) $_POST['is_public']         : 0;
+    $clean['is_public']    = isset($_POST['is_public'])     ? (int) $_POST['is_public']         : 0;
+    $clean['comments_on'] = isset($_POST['comments_on'])   ? (int) $_POST['comments_on']       : 0;
     $clean['id']         = isset($_POST['id'])          ? (int) $_POST['id']                : 0;
     $clean['date']       = isset($_POST['date'])        ? clean_input($_POST['date'])        : '';
 
@@ -59,8 +69,8 @@ if (isset($_POST['action'])) {
 
         // blog table has no cat_id column — category is stored in catjoin
         $query = "INSERT INTO " . $fu->getOpt('blog_table') . "
-            (title, body, is_public, added)
-            VALUES ('$sql_title','$sql_body','" . (int)$clean['is_public'] . "','" . $fu->db->Escape($clean['date']) . "')";
+            (title, body, is_public, comments_on, added)
+            VALUES ('$sql_title','$sql_body','" . (int)$clean['is_public'] . "','" . (int)$clean['comments_on'] . "','" . $fu->db->Escape($clean['date']) . "')";
 
         if ($fu->db->Execute($query)) {
             $new_entry_id = $fu->db->GetLastSequence();
@@ -82,6 +92,7 @@ if (isset($_POST['action'])) {
         $query = "UPDATE " . $fu->getOpt('blog_table') . "
             SET title='$sql_title', body='$sql_body',
                 is_public='" . (int)$clean['is_public'] . "',
+                comments_on='" . (int)$clean['comments_on'] . "',
                 added='" . $fu->db->Escape($clean['date']) . "'
             WHERE entry_id='" . (int)$clean['id'] . "'";
 
@@ -219,6 +230,13 @@ if ($showform) {
                         <select id="is_public" name="is_public">
                             <option value="1" <?php echo ((int) ($clean['is_public'] ?? 1)) === 1 ? ' selected' : ''; ?>>Published</option>
                             <option value="0" <?php echo ((int) ($clean['is_public'] ?? 1)) === 0 ? ' selected' : ''; ?>>Draft</option>
+                        </select>
+                    </p>
+
+                    <p><label for="comments_on">Allow comments</label>
+                        <select id="comments_on" name="comments_on">
+                            <option value="1" <?php echo ((int) ($clean['comments_on'] ?? 1)) === 1 ? ' selected' : ''; ?>>Yes</option>
+                            <option value="0" <?php echo ((int) ($clean['comments_on'] ?? 1)) === 0 ? ' selected' : ''; ?>>No</option>
                         </select>
                     </p>
                 </fieldset>

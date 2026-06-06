@@ -147,10 +147,17 @@ if ($showform) { ?>
             <?php if (!$fu->getOpt('collective_script')) { ?>
             <fieldset>
                 <legend>Name</legend>
+                <?php if (isset($clean['cat_id'])) { ?>
+                <p class="hint">ID: <strong><?php echo (int) $clean['cat_id']; ?></strong></p>
+                <?php } ?>
                 <p><label for="name">Category name</label>
                 <input type="text" id="name" name="name" maxlength="100"
                        value="<?php echo htmlspecialchars((string) ($clean['cname'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>" /></p>
             </fieldset>
+            <?php } else { ?>
+            <?php if (isset($clean['cat_id'])) { ?>
+            <p class="hint">ID: <strong><?php echo (int) $clean['cat_id']; ?></strong></p>
+            <?php } ?>
             <?php } ?>
 
             <fieldset>
@@ -227,6 +234,7 @@ if ($showform) { ?>
     <table class="sortable" aria-label="Blog entry categories">
         <thead>
             <tr>
+                <th scope="col">ID</th>
                 <th scope="col">Name</th>
                 <th scope="col">Entries</th>
                 <th scope="col">Get code</th>
@@ -242,6 +250,7 @@ if ($showform) { ?>
             while ($row = $fu->db->ReadRecord()) {
                 $class = ($class === 'even') ? 'odd' : 'even';
                 echo '<tr class="' . $class . '">';
+                echo '<td>' . (int) $row['cid'] . '</td>';
                 echo '<td>' . htmlspecialchars((string) $row['cname'], ENT_QUOTES, 'UTF-8') . '</td>';
                 echo '<td>' . (int) $row['num'] . '</td>';
                 echo '<td class="form"><a href="get-code.php?cat=' . (int) $row['cid'] . '" class="button">Get code</a></td>';

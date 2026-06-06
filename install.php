@@ -16,6 +16,16 @@
  *  - htmlspecialchars() applied to all echoed values
  *  - Return types and type hints added where applicable
  *
+ * Bug fix (Redux 2.0.1):
+ *  - install_url auto-detection hardcoded 'http://' — on HTTPS sites this
+ *    wrote an http:// install_url into the database, causing mixed-content
+ *    upgrades, broken CAPTCHA sessions, and failed comment submissions.
+ *    Fixed: protocol now detected from $_SERVER['HTTPS'] / X-Forwarded-Proto.
+ *  - $setting[2] placeholder and $setting[4] description example updated
+ *    from http:// to https://.
+ *  - $setting[18] comment_form_template default gravatar.com link updated
+ *    from http:// to https://.
+ *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
@@ -99,8 +109,23 @@ $row_opt['install_path'] = $dir;
 
 $dir = str_replace($_SERVER['DOCUMENT_ROOT'], '', $dir);
 
+// Detect protocol — prefer X-Forwarded-Proto (reverse proxy / CDN) then HTTPS
+// server var, then fall back to http. Never hardcode http:// since most modern
+// hosts are HTTPS-only and an http:// install_url breaks CAPTCHA sessions and
+// causes mixed-content failures on the comment form.
+$detected_proto = 'https';
+if (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') {
+    $detected_proto = 'https';
+} elseif (!empty($_SERVER['HTTP_X_FORWARDED_PROTO'])) {
+    $detected_proto = strtolower($_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https' ? 'https' : 'http';
+} elseif (isset($_SERVER['SERVER_PORT']) && (int) $_SERVER['SERVER_PORT'] === 443) {
+    $detected_proto = 'https';
+} else {
+    $detected_proto = 'http';
+}
+
 // The URL where FanUpdate is installed — NO TRAILING SLASH
-$row_opt['install_url'] = 'http://' . $_SERVER['SERVER_NAME'] . $dir;
+$row_opt['install_url'] = $detected_proto . '://' . $_SERVER['SERVER_NAME'] . $dir;
 
 // ── admin credentials (stored in blog-config.php, not the database) ─────────
 
@@ -120,7 +145,7 @@ $setting[1]['optdesc']  = 'The name of your site or blog.';
 $setting[1]['version']  = 2.0;
 
 $setting[2]['optkey']   = 'blog_page';
-$setting[2]['optvalue'] = (!empty($row_opt['collective_updates_page'])) ? $row_opt['collective_updates_page'] : 'http://example.com/updates.php';
+$setting[2]['optvalue'] = (!empty($row_opt['collective_updates_page'])) ? $row_opt['collective_updates_page'] : 'https://example.com/updates.php';
 $setting[2]['optdesc']  = 'The URL of your blog page (needed for RSS feeds).';
 $setting[2]['version']  = 2.0;
 
@@ -131,7 +156,7 @@ $setting[3]['version']  = 2.0;
 
 $setting[4]['optkey']   = 'install_url';
 $setting[4]['optvalue'] = $row_opt['install_url'];
-$setting[4]['optdesc']  = 'The URL to your FanUpdate directory. NO trailing slash. Ex: http://example.com/fanupdate';
+$setting[4]['optdesc']  = 'The URL to your FanUpdate directory. NO trailing slash. Ex: https://example.com/fanupdate';
 $setting[4]['version']  = 2.0;
 
 $setting[5]['optkey']   = 'comments_on';
@@ -166,7 +191,7 @@ $setting[10]['version']  = 2.0;
 
 $setting[11]['optkey']   = 'gravatar_default';
 $setting[11]['optvalue'] = $row_opt['install_url'] . '/gravatar.png';
-$setting[11]['optdesc']  = 'URL of default Gravatar image. Ex: http://example.com/fanupdate/gravatar.png';
+$setting[11]['optdesc']  = 'URL of default Gravatar image. Ex: https://example.com/fanupdate/gravatar.png';
 $setting[11]['version']  = 2.0;
 
 $setting[12]['optkey']   = 'gravatar_size';
@@ -235,7 +260,7 @@ $setting[18]['optvalue'] = '<h3 id="postcomment">Post A Comment</h3>
 
 <p><input type="submit" id="submit" name="submit_comment" value="Post Comment" class="submit" /></p>
 
-<p id="cmt-rules">Your email is only for accessing <a href="http://www.gravatar.com/">gravatar.com</a>. No <abbr title="HyperText Markup Language">HTML</abbr> allowed; some formatting can be applied via the buttons above the textarea.</p>';
+<p id="cmt-rules">Your email is only for accessing <a href="https://www.gravatar.com/">gravatar.com</a>. No <abbr title="HyperText Markup Language">HTML</abbr> allowed; some formatting can be applied via the buttons above the textarea.</p>';
 $setting[18]['optdesc']  = 'Customize your comment form. Don\'t change the names of the inputs or the CAPTCHA and MODERATION comments. See readme.txt for template variables.';
 $setting[18]['version']  = 2.1;
 

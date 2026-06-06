@@ -13,6 +13,17 @@ declare(strict_types=1);
  *  - mt_rand() replaced with random_int() (cryptographically secure)
  *  - Dynamic property creation removed (class property declared explicitly)
  *
+ * Bug fix (Redux 2.0.1):
+ *  - session_set_cookie_params() called before session_start() to add
+ *    Secure + SameSite=Lax so the PHPSESSID cookie issued here is sent
+ *    correctly when process.php receives the comment submission over HTTPS.
+ *    Without Secure the browser may not send the cookie with the AJAX POST,
+ *    causing $_SESSION['security_code'] to be absent in process.php and
+ *    every CAPTCHA check to fail silently.
+ *  - $_SESSION['security_code'] assignment moved before image output so the
+ *    session value is set as early as possible (before any output that could
+ *    theoretically abort execution).
+ *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
@@ -26,6 +37,18 @@ declare(strict_types=1);
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/gpl-3.0.html>.
  ******************************************************************************/
+
+// Set Secure + SameSite=Lax before session_start() so the PHPSESSID cookie
+// is transmitted correctly over HTTPS. Must match the params used in
+// process.php; otherwise the two requests may create separate sessions and
+// the security_code comparison will always fail.
+session_set_cookie_params([
+    'lifetime' => 0,
+    'path'     => '/',
+    'secure'   => true,
+    'httponly' => true,
+    'samesite' => 'Lax',
+]);
 
 session_start();
 
@@ -43,6 +66,10 @@ class CaptchaSecurityImages
         $this->font = __DIR__ . '/assets/fonts/VeraSe.ttf';
 
         $code = $this->generateCode($characters);
+
+        // Store the code in the session before any image output so it is
+        // always set even if execution is interrupted mid-image.
+        $_SESSION['security_code'] = $code;
 
         // font size will be 60% of the image height
         $font_size = $height * 0.6;
@@ -94,8 +121,6 @@ class CaptchaSecurityImages
         header('Content-Type: image/jpeg');
         imagejpeg($image);
         imagedestroy($image);
-
-        $_SESSION['security_code'] = $code;
     }
 
     public function generateCode(int $characters): string

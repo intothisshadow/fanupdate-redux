@@ -1,4 +1,5 @@
 <?php
+
 /*****************************************************************************
  * FanUpdate
  * Copyright (c) Jenny Ferenc <jenny@prism-perfect.net>
@@ -30,17 +31,23 @@ $showNav = true;
 $fu->getHeader('Snippet');
 
 // ____________________________________________________________ DISPLAY CODE
+// NOTE: category.php links here as get-code.php?cat=N — parameter is 'cat',
+// not 'id'. All $_GET checks below use 'cat' consistently.
 
-if (!empty($_GET['id'])) {
+$is_category = !empty($_GET['cat']) && is_numeric($_GET['cat']);
 
-    $sql_id = (int)$_GET['id'];
+if ($is_category) {
+
+    $sql_id = (int) $_GET['cat'];
 
     $query = 'SELECT ' . $fu->getOpt('col_subj') . ' AS cat_name
       FROM ' . $fu->getOpt('collective_table') . '
       WHERE ' . $fu->getOpt('col_id') . "=$sql_id LIMIT 1";
 
     $subject = $fu->db->GetFirstCell($query);
-
+    if (empty($subject)) {
+        $subject = 'category ' . $sql_id;
+    }
 } else {
     $subject = 'all posts';
 }
@@ -52,17 +59,17 @@ if (!empty($_GET['id'])) {
     <h2>Display Code</h2>
 
     <p>Edit the variables in this snippet according to the instructions below, then copy an paste it into the
-        PHP-enabled page where you'd like to display the blog for <strong><?php echo $subject; ?></strong>.</p>
+        PHP-enabled page where you'd like to display the blog for <strong><?php echo htmlspecialchars($subject, ENT_QUOTES, 'UTF-8'); ?></strong>.</p>
 
-    <p><textarea cols="90" rows="<?php echo isset($_GET['id']) ? 8 : 7; ?>">&lt;?php
-// FanUpdate blog
+    <p><textarea cols="90" rows="<?php echo $is_category ? 8 : 7; ?>">&lt;?php
+// FanUpdate Redux
 // subject: <?php echo $subject; ?>
 
-<?php if (!empty($_GET['id'])) { ?>
-$listingid = <?php echo $sql_id; ?>;
+<?php if ($is_category) { ?>
+$cat_id = <?php echo $sql_id; ?>;
 <?php } ?>
-$main_limit = <?php echo !empty($_GET['id']) ? 1 : 5; ?>;
-<?php if (isset($_GET['id'])) { ?>
+$main_limit = <?php echo $is_category ? 1 : 5; ?>;
+<?php if ($is_category) { ?>
 require_once('<?php echo $fu->getOpt('install_path'); ?>/show-cat.php');
 <?php } else { ?>
 require_once('<?php echo $fu->getOpt('install_path'); ?>/show-blog.php');
@@ -72,8 +79,8 @@ require_once('<?php echo $fu->getOpt('install_path'); ?>/show-blog.php');
     <h3>Explanation of Variables</h3>
 
     <ul>
-        <?php if (isset($_GET['id'])) { ?>
-            <li><strong>$listingid</strong> is the unique ID for this particular category.</li>
+        <?php if ($is_category) { ?>
+            <li><strong>$cat_id</strong> is the unique ID for this particular category.</li>
         <?php } ?>
         <li><strong>$main_limit</strong> is the number of posts you'd like displayed on the main updates page.</li>
     </ul>
@@ -86,7 +93,7 @@ require_once('<?php echo $fu->getOpt('install_path'); ?>/show-blog.php');
 
     <p>You may want to include these <abbr title="Cascading Style Sheet">CSS</abbr> rules in your site style sheet if
         you are using the default templates. You can of course <a href="templates.php">change the
-        templates</a> and/or modify this styling however you see fit.</p>
+            templates</a> and/or modify this styling however you see fit.</p>
 
     <p><textarea cols="90" rows="16">
 /*	====	FanUpdate	====	*/

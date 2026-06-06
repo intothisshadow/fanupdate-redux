@@ -23,13 +23,13 @@ declare(strict_types=1);
 // ── release identity ─────────────────────────────────────────────────────────
 
 /** Human-readable version string displayed in the UI, footer, and RSS feeds. */
-const FU_VERSION      = 'Redux 1.8.0';
+const FU_VERSION      = 'Redux 2.0.1';
 
 /** Database schema version — update only when install.php adds/alters tables. */
 const FU_DB_VERSION   = '2.2.1b2';
 
 /** ISO 8601 release date. */
-const FU_RELEASE_DATE = '2026-05-29';
+const FU_RELEASE_DATE = '2026-06-06';
 
 /** Short release codename (shown on the Dashboard and Credits page). */
 const FU_RELEASE_NAME = '';

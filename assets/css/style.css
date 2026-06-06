@@ -268,11 +268,24 @@ pre {
     color: var(--fu-muted);
     text-decoration: none;
     transition: background 0.15s, color 0.15s;
+    /* Reset button-element defaults */
+    padding: 0;
+    font-size: inherit;
+    line-height: 1;
+    cursor: pointer;
+    white-space: nowrap;
 }
 
 .nav-icon-btn:hover {
     color: var(--fu-text);
     text-decoration: none;
+}
+
+/* Night-theme toggle — active/pressed state */
+#fu-theme-toggle[aria-pressed="true"] {
+    background: var(--fu-accent-light);
+    border-color: var(--fu-accent);
+    color: var(--fu-accent);
 }
 
 /* ── Sub-navigation bar (used on options, comment filter) ─────────────────── */
@@ -281,6 +294,7 @@ pre {
     background: var(--fu-bg);
     border-bottom: 0.5px solid var(--fu-border);
     padding: 0 2rem;
+    margin-bottom: 0.75rem;
 }
 
 ul.subnav {
@@ -324,6 +338,14 @@ ul.subnav li:first-child a {
 
 ul.subnav li.form {
     margin-left: auto;
+    align-self: flex-end;
+    padding-bottom: 5px;
+}
+
+ul.subnav li.form form {
+    display: flex;
+    align-items: center;
+    gap: 6px;
 }
 
 ul.subnav li.form input[type="text"] {
@@ -334,6 +356,7 @@ ul.subnav li.form input[type="text"] {
     background: var(--fu-surface);
     color: var(--fu-text);
     outline: none;
+    width: auto;
 }
 
 ul.subnav li.form input[type="text"]:focus {
@@ -347,6 +370,7 @@ ul.subnav li.form input[type="text"]:focus {
     padding: 2rem;
     max-width: 1100px;
     width: 100%;
+    margin: 0 auto;
 }
 
 /* ── Login page ───────────────────────────────────────────────────────────── */
@@ -891,6 +915,14 @@ p.paginate strong,
 }
 
 /* ── WYSIWYG toolbar ──────────────────────────────────────────────────────── */
+/*
+ * Redux 2.0.8: toolbar buttons now contain inline SVG rather than <img> tags.
+ * The <a> carries color: var(--fu-muted) so SVG strokes (currentColor) inherit
+ * the correct icon colour automatically. On hover the <a> gets color:
+ * var(--fu-accent) which recolours the SVG stroke via the same cascade.
+ * The legacy .wysiwygmenu img rule is kept so any custom installs that still
+ * have image files on disk continue to work.
+ */
 
 .wysiwygmenu {
     display: flex;
@@ -904,7 +936,50 @@ p.paginate strong,
     border-bottom: none;
 }
 
-.wysiwygmenu a,
+/* Each button — sized to fit a 16×16 icon with 3px padding each side */
+.wysiwygmenu a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border: 0.5px solid var(--fu-border-med);
+    border-radius: 4px;
+    background: var(--fu-bg);
+    color: var(--fu-muted);       /* SVG currentColor inherits from here */
+    cursor: pointer;
+    text-decoration: none;
+    padding: 3px;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    flex-shrink: 0;
+}
+
+.wysiwygmenu a:hover,
+.wysiwygmenu a:focus {
+    background: var(--fu-accent-light);
+    border-color: var(--fu-accent);
+    color: var(--fu-accent);      /* recolours SVG stroke on hover */
+    text-decoration: none;
+}
+
+/* SVG inside buttons — inherit size from the <a> padding box */
+.wysiwygmenu a svg {
+    display: block;
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    pointer-events: none;         /* clicks should hit the <a>, not the SVG */
+}
+
+/* Inner wrapper span used when inserting SVG via innerHTML */
+.wysiwygmenu a > span {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+}
+
+/* Legacy image fallback (PNG buttons from old installs) */
 .wysiwygmenu img {
     display: inline-flex;
     align-items: center;
@@ -915,18 +990,17 @@ p.paginate strong,
     border-radius: 4px;
     background: var(--fu-bg);
     cursor: pointer;
-    text-decoration: none;
     padding: 2px;
     transition: background 0.15s;
 }
 
-.wysiwygmenu a:hover,
 .wysiwygmenu img:hover {
     background: var(--fu-accent-light);
     border-color: var(--fu-accent);
 }
 
-/* When WYSIWYG is active, round textarea top corners are removed */
+/* When WYSIWYG is active, remove top corner rounding from the textarea
+   so it reads as one connected unit with the toolbar above it. */
 .wysiwygmenu + textarea,
 .wysiwygmenu + p textarea {
     border-top-left-radius: 0;
@@ -1044,6 +1118,125 @@ div#fanupdate textarea {
     max-width: 500px;
     margin: 3rem auto;
     text-align: center;
+}
+
+/* ── Options page: y/n toggle switches ───────────────────────────────────── */
+
+/* Row: option name on the left, toggle on the right, hint below */
+.option-yn-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0 0.875rem;
+}
+
+.option-yn-label {
+    display: inline;
+    flex: 1 1 auto;
+    font-weight: 500;
+    color: var(--fu-text);
+    margin: 0;
+    font-size: 0.875rem;
+    min-width: 0;
+}
+
+.option-yn-hint {
+    flex-basis: 100%;
+    margin-top: 4px;
+}
+
+/* Toggle wrapper — the visible interactive label */
+.fu-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    flex-shrink: 0;
+    margin: 0;
+    font-weight: 400;
+    user-select: none;
+}
+
+/* Hide the native checkbox visually while keeping it accessible */
+.fu-toggle__input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0,0,0,0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* The pill track */
+.fu-toggle__track {
+    position: relative;
+    display: inline-block;
+    width: 40px;
+    height: 22px;
+    border-radius: 11px;
+    background: var(--fu-border-med);
+    border: 0.5px solid var(--fu-border-med);
+    transition: background 0.2s, border-color 0.2s;
+    flex-shrink: 0;
+}
+
+/* The sliding thumb */
+.fu-toggle__thumb {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.18);
+    transition: transform 0.2s;
+}
+
+/* Checked state — track turns accent colour, thumb slides right */
+.fu-toggle__input:checked + .fu-toggle__track {
+    background: var(--fu-accent);
+    border-color: var(--fu-accent);
+}
+
+.fu-toggle__input:checked + .fu-toggle__track .fu-toggle__thumb {
+    transform: translateX(18px);
+}
+
+/* Keyboard focus ring on the track */
+.fu-toggle__input:focus-visible + .fu-toggle__track {
+    outline: 2px solid var(--fu-accent);
+    outline-offset: 2px;
+}
+
+/* Yes / No state text next to the toggle */
+.fu-toggle__state-label {
+    font-size: 0.8rem;
+    color: var(--fu-muted);
+    min-width: 2.25rem;
+}
+
+.fu-toggle__input:checked ~ .fu-toggle__state-label {
+    color: var(--fu-accent);
+    font-weight: 500;
+}
+
+/* Dark mode adjustments */
+@media (prefers-color-scheme: dark) {
+    .fu-toggle__track {
+        background: rgba(255,200,240,0.12);
+        border-color: rgba(255,200,240,0.15);
+    }
+    .fu-toggle__input:checked + .fu-toggle__track {
+        background: var(--fu-accent);
+        border-color: var(--fu-accent);
+    }
+    .fu-toggle__thumb {
+        background: #e8d8e8;
+    }
 }
 
 /* ── Responsive ───────────────────────────────────────────────────────────── */

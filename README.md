@@ -6,7 +6,7 @@ collective of fan websites. Works equally well as a standalone blog.
 Originally written by **Jenny Ferenc** in 2005. Ported to PHP 7 by **Ekaterina**
 (scripts.robotess.net) in 2020. 
 
-This Redux release updates the codebase to **PHP 8.2+** (current release: Redux 1.9.0).
+This Redux release updates the codebase to **PHP 8.2+** and includes a full admin UI redesign.
 
 ---
 
@@ -79,7 +79,7 @@ collective management script (see [Collective integration](#collective-integrati
 
 ### 2. Upload files
 
-Upload all FanUpdate Redux files to an HTTP-accessible directory on your server, e.g.:
+Upload all FanUpdate Redux files to an HTTPS-accessible directory on your server, e.g.:
 
 ```
 https://yoursite.com/fanupdate/
@@ -123,17 +123,17 @@ require_once('/path/to/fanupdate/show-blog.php');
 ?>
 ```
 
-For a single-category blog, use `show-cat.php` instead and set `$listingid`:
+For a single-category blog, use `show-cat.php` instead and set `$cat_id`:
 
 ```php
 <?php
-$listingid = 3;   // category ID from the Categories admin tab
+$cat_id = 3;   // category ID from the Categories admin tab
 $main_limit = 5;
 require_once('/path/to/fanupdate/show-cat.php');
 ?>
 ```
 
-To show only "Whole Collective" entries, set `$listingid = 0`.
+To show only "Whole Collective" entries, set `$cat_id = 0`.
 
 > **Compatibility note:** The display snippet must live in a plain `.php` file.
 > It cannot be placed inside conditional PHP blocks or NL-ConvertToPHP dynamic
@@ -143,81 +143,34 @@ To show only "Whole Collective" entries, set `$listingid = 0`.
 
 ## Upgrading
 
-### From Redux 1.8.0
-
-1. Back up your files.
-2. Upload `class/FileHandler.php`.
-3. No database changes; `install.php` does not need to be re-run.
-
-### From Redux 1.7.0
-
-1. Back up your files.
-2. Upload `admin/account.php` and `admin/options.php`.
-3. No database changes; `install.php` does not need to be re-run.
-4. Your `admin_email` setting is still in the database — it will now appear
-   under **Admin → Account → Change Email** instead of the Options page.
-
-### From Redux 1.6.0
+### From any Redux 1.5–1.9 build
 
 1. Back up your files.
 2. Upload all new files, overwriting existing ones — **except `blog-config.php`**.
-3. The directory structure has changed in this release — see
-   [File structure](#file-structure) below. Move your existing files to their
-   new locations and delete the old `css/`, `js/`, and `img/` directories.
-4. Update the `gravatar_default` URL in **Admin → Options** to point to the
-   new path (`/assets/images/gravatar.png`).
-5. No database changes; `install.php` does not need to be re-run.
+3. If upgrading from **1.5.x**: run `install.php` — it removes the obsolete
+   `_server_tz_offset` option. `install.php` will delete itself on success.
+4. If upgrading from **1.6.x or earlier**: the directory structure changed in
+   1.7.0 — move your files to their new locations and delete the old `css/`,
+   `js/`, and `img/` directories. Update the `gravatar_default` URL in
+   **Admin → Options** to `.../assets/images/gravatar.png`. Also delete
+   `assets/js/standardista-table-sorting.js` (now a stub; no longer loaded).
+5. Your `admin_email` setting, if present, moves to **Admin → Account → Change
+   Email** (was under Options).
+6. Delete these now-unused image files from `assets/images/` if upgrading from
+   before 2.0: `new-entry-button.png`, `new-entry-button-active.png`,
+   `tick.png`, `cross.png`, `gradient-green.png`, `gradient-teal.png`,
+   `gradient-red.png`, `gradient-black.png`.
 
-### From Redux 1.5.2
-
-1. Back up your files.
-2. Upload the `assets/js/` directory and `admin/header.php`.
-3. Delete `assets/js/standardista-table-sorting.js` from the server — it is no
-   longer loaded and can be removed.
-4. No database changes; `install.php` does not need to be re-run.
-
-### From Redux 1.5.1
-
-1. Back up your files.
-2. Upload `show-cat.php` — this is the only changed file.
-3. No database changes; `install.php` does not need to be re-run.
-
-### From Redux 1.5.x (1.5.0)
+### From any Redux 1.1–1.4 build
 
 1. Back up your database and all files.
-2. Upload all new files, overwriting existing ones — **except `blog-config.php`**,
-   which you can keep.
-3. Run `install.php` — it will automatically remove the obsolete
-   `_server_tz_offset` option from your database.
-4. `install.php` will delete itself automatically on success.
-
-### From Redux 1.4.x
-
-1. Back up your database and all files.
-2. Upload all new files, overwriting existing ones — **except `blog-config.php`**,
-   which you can keep.
-3. Run `install.php` to apply the `blog_category` table creation if you are
-   using standalone mode and the table does not yet exist (see
-   [Troubleshooting](#blog_category-table-doesnt-exist-categories-page-is-empty)).
-4. `install.php` will delete itself automatically on success.
-
-### From Redux 1.3.x
-
-1. Back up your database and all files.
-2. Upload all new files, overwriting existing ones — **except `blog-config.php`**,
-   which you can keep.
-3. Your existing session cookies will remain valid; no re-login required unless
-   you are upgrading from a version before the HMAC token was introduced.
-
-### From Redux 1.1.x or 1.2.x
-
-1. Back up your database and all files.
-2. Upload all new files, overwriting existing ones — **except `blog-config.php`**,
-   which you can keep.
-3. If your `admin_password` in `blog-config.php` is still an MD5 hash (32 hex
-   characters), simply log in once — the hash will be upgraded to bcrypt
-   automatically. No manual step required as long as `blog-config.php` is
-   writable.
+2. Upload all new files, overwriting existing ones — **except `blog-config.php`**.
+3. Run `install.php` to apply any database changes (creates `blog_category`
+   table if missing; removes obsolete options on upgrade).
+   `install.php` will delete itself on success.
+4. If your `admin_password` in `blog-config.php` is still an MD5 hash (32 hex
+   characters), log in once — the hash upgrades to bcrypt automatically as long
+   as `blog-config.php` is writable.
 
 ### From Robotess Fork 1.0 (PHP 7 port)
 
@@ -420,6 +373,32 @@ preventing login.
 
 ---
 
+## Theming
+
+The admin panel ships with two stylesheets in `assets/css/`:
+
+| File | Description |
+|------|-------------|
+| `style.css` | Default — Dusty Rose palette (light base, mauve accent) |
+| `style-night.css` | Night variant — Midnight palette (dark navy base, indigo accent) |
+
+To switch themes, change the `<link>` tag in `admin/header.php`:
+
+```php
+// Default (Dusty Rose)
+<link rel="stylesheet" href="<?= FU_ASSETS ?>css/style.css">
+
+// Night (Midnight)
+<link rel="stylesheet" href="<?= FU_ASSETS ?>css/style-night.css">
+```
+
+`style.css` also responds to the browser's `prefers-color-scheme: dark` media
+query with a softer dark variant of the Dusty Rose palette. `style-night.css`
+is always dark and ignores the media query — use it when you want a
+consistently dark interface regardless of the visitor's OS setting.
+
+---
+
 ## JavaScript modernisation notes (Redux 1.6.0+)
 
 All JavaScript files have been rewritten to remove IE-era compatibility code:
@@ -499,7 +478,8 @@ fanupdate/
 │   └── login_attempts/      # Rate limiter lock files (auto-created, not web-accessible)
 ├── assets/
 │   ├── css/
-│   │   └── style.css        # Admin panel styles
+│   │   ├── style.css        # Admin panel styles — Dusty Rose (default)
+│   │   └── style-night.css  # Admin panel styles — Midnight Night variant
 │   ├── js/
 │   │   ├── fanupdate.js              # Core utilities + table sorting
 │   │   ├── fanupdate-admin.js        # Admin panel init (confirm-delete, WYSIWYG)
@@ -510,11 +490,8 @@ fanupdate/
 │   ├── fonts/
 │   │   └── VeraSe.ttf       # CAPTCHA font (Bitstream Vera Serif)
 │   └── images/
-│       ├── fanupdate.png    # Admin panel logo
+│       ├── fanupdate.png    # Admin panel logo (RSS feed icon)
 │       ├── gravatar.png     # Default Gravatar placeholder
-│       ├── feed.png         # RSS feed icon
-│       ├── gradient-*.png   # Button gradient images
-│       ├── new-entry-button.png
 │       ├── text_bold.png    # WYSIWYG toolbar icons
 │       ├── text_italic.png
 │       └── smilies/         # Smiley images (upload your own here)
@@ -540,147 +517,6 @@ const FU_RELEASE_NAME = 'codename';
 Everything else — the admin panel footer, header title, RSS generator string,
 install version check, and credits page — reads from these constants
 automatically.
-
----
-
-## Troubleshooting
-
-### install.php shows a blank white page
-
-This means a PHP fatal error is being swallowed by the server. Redux 1.1.1+
-forces `display_errors = On` at the top of `install.php`, so this should no
-longer occur. If you are on an older copy, add these two lines at the very top
-of `install.php` (after `<?php`):
-
-```php
-ini_set('display_errors', '1');
-error_reporting(E_ALL);
-```
-
-### install.php shows no form fields (just the button)
-
-You have a pre-1.1.1 copy of `install.php`. The bug was a loose comparison
-(`strpos(...) == 0`) that hid every visible field. Download the current
-`install.php`.
-
-### Fatal error: Uncaught mysqli_sql_exception … table doesn't exist
-
-PHP 8.0+ changed mysqli's default error reporting mode to throw exceptions
-instead of returning `false`. The `@` operator does not catch exceptions.
-Redux 1.1.1+ wraps all version-detection queries in `try/catch` and temporarily
-disables exception mode inside `SqlConnection::Execute()`. Download the current
-`install.php` and `class/SqlConnection.php`.
-
-### WARNING: Could not execute query. Table '…blog_options' doesn't exist
-
-This warning appeared on the install form in pre-1.1.1 builds because
-`FanUpdate::addOptFromDb()` triggered a visible warning when the options table
-didn't exist yet. Fixed in Redux 1.1.1 — `addOptFromDb()` now passes
-`null` as the error message so missing tables fail silently during install.
-
-### I can't log in after installing — no credentials were set
-
-The admin username and password live in `blog-config.php`, not the database.
-The install form in Redux 1.1.1+ collects them and writes them for you. If you
-installed with an older version, open `blog-config.php` and set:
-
-```php
-$fanupdate['admin_username'] = 'your-username';
-$fanupdate['admin_password'] = password_hash('your-password', PASSWORD_BCRYPT);
-```
-
-### I upgraded from Redux 1.1.x and can't log in
-
-Your `admin_password` in `blog-config.php` may still be an MD5 hash. Redux 1.2.0+
-handles this automatically — as long as `blog-config.php` is writable, the hash
-is upgraded to bcrypt on your first successful login. If `blog-config.php` is
-read-only, update it manually:
-
-```php
-$fanupdate['admin_password'] = password_hash('your-password', PASSWORD_BCRYPT);
-```
-
-Or run: `php -r "echo password_hash('your-password', PASSWORD_BCRYPT);"` and
-paste the result.
-
-### I am locked out of the admin panel
-
-After 5 failed login attempts your IP is locked out for 15 minutes (Redux
-1.3.0+). The lockout window doubles on each subsequent lockout, up to a maximum
-of 24 hours.
-
-To clear a lockout manually, delete the relevant lock file from
-`data/login_attempts/` on the server. Files are named `fu_<md5-of-ip>.json`.
-If you do not know which file is yours, deleting all `fu_*.json` files in that
-directory is safe — they will be recreated on the next failed attempt.
-
-### Login fails even with the correct password after upgrading to Redux 1.4.0
-
-Redux 1.4.0 adds `Secure=true` to the session cookies, which means the browser
-will not send them over plain HTTP. If your admin panel URL begins with `http://`
-rather than `https://`, the cookies will never arrive and every page load will
-show the login form. The fix is to ensure the site runs on HTTPS and access the
-admin panel via `https://`.
-
-### `blog_category` table doesn't exist — categories page is empty
-
-On a fresh standalone install with Redux 1.4.x or earlier, the `blog_category`
-table was never created by the installer. Fix it by running this query in
-phpMyAdmin (or any MySQL client):
-
-```sql
-CREATE TABLE `blog_category` (
-  `fl_id` int(6) unsigned NOT NULL AUTO_INCREMENT,
-  `fl_subject` varchar(50) NOT NULL DEFAULT '',
-  PRIMARY KEY (`fl_id`)
-) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4;
-```
-
-Redux 1.5.0+ creates this table automatically during fresh installation.
-If you are upgrading from 1.4.x and the table is missing, run either the SQL
-above or re-run `install.php` (it will skip existing tables and only create
-missing ones).
-
-### The dashboard shows a warning about install.php still being present
-
-`install.php` auto-deletes itself on success (Redux 1.5.0+), but deletion can
-fail if the file is not writable by the web server process. Delete it manually
-via FTP or your hosting file manager. The warning will disappear on the next
-login once the file is gone.
-
-### `div#fanupdate` and its content break out of their container
-
-This was a bug in `show-cat.php` present in Redux 1.5.1 and earlier. The guard
-that checks for a valid `$listingid` ran *after* the opening `<div id="fanupdate">`
-had already been written to the page. If `$listingid` was absent or non-numeric,
-the script exited with the `<div>` unclosed, and the browser treated the rest of
-the host page as children of `#fanupdate`.
-
-Fixed in Redux 1.5.2 — the guard now runs before any HTML is emitted. Upgrade
-to 1.5.2 and replace `show-cat.php`.
-
-### Some posts are not visible on the public blog
-
-This was a timezone bug present in Redux 1.5.0 and earlier. The post visibility
-query used `DATE_ADD(CURRENT_TIMESTAMP(), INTERVAL X HOUR)` with the
-`_server_tz_offset` option to determine which posts had passed their scheduled
-time. On servers where the MySQL timezone differed from UTC, this calculation
-could make recently-added posts appear future-dated and hide them.
-
-Fixed in Redux 1.5.1 — all visibility queries now use `UTC_TIMESTAMP()`
-directly, which is always correct regardless of server timezone. Upgrade to
-1.5.1 and run `install.php` to remove the obsolete `_server_tz_offset` option.
-
-If you cannot upgrade immediately, go to **Admin → Options** and set
-`_server_tz_offset` to `0`.
-
-### Smilies are not displaying after upgrading to Redux 1.7.0
-
-The smiley image directory moved from `img/` to `assets/images/smilies/` in
-Redux 1.7.0. Make sure you have moved your smiley image files to the new
-location. The `gravatar_default` URL stored in the database also needs updating
-— go to **Admin → Options** and change the Gravatar default image URL from
-`.../img/gravatar.png` to `.../assets/images/gravatar.png`.
 
 ---
 

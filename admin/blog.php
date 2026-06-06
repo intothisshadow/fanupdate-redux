@@ -12,6 +12,24 @@
  *    Fix: read comments_on from POST, include it in INSERT/UPDATE, and render
  *    a <select> for it in the Settings fieldset.
  *
+ * Bug fix (this release):
+ *  - clean_input($_POST['body']) was called without allowtags=true, causing
+ *    strip_tags() to remove every HTML tag from the post body on save.
+ *    Images inserted via the WYSIWYG image button (e.g.
+ *    <a href="…" class="fu-lightbox"><img src="…" /></a>) were silently
+ *    stripped on the first save. Fixed: body cleaned with allowtags=true.
+ *
+ * Bug fix (this release):
+ *  - New-entry date default used date('Y-m-d H:i:s') — PHP server local time.
+ *    show-blog.php filters with WHERE added <= UTC_TIMESTAMP(). On servers
+ *    whose PHP timezone is ahead of UTC (e.g. UTC+3 in Finland) new entries
+ *    got a local timestamp that appeared to be in the future relative to UTC,
+ *    so they were excluded from the front-end query and never shown to visitors.
+ *    Fixed: default changed to gmdate('Y-m-d H:i:s') (UTC), matching the
+ *    UTC_TIMESTAMP() comparator. The date field in the form still shows the
+ *    UTC timestamp for the admin to edit; timezone_offset handles display
+ *    conversion at render time in FanUpdate_Post::getDateFormatted().
+ *
  * Bug fix (Redux 1.5.2):
  *  - Added class="wysiwyg" to the body <textarea> so fanupdate-admin.js
  *    can attach the WYSIWYG toolbar (makeWysiwyg targets textarea.wysiwyg).
@@ -49,8 +67,11 @@ $clean    = [];
 
 if (isset($_POST['action'])) {
 
-    $clean['title']      = isset($_POST['title'])      ? clean_input($_POST['title'])      : '';
-    $clean['body']       = isset($_POST['body'])        ? clean_input($_POST['body'])        : '';
+    $clean['title']      = isset($_POST['title'])      ? clean_input($_POST['title'])            : '';
+    // allowtags=true: the body is HTML — images, links, bold, etc. must be preserved.
+    // clean_input() without this flag calls strip_tags(), which silently strips every
+    // <a>, <img>, <strong>, etc. on save, breaking the WYSIWYG output.
+    $clean['body']       = isset($_POST['body'])        ? clean_input($_POST['body'], true)       : '';
     $clean['cat']        = isset($_POST['cat'])         ? (int) $_POST['cat']               : 0;
     $clean['is_public']    = isset($_POST['is_public'])     ? (int) $_POST['is_public']         : 0;
     $clean['comments_on'] = isset($_POST['comments_on'])   ? (int) $_POST['comments_on']       : 0;
@@ -140,7 +161,11 @@ if (isset($_POST['action'])) {
     $fu->db->FreeResult();
 } elseif (isset($_GET['action']) && $_GET['action'] === 'new') {
     $showform = true;
-    $clean['date'] = date('Y-m-d H:i:s');
+    // gmdate() writes UTC — must match the UTC_TIMESTAMP() comparator in
+    // show-blog.php. Using date() (server local time) causes new entries to
+    // appear in the future on servers whose PHP timezone is ahead of UTC,
+    // which hides them from the front-end query until the clock catches up.
+    $clean['date'] = gmdate('Y-m-d H:i:s');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -223,7 +248,7 @@ if ($showform) {
 
                     <p><label for="date">Date</label>
                         <input type="text" id="date" name="date"
-                            value="<?php echo htmlspecialchars((string) ($clean['date'] ?? $clean['added'] ?? date('Y-m-d H:i:s')), ENT_QUOTES, 'UTF-8'); ?>" />
+                            value="<?php echo htmlspecialchars((string) ($clean['date'] ?? $clean['added'] ?? gmdate('Y-m-d H:i:s')), ENT_QUOTES, 'UTF-8'); ?>" />
                     </p>
 
                     <p><label for="is_public">Status</label>

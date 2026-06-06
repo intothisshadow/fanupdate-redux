@@ -33,6 +33,20 @@
  *    Also: captcha.php updated identically so both ends use the same session
  *    cookie parameters.
  *
+ * Spam protection improvements (Redux 2.0.1):
+ *  - Honeypot field: a hidden input named 'fax' is injected into the comment
+ *    form. Real users never see it (CSS display:none); bots fill it in
+ *    automatically. Any non-empty value → silent discard.
+ *  - Time gate: a hidden 'fu_form_time' timestamp is injected when the form
+ *    renders. Submissions arriving in under FU_MIN_COMMENT_SECONDS (3 s) are
+ *    silently discarded as bot traffic.
+ *  - Duplicate guard: identical comment text from the same IP within
+ *    FU_DUPE_WINDOW seconds (5 min) is silently discarded.
+ *  - Per-IP rate limit: more than CommentRateLimiter::MAX_COMMENTS_PER_WINDOW
+ *    comments in CommentRateLimiter::WINDOW_SECONDS trigger a 10-minute block.
+ *    All four checks run before any database work and before any user-visible
+ *    error messages, so bot traffic is silently dropped.
+ *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
@@ -46,6 +60,14 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/gpl-3.0.html>.
  ******************************************************************************/
+
+// ── Spam-gate constants ───────────────────────────────────────────────────────
+// Minimum seconds between form render and form submit.
+// Real humans take at least 3 seconds; bots submit instantly.
+define('FU_MIN_COMMENT_SECONDS', 3);
+
+// Window in seconds for the duplicate-comment check (5 minutes).
+define('FU_DUPE_WINDOW', 5 * 60);
 
 $clean['entry'] = '';
 $clean['name'] = '';
@@ -66,6 +88,67 @@ if (isset($_POST['submit_comment'])) {
     $clean = clean_input($_POST);
 
     $result_string = '';
+
+    // ── SILENT BOT GATES ─────────────────────────────────────────────────────
+    // These four checks run before any DB access or user-visible error messages.
+    // On failure: produce a fake-success response so bots get no signal.
+
+    $bot_detected = false;
+
+    // 1. Honeypot — hidden field that real users never fill in
+    if (!$bot_detected && !empty($_POST['fax'])) {
+        $bot_detected = true;
+    }
+
+    // 2. Time gate — submission faster than FU_MIN_COMMENT_SECONDS is a bot
+    if (!$bot_detected) {
+        $form_time = (int) ($_POST['fu_form_time'] ?? 0);
+        if ($form_time === 0 || (time() - $form_time) < FU_MIN_COMMENT_SECONDS) {
+            $bot_detected = true;
+        }
+    }
+
+    // 3. Per-IP rate limit
+    if (!$bot_detected) {
+        $commentRateLimiter = new CommentRateLimiter();
+        if ($commentRateLimiter->isBlocked()) {
+            $bot_detected = true;
+        }
+    }
+
+    // 4. Duplicate guard — same IP, same comment text within FU_DUPE_WINDOW
+    if (!$bot_detected) {
+        $dupe_key  = 'fu_last_comment_' . md5($_SERVER['REMOTE_ADDR'] ?? '');
+        $dupe_file = sys_get_temp_dir() . '/' . $dupe_key . '.json';
+        if (is_file($dupe_file)) {
+            $dupe_data = json_decode((string) file_get_contents($dupe_file), true);
+            if (
+                is_array($dupe_data)
+                && isset($dupe_data['time'], $dupe_data['hash'])
+                && (time() - (int) $dupe_data['time']) < FU_DUPE_WINDOW
+                && $dupe_data['hash'] === md5($clean['comment'])
+            ) {
+                $bot_detected = true;
+            }
+        }
+    }
+
+    if ($bot_detected) {
+        // Return a plausible fake-success so bots/scrapers get no signal.
+        if ($_POST['submit_comment'] === 'ajax') {
+            echo "<!-- SUCCESS do not remove -->\n";
+            echo "<h3>Thank You</h3>\n";
+            echo '<p>Thank you for your comment. In an effort to reduce spam, your comment has been held for moderation and will not appear on the site until it has been approved.</p>' . "\n";
+            exit;
+        }
+        // Non-AJAX: redirect back silently
+        $return_url = !empty($clean['returnto']) ? $clean['returnto'] : '/';
+        [$return_page] = explode('#', $return_url);
+        header('Location: ' . $return_page);
+        exit;
+    }
+
+    // ── END SILENT BOT GATES ─────────────────────────────────────────────────
 
     // check for valid entry_id
     if (empty($clean['entry']) || !ctype_digit($clean['entry']) || $clean['entry'] <= 0) {
@@ -291,6 +374,27 @@ if (isset($_POST['submit_comment'])) {
                         $fu->db->Execute($query);
 
                         $clean['comment_id'] = $fu->db->GetLastSequence();
+
+                        // ── Record this submission for duplicate and rate-limit tracking ──
+                        // Do this AFTER a successful INSERT so partial/failed attempts are
+                        // not counted. Both the dupe file and the rate limiter are updated.
+
+                        // Duplicate guard: write the hash of this comment so identical
+                        // resubmissions within FU_DUPE_WINDOW are silently discarded.
+                        $dupe_key  = 'fu_last_comment_' . md5($_SERVER['REMOTE_ADDR'] ?? '');
+                        $dupe_file = sys_get_temp_dir() . '/' . $dupe_key . '.json';
+                        file_put_contents(
+                            $dupe_file,
+                            json_encode(['time' => time(), 'hash' => md5($clean['comment'])]),
+                            LOCK_EX
+                        );
+
+                        // Rate limiter: count this successful submission.
+                        if (isset($commentRateLimiter)) {
+                            $commentRateLimiter->recordSubmission();
+                        } else {
+                            (new CommentRateLimiter())->recordSubmission();
+                        }
 
                         if ($fu->getOpt('email_new_comments')) {
 

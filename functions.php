@@ -20,6 +20,7 @@
  ******************************************************************************/
 require_once(__DIR__ . '/version.php');
 require_once(__DIR__ . '/class/LoginRateLimiter.php');
+require_once(__DIR__ . '/class/CommentRateLimiter.php');
 require_once(__DIR__ . '/class/SqlConnection.php');
 require_once(__DIR__ . '/class/FanUpdate.php');
 require_once(__DIR__ . '/class/FanUpdate_Post.php');

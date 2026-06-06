@@ -44,6 +44,28 @@
  *    behaviour unchanged). The front-end comment form passes 'fu-wysiwygmenu'
  *    so its self-contained scoped styles don't depend on the admin stylesheet.
  *
+ * Image upload + lightbox (added this release):
+ *  - makeWysiwyg(): the entry in myWysiwyg whose name === 'image' gets a
+ *    dynamically-bound click handler via fuImageButtonClick() (defined in
+ *    fanupdate-admin.js). The handler captures the specific textarea instance
+ *    via closure so the file picker always inserts into the right field.
+ *    On non-admin pages where fanupdate-admin.js is not loaded this branch is
+ *    simply skipped — no errors.
+ *  - fuLightboxInit(): scans document for <a class="fu-lightbox"> elements and
+ *    wires a click handler that opens a full-screen overlay displaying the
+ *    linked full-size image. The overlay (#fu-lightbox-overlay) is created once
+ *    and reused. Keyboard: Escape closes; click outside the image closes.
+ *    Self-contained scoped styles are injected into <head> on first call so the
+ *    lightbox works on public pages without the admin stylesheet being loaded.
+ *    Called by FanUpdate::printBlog() via an inline <script> after posts are
+ *    rendered, mirroring the pattern used for the comment form scripts.
+ *    Bug fix: overlay.style.display is set to 'none' immediately on creation
+ *    so it is always hidden until explicitly opened, regardless of whether the
+ *    admin stylesheet (which supplies display:flex via .fu-lb-visible) is loaded.
+ *    Without this inline 'none', the injected CSS rule display:flex made the
+ *    overlay a full-screen transparent layer covering the page from load time,
+ *    intercepting mouse events and showing a zoom-out cursor over all content.
+ *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
@@ -211,6 +233,12 @@ function wysiwygButton(name, img, title, func) {
  * SVG / image detection: if wysiwygButton.img starts with '<' it is treated as
  * an inline SVG string; otherwise as a legacy URL (<img src>).
  *
+ * Image button: the entry in myWysiwyg whose name === 'image' has func === null
+ * (set in fanupdate-admin.js). makeWysiwyg replaces that null with a closure
+ * that calls fuImageButtonClick(e, textarea) so the upload handler always knows
+ * which textarea to insert into. If fuImageButtonClick is not defined (i.e. on
+ * a non-admin public page) the button is simply omitted from the toolbar.
+ *
  * @param {HTMLTextAreaElement} el            The textarea the toolbar controls.
  * @param {Element}            [anchor]       Insertion point. Defaults to el.
  * @param {string}             [toolbarClass] CSS class for the toolbar <span>.
@@ -230,12 +258,33 @@ function makeWysiwyg(el, anchor, toolbarClass) {
     for (let i = 0; i < myWysiwyg.length; i++) {
         const button = myWysiwyg[i];
 
+        // ── image button: requires fuImageButtonClick (fanupdate-admin.js) ───
+        // If that function is not in scope (public page, no admin JS loaded)
+        // skip the button entirely — no image uploads on the comment form.
+        if (button.name === 'image') {
+            if (typeof fuImageButtonClick !== 'function') { continue; }
+        }
+
         const a = document.createElement('a');
         a.href      = '#';
         a.title     = button.title;
         a.className = el.id;
         a.setAttribute('aria-label', button.name);
-        a.addEventListener('click', button.func);
+
+        // ── bind click handler ────────────────────────────────────────────────
+        if (button.name === 'image') {
+            // Bind with a closure that captures this specific textarea.
+            // fuImageButtonClick is defined in fanupdate-admin.js.
+            /* eslint-disable no-loop-func */
+            (function (anchor_el, anchor_a) {
+                anchor_a.addEventListener('click', function (e) {
+                    fuImageButtonClick(e, anchor_el);
+                });
+            }(el, a));
+            /* eslint-enable no-loop-func */
+        } else {
+            a.addEventListener('click', button.func);
+        }
 
         // ── SVG vs legacy image ───────────────────────────────────────────────
         if (button.img && button.img.trimStart().startsWith('<')) {
@@ -395,6 +444,179 @@ function dateDiff(date1, date2) {
     return Math.ceil((date1.getTime() - date2.getTime()) / (24 * 60 * 60 * 1000));
 }
 
+// ── Lightbox ──────────────────────────────────────────────────────────────────
+
+/**
+ * fuLightboxInit — wire lightbox behaviour onto all <a class="fu-lightbox"> links.
+ *
+ * Called by FanUpdate::printBlog() via an inline <script> after post output.
+ * Safe to call multiple times on the same page (double-init guard on each link).
+ *
+ * The overlay and its styles are created once on first call and reused.
+ * Self-contained: injects its own <style> block so the lightbox works on public
+ * pages where the admin stylesheet is not loaded.
+ *
+ * Closing the lightbox:
+ *  - Click anywhere on the dark backdrop (outside the image)
+ *  - Press Escape
+ */
+function fuLightboxInit() {
+
+    // ── inject scoped styles once ─────────────────────────────────────────────
+    if (!document.getElementById('fu-lightbox-style')) {
+        const style = document.createElement('style');
+        style.id = 'fu-lightbox-style';
+        style.textContent = [
+            '#fu-lightbox-overlay {',
+            '  position: fixed;',
+            '  inset: 0;',
+            '  background: rgba(0,0,0,0.88);',
+            '  z-index: 99999;',
+            '  display: flex;',
+            '  align-items: center;',
+            '  justify-content: center;',
+            '  cursor: zoom-out;',
+            '  opacity: 0;',
+            '  transition: opacity 0.2s ease;',
+            '  -webkit-backdrop-filter: blur(2px);',
+            '  backdrop-filter: blur(2px);',
+            '}',
+            '#fu-lightbox-overlay.fu-lb-visible {',
+            '  opacity: 1;',
+            '}',
+            '#fu-lightbox-overlay img {',
+            '  max-width: 92vw;',
+            '  max-height: 90vh;',
+            '  object-fit: contain;',
+            '  border-radius: 6px;',
+            '  box-shadow: 0 8px 40px rgba(0,0,0,0.6);',
+            '  cursor: default;',
+            '  display: block;',
+            '  pointer-events: auto;',
+            '}',
+            '#fu-lightbox-close {',
+            '  position: fixed;',
+            '  top: 16px;',
+            '  right: 20px;',
+            '  width: 36px;',
+            '  height: 36px;',
+            '  border-radius: 50%;',
+            '  background: rgba(255,255,255,0.12);',
+            '  border: 1px solid rgba(255,255,255,0.22);',
+            '  color: #fff;',
+            '  font-size: 20px;',
+            '  line-height: 36px;',
+            '  text-align: center;',
+            '  cursor: pointer;',
+            '  user-select: none;',
+            '  transition: background 0.15s;',
+            '}',
+            '#fu-lightbox-close:hover {',
+            '  background: rgba(255,255,255,0.22);',
+            '}',
+            'a.fu-lightbox img {',
+            '  cursor: zoom-in;',
+            '  transition: opacity 0.15s;',
+            '}',
+            'a.fu-lightbox:hover img {',
+            '  opacity: 0.88;',
+            '}',
+        ].join('\n');
+        document.head.appendChild(style);
+    }
+
+    // ── create overlay once ───────────────────────────────────────────────────
+    let overlay = document.getElementById('fu-lightbox-overlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'fu-lightbox-overlay';
+        overlay.setAttribute('role', 'dialog');
+        overlay.setAttribute('aria-modal', 'true');
+        overlay.setAttribute('aria-label', 'Image viewer');
+
+        // CRITICAL: hide before appending. The injected CSS sets display:flex on
+        // #fu-lightbox-overlay, so without this inline style the overlay sits as
+        // a full-screen transparent layer from the moment it's created, blocking
+        // all mouse events and showing a zoom-out cursor over every element.
+        overlay.style.display = 'none';
+
+        const closeBtn = document.createElement('span');
+        closeBtn.id = 'fu-lightbox-close';
+        closeBtn.setAttribute('aria-label', 'Close image viewer');
+        closeBtn.setAttribute('role', 'button');
+        closeBtn.setAttribute('tabindex', '0');
+        closeBtn.innerHTML = '&times;';
+
+        const img = document.createElement('img');
+        img.alt = '';
+        img.id  = 'fu-lightbox-img';
+
+        overlay.appendChild(closeBtn);
+        overlay.appendChild(img);
+        document.body.appendChild(overlay);
+
+        // ── close handlers ────────────────────────────────────────────────────
+
+        function fuLbClose() {
+            overlay.classList.remove('fu-lb-visible');
+            overlay.addEventListener('transitionend', function handler() {
+                overlay.removeEventListener('transitionend', handler);
+                overlay.style.display = 'none';
+                img.src = '';
+                img.alt = '';
+                if (overlay._triggerLink) {
+                    overlay._triggerLink.focus();
+                    overlay._triggerLink = null;
+                }
+            });
+        }
+
+        overlay.addEventListener('click', function (e) {
+            if (e.target === overlay) { fuLbClose(); }
+        });
+
+        closeBtn.addEventListener('click', fuLbClose);
+        closeBtn.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fuLbClose(); }
+        });
+
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape' && overlay.classList.contains('fu-lb-visible')) {
+                fuLbClose();
+            }
+        });
+
+        img.addEventListener('click', function (e) { e.stopPropagation(); });
+    }
+
+    const lbImg = document.getElementById('fu-lightbox-img');
+
+    // ── wire each fu-lightbox link ────────────────────────────────────────────
+
+    document.querySelectorAll('a.fu-lightbox').forEach(function (link) {
+        if (link.dataset.lbWired === '1') { return; }
+        link.dataset.lbWired = '1';
+
+        link.addEventListener('click', function (e) {
+            e.preventDefault();
+
+            const fullUrl = link.getAttribute('href');
+            const altText = link.querySelector('img') ? link.querySelector('img').getAttribute('alt') : '';
+
+            overlay._triggerLink = link;
+            lbImg.src = fullUrl;
+            lbImg.alt = altText || '';
+
+            overlay.style.display = 'flex';
+            // Force a reflow so the transition runs from opacity:0.
+            overlay.getBoundingClientRect();
+            overlay.classList.add('fu-lb-visible');
+
+            document.getElementById('fu-lightbox-close').focus();
+        });
+    });
+}
+
 // ── Standardista Table Sorting ────────────────────────────────────────────────
 /**
  * Written by Neil Crosby.
@@ -464,7 +686,6 @@ const standardista = (function () {
     }
 
     function determineSortFunction(rows, column) {
-        // sample first non-empty cell
         for (let i = 0; i < rows.length; i++) {
             const cell = rows[i].cells[column];
             if (!cell) { continue; }
@@ -483,7 +704,6 @@ const standardista = (function () {
     }
 
     function sortDate(a, b) {
-        // dd/mm/yyyy or dd-mm-yyyy
         const parseDate = s => {
             const p = s.split(/[\/-]/);
             return new Date(p[2], p[1] - 1, p[0]);

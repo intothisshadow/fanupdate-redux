@@ -82,6 +82,28 @@
  *  - Restored missing methods: printWysiwyg(), printSmileyImgDropdown(),
  *    updateConfigKey(), reissueToken()
  *
+ * Spam protection (Redux 2.0.1):
+ *  - printBlog(): honeypot field (name="fax", CSS display:none) injected into
+ *    every comment form. Any submission with a non-empty fax value is silently
+ *    discarded by process.php as bot traffic.
+ *  - printBlog(): time-gate timestamp (name="fu_form_time") injected as a
+ *    hidden field set to the current Unix timestamp when the page is rendered.
+ *    Submissions arriving faster than FU_MIN_COMMENT_SECONDS (3 s) are
+ *    silently discarded by process.php.
+ *  Both fields are always appended regardless of whether the form template
+ *  already contains them, so custom templates benefit automatically.
+ *
+ * Image upload + lightbox (added this release):
+ *  - printBlog(): after all posts are rendered, emits a single
+ *    <script src="…/fanupdate.js"> tag (if not already present on the page)
+ *    and an inline <script>fuLightboxInit();</script> that wires click
+ *    handlers on every <a class="fu-lightbox"> link in the post output.
+ *    fuLightboxInit() is idempotent — safe to call multiple times on pages
+ *    that embed both show-blog.php and show-cat.php, or that call printBlog()
+ *    more than once.  The script tag is tracked via a static flag so it is
+ *    only emitted once per page render, no matter how many printBlog() calls
+ *    are made.
+ *
  * Backdoor scan: no eval(), no base64_decode() payloads, no shell_exec(),
  * no system(), no passthru(), no preg_replace /e modifier, file writes
  * limited to blog-config.php via updateConfigKey() and login() MD5 upgrade.
@@ -850,6 +872,26 @@ class FanUpdate
                                 '<input type="hidden" name="returnto" value="' . $returnto . '" />' . "\n";
                         }
 
+                        // ── Spam guard: honeypot + time gate ──────────────────
+                        // Honeypot: a visually hidden text field that real users
+                        // never fill in. Bots fill in all fields automatically.
+                        // Name chosen to look like a generic form field to bots.
+                        // CSS hides it from humans; aria-hidden removes it from
+                        // screen readers so it causes no accessibility issues.
+                        // Time gate: a hidden Unix timestamp set when the page
+                        // renders. process.php rejects submissions that arrive
+                        // faster than FU_MIN_COMMENT_SECONDS (3 seconds).
+                        // Both fields are always appended so they work with any
+                        // comment form template without requiring template edits.
+                        $spam_guard_fields =
+                            '<div aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden;">'
+                            . '<label for="fu_hp_fax">Leave this empty</label>'
+                            . '<input type="text" id="fu_hp_fax" name="fax" value="" tabindex="-1" autocomplete="off" />'
+                            . '</div>' . "\n"
+                            . '<input type="hidden" name="fu_form_time" value="' . time() . '" />' . "\n";
+
+                        $hidden_fields .= $spam_guard_fields;
+
                         if ($hidden_fields !== '') {
                             // Insert before </form> if present, otherwise append.
                             if (stripos($form_tpl, '</form>') !== false) {
@@ -902,6 +944,42 @@ class FanUpdate
         }
 
         $this->db->FreeResult();
+
+        // ── Lightbox init ─────────────────────────────────────────────────────
+        // Emit fanupdate.js (once per page) and call fuLightboxInit() so every
+        // <a class="fu-lightbox"> in the post output gets a click handler.
+        //
+        // The static flag $_lb_script_emitted prevents double-emitting the
+        // <script src> on pages that embed both show-blog.php and show-cat.php,
+        // or that call printBlog() more than once (e.g. featured + archive).
+        //
+        // fuLightboxInit() itself is idempotent (double-init guard on each link)
+        // so calling it multiple times is safe — it is always emitted so newly
+        // paginated/AJAX-injected posts are wired on the next call too.
+        //
+        // This block is skipped on single-post pages that already emitted
+        // fanupdate.js above via the comment-form script injection; in that
+        // case fuLightboxInit() is still called (second inline <script>) because
+        // the comment-form injection emits the script before the posts are
+        // rendered, and fuLightboxInit() must run after.
+        static $_lb_script_emitted = false;
+
+        $js_base = htmlspecialchars(
+            rtrim((string) $this->getOpt('install_url'), '/') . '/assets/js',
+            ENT_QUOTES, 'UTF-8'
+        );
+
+        if (!$_lb_script_emitted) {
+            // On single-post pages fanupdate.js is already emitted by the
+            // comment-form block above, so we only emit it here on list pages.
+            if (!$single_page) {
+                echo '<script src="' . $js_base . '/fanupdate.js"></script>' . "\n";
+            }
+            $_lb_script_emitted = true;
+        }
+
+        echo '<script>fuLightboxInit();</script>' . "\n";
+        // ── end lightbox init ─────────────────────────────────────────────────
     }
 
     public function printBlogFooter(?int $cat_id = null): void

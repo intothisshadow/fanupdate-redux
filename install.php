@@ -26,6 +26,14 @@
  *  - $setting[18] comment_form_template default gravatar.com link updated
  *    from http:// to https://.
  *
+ * Blacklist update (Redux 2.0.1):
+ *  - Fresh-install default blacklist refreshed: removed extinct 2000s spam
+ *    terms (hoodia, ringtones, webcam) and added current high-signal terms
+ *    (bitcoin, crypto, cryptocurrency, essay writing, nft, payday loan, seo).
+ *  - Upgrade path: INSERT IGNORE adds the new words to existing installs
+ *    without touching any words the site owner added manually; DELETE removes
+ *    the three retired terms only if they are still present.
+ *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
@@ -475,20 +483,32 @@ if (!$fu->noErr()) {
             $fu->addErr('Table <strong>' . $fu->getOpt('blacklist_table') . '</strong> not created!');
         }
 
+        // ── Default blacklist (fresh install) ─────────────────────────────────
+        // Kept to high-signal terms with near-zero legitimate use in personal
+        // blog comments. Multi-word phrases use the substring matcher in
+        // process.php — 'essay writing' matches 'essay writing service' etc.
+        // Words removed vs. the original 2007 list: hoodia (extinct),
+        // ringtones (extinct), webcam (too many legitimate uses).
+        // Words added: bitcoin, crypto, cryptocurrency, essay writing, nft,
+        // payday loan, seo.
         $query = 'INSERT INTO ' . $fu->getOpt('blacklist_table') . " (`badword`) VALUES
+      ('bitcoin'),
       ('blackjack'),
       ('casino'),
       ('cialis'),
+      ('crypto'),
+      ('cryptocurrency'),
       ('diazepam'),
+      ('essay writing'),
       ('gambling'),
-      ('hoodia'),
       ('hydrocodone'),
       ('kasino'),
       ('levitra'),
+      ('nft'),
+      ('payday loan'),
       ('phentermine'),
-      ('ringtones'),
-      ('viagra'),
-      ('webcam')";
+      ('seo'),
+      ('viagra')";
 
         if ($fu->db->Execute($query)) {
             $fu->addSuccess('Blacklist words added.');
@@ -664,6 +684,51 @@ if (!$fu->noErr()) {
             }
         }
         unset($_dead_key);
+
+        // ── Blacklist update ──────────────────────────────────────────────────
+        // INSERT IGNORE: adds new words only if they are not already present —
+        // safe to run against any blacklist; never overwrites user additions.
+        // DELETE: removes three 2000s-era terms that are no longer useful as
+        // spam signals. Only removes them if still present; a no-op otherwise.
+        // Any of these words the site owner wants to keep can be re-added via
+        // Admin → Options → Blacklist after running the upgrade.
+
+        $new_words = [
+            'bitcoin',
+            'crypto',
+            'cryptocurrency',
+            'essay writing',
+            'nft',
+            'payday loan',
+            'seo',
+        ];
+
+        foreach ($new_words as $_word) {
+            $safe = $fu->db->Escape($_word);
+            $fu->db->Execute(
+                'INSERT IGNORE INTO ' . $fu->getOpt('blacklist_table') . " (`badword`) VALUES ('$safe')",
+                null
+            );
+            if ($fu->db->AffectedRows() > 0) {
+                $fu->addSuccess('Added <strong>' . htmlspecialchars($_word) . '</strong> to blacklist.');
+            }
+        }
+        unset($_word, $safe);
+
+        $retired_words = ['hoodia', 'ringtones', 'webcam'];
+
+        foreach ($retired_words as $_word) {
+            $safe = $fu->db->Escape($_word);
+            $fu->db->Execute(
+                'DELETE FROM ' . $fu->getOpt('blacklist_table') . " WHERE badword='$safe'",
+                null
+            );
+            if ($fu->db->AffectedRows() > 0) {
+                $fu->addSuccess('Removed retired blacklist word <strong>' . htmlspecialchars($_word) . '</strong>.');
+            }
+        }
+        unset($_word, $safe);
+
         $files = [];
         $files[] = 'add-fl.php';
         $files[] = 'blog-admin.php';

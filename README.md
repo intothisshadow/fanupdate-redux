@@ -16,10 +16,10 @@ This Redux release updates the codebase to **PHP 8.2+** and includes a full admi
 |-------------|---------|
 | PHP | 8.2+ |
 | MySQL / MariaDB | 5.7+ / 10.3+ |
-| PHP extensions | `mysqli`, `mbstring`, `gd` (CAPTCHA only) |
+| PHP extensions | `mysqli`, `mbstring`, `gd` (CAPTCHA and image uploads) |
 
-> **Note:** The GD extension with FreeType support is only required if you
-> enable the CAPTCHA feature.
+> **Note:** The GD extension is required for image thumbnail generation and the
+> CAPTCHA feature. It is available on virtually all shared hosts by default.
 
 ---
 
@@ -27,9 +27,14 @@ This Redux release updates the codebase to **PHP 8.2+** and includes a full admi
 
 - **Posts & categories** — write entries, assign them to one or more categories,
   schedule future posts
+- **Image uploads** — upload JPEG, PNG, GIF, or WebP images directly from the
+  post editor toolbar. Thumbnails are generated automatically (GD); clicking a
+  thumbnail on the public blog opens the full-size image in a built-in lightbox.
+  Uploads live in `uploads/images/YYYY/MM/` with PHP execution blocked via
+  `.htaccess`.
 - **Comments** — threaded display, moderation queue, spam blacklist, optional CAPTCHA
-- **Spam scoring** — points-based automatic spam detection (no configuration
-  required for most sites)
+- **Spam protection** — four automatic layers stop bots before any database work;
+  points-based scoring handles borderline human submissions
 - **Gravatars** — commenter avatars pulled from gravatar.com
 - **Smilies** — upload images and map them to text shortcuts
 - **RSS feeds** — per-blog and per-category feeds, with podcast enclosure support
@@ -264,13 +269,74 @@ panel, where you can map each image to a text shortcut (e.g. `:)` → `smile.gif
 
 ---
 
+## Image uploads
+
+The post editor toolbar contains an image icon button. Click it to pick a local
+JPEG, PNG, GIF, or WebP file. The file is uploaded immediately to
+`uploads/images/YYYY/MM/` and a constrained-fit thumbnail is generated into the
+`thumbs/` subdirectory at the same path. The snippet
+
+```html
+<a href="FULL_URL" class="fu-lightbox"><img src="THUMB_URL" alt="" /></a>
+```
+
+is inserted at the cursor position in the post body. On the public blog, clicking
+any thumbnail opens the full-size image in an overlay lightbox. Pressing Escape
+or clicking outside the image closes it.
+
+**Upload options** (configurable from **Admin → Options**):
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `upload_max_filesize` | `2097152` (2 MB) | Maximum file size in bytes |
+| `upload_thumb_width` | `300` | Maximum thumbnail width in pixels |
+| `upload_thumb_height` | `300` | Maximum thumbnail height in pixels |
+
+The `uploads/` directory is protected by an auto-written `.htaccess` that blocks
+PHP execution, so uploaded files cannot be executed as scripts even if a
+malformed file slips through validation. The MIME type of every upload is
+verified from the file bytes (not the browser-supplied Content-Type header) using
+PHP's `finfo` extension.
+
+---
+
 ## Spam protection
 
-Comments are scored automatically using a points system. A comment must reach
+FanUpdate uses four automatic layers that run before any database access and
+before any user-visible error is shown. Failed checks produce a fake-success
+response so bots get no signal.
+
+### Layer 1 — Honeypot (zero user friction)
+
+Every comment form contains a hidden `<input name="fax">` field that is
+positioned off-screen with CSS and marked `aria-hidden="true"`. Real users never
+see or interact with it; bots fill in all fields automatically. Any submission
+with a non-empty `fax` value is silently discarded.
+
+### Layer 2 — Time gate
+
+A hidden `<input name="fu_form_time">` contains the Unix timestamp when the page
+was rendered. Submissions arriving faster than **3 seconds** are discarded as
+bot traffic. Real humans take at least a few seconds to read and type a comment.
+
+### Layer 3 — Per-IP rate limit
+
+`class/CommentRateLimiter.php` allows up to **5 comments per IP per hour**.
+Exceeding that triggers a **10-minute block**. Block state is stored in
+`data/comment_rate/` (file-based, auto-created, `.htaccess` protected, not
+web-accessible). This mirrors the admin login rate limiter in design.
+
+### Layer 4 — Duplicate guard
+
+After a comment is saved, its MD5 hash is stored in a temp file keyed by IP.
+An identical comment resubmitted from the same IP within **5 minutes** is
+silently discarded. This prevents simple flood/retry attacks.
+
+### Layer 5 — Points scoring
+
+Comments that pass all four bot gates are then scored. A comment must reach
 `points_approval_threshold` to be auto-approved. Comments below
 `points_pending_threshold` are silently discarded as spam.
-
-Scoring checks include:
 
 | Test | Points |
 |------|--------|
@@ -287,7 +353,16 @@ Scoring checks include:
 | No email address | −2 |
 
 Thresholds are configurable from **Admin → Options**.
-You can also enable manual moderation or CAPTCHA as additional layers.
+
+### Optional additional layers
+
+Enable any of these from **Admin → Options**:
+
+- **CAPTCHA** (`captcha_on = y`) — GD-generated image challenge
+- **Comment moderation** (`comment_moderation = y`) — hold all comments for
+  manual approval regardless of score
+- **Blacklist** — add spam keywords via **Admin → Options → Blacklist**; matched
+  keywords deduct points (or block the comment outright if points scoring is off)
 
 ---
 
@@ -457,6 +532,7 @@ fanupdate/
 ├── admin/
 │   ├── index.php            # Admin dashboard
 │   ├── blog.php             # Admin: entries list
+│   ├── upload.php           # Admin: image upload endpoint (AJAX)
 │   ├── category.php         # Admin: categories
 │   ├── comment.php          # Admin: comments
 │   ├── options.php          # Admin: main options
@@ -472,17 +548,24 @@ fanupdate/
 │   ├── FanUpdate.php        # Core application class
 │   ├── FanUpdate_Post.php   # Post model
 │   ├── FanUpdate_Comment.php# Comment model
+│   ├── CommentRateLimiter.php# Per-IP comment rate limiter
 │   ├── LoginRateLimiter.php # IP-based login rate limiter
 │   └── SqlConnection.php    # Database abstraction (singleton)
 ├── data/
-│   └── login_attempts/      # Rate limiter lock files (auto-created, not web-accessible)
+│   ├── login_attempts/      # Login rate limiter lock files (auto-created, not web-accessible)
+│   └── comment_rate/        # Comment rate limiter lock files (auto-created, not web-accessible)
+├── uploads/
+│   ├── .htaccess            # Blocks PHP execution (auto-created on first upload)
+│   └── images/
+│       └── YYYY/MM/         # Uploaded originals, date-partitioned
+│           └── thumbs/      # Auto-generated thumbnails (same filename, sub-directory)
 ├── assets/
 │   ├── css/
 │   │   ├── style.css        # Admin panel styles — Dusty Rose (default)
 │   │   └── style-night.css  # Admin panel styles — Midnight Night variant
 │   ├── js/
-│   │   ├── fanupdate.js              # Core utilities + table sorting
-│   │   ├── fanupdate-admin.js        # Admin panel init (confirm-delete, WYSIWYG)
+│   │   ├── fanupdate.js              # Core utilities + table sorting + lightbox
+│   │   ├── fanupdate-admin.js        # Admin panel init (confirm-delete, WYSIWYG, image upload)
 │   │   ├── fanupdate-comment-admin.js# Comment approve/delete AJAX
 │   │   ├── fanupdate-post-admin.js   # Post delete AJAX
 │   │   ├── fanupdate-comment-submit.js# Front-end comment submission AJAX
@@ -492,11 +575,11 @@ fanupdate/
 │   └── images/
 │       ├── fanupdate.png    # Admin panel logo (RSS feed icon)
 │       ├── gravatar.png     # Default Gravatar placeholder
-│       ├── text_bold.png    # WYSIWYG toolbar icons
-│       ├── text_italic.png
 │       └── smilies/         # Smiley images (upload your own here)
 │           └── *.gif / *.png
 └── docs/
+    ├── CHANGELOG.md         # This project's changelog
+    ├── TROUBLESHOOTING.md   # Common issues and fixes
     ├── readme.txt           # Original readme
     └── changelog.txt        # Original changelog
 ```

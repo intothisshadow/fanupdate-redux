@@ -5,6 +5,34 @@ All notable changes to this project are documented here.
 
 ---
 
+## [Redux 2.0.1] — June 10, 2026
+
+### Added
+
+- **CSS styling for uploaded images** — `a.fu-lightbox` and its child `img` now have
+  explicit rules in both `style.css` and `style-night.css`. The wrapper link gets
+  `border-radius`, a theme-token border, box-shadow, and a smooth border/shadow
+  transition on hover/focus. The `img` gets `display:block`, `max-width:100%`,
+  `height:auto`, `cursor:zoom-in`, and an opacity fade on hover. All values use
+  `--fu-*` design tokens, so both themes and the `prefers-color-scheme` dark variant
+  inherit correct colours automatically.
+
+- **Image alignment helper classes** — three utility classes for positioning images
+  within post text, all added to both stylesheets:
+  - `fu-img-left` — floats the image left; text wraps to its right
+  - `fu-img-right` — floats the image right; text wraps to its left
+  - `fu-img-center` — displays the image as a centred block
+
+  Usage: add the class to the `<a class="fu-lightbox">` element in the post body,
+  e.g. `<a href="…" class="fu-lightbox fu-img-right"><img src="…" alt="" /></a>`.
+
+### Files changed
+
+- `assets/css/style.css`
+- `assets/css/style-night.css`
+
+---
+
 ## [Redux 2.0.1] — June 6, 2026
 
 ### Fixed

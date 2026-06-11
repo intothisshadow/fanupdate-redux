@@ -914,6 +914,63 @@ p.paginate strong,
     margin-bottom: 0.75rem;
 }
 
+/* ── Uploaded images (fu-lightbox thumbnails in post bodies) ──────────────── */
+/*
+ * Styles the thumbnail images inserted via the WYSIWYG upload button.
+ * HTML structure:
+ *   <a href="full.jpg" class="fu-lightbox"><img src="thumb.jpg" alt="" /></a>
+ *
+ * All values use design tokens so they respond automatically to dark-mode and
+ * the night-theme stylesheet. To customise, override any rule here or add
+ * overrides in your own stylesheet loaded after this one.
+ *
+ * Alignment helpers — add to the <a class="fu-lightbox"> element:
+ *   fu-img-left   — float left,  text wraps right
+ *   fu-img-right  — float right, text wraps left
+ *   fu-img-center — centred block, no wrap
+ *
+ * Example:
+ *   <a href="…" class="fu-lightbox fu-img-right"><img src="…" alt="" /></a>
+ */
+
+a.fu-lightbox {
+    display: inline-block;
+    line-height: 0;                           /* remove gap beneath <img> */
+    border-radius: var(--fu-radius);
+    overflow: hidden;
+    border: 0.5px solid var(--fu-border-med);
+    box-shadow: var(--fu-shadow);
+    text-decoration: none;
+    vertical-align: middle;
+    max-width: 100%;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+a.fu-lightbox:hover,
+a.fu-lightbox:focus {
+    border-color: var(--fu-accent);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+    text-decoration: none;
+}
+
+a.fu-lightbox img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    cursor: zoom-in;
+    transition: opacity 0.15s;
+}
+
+a.fu-lightbox:hover img,
+a.fu-lightbox:focus img {
+    opacity: 0.88;
+}
+
+/* Alignment helpers */
+a.fu-lightbox.fu-img-left,  .fu-img-left  { float: left;  margin: 0 1.25rem 0.75rem 0; }
+a.fu-lightbox.fu-img-right, .fu-img-right { float: right; margin: 0 0 0.75rem 1.25rem; }
+a.fu-lightbox.fu-img-center,.fu-img-center { display: block; margin: 0.75rem auto;      }
+
 /* ── WYSIWYG toolbar ──────────────────────────────────────────────────────── */
 /*
  * Redux 2.0.8: toolbar buttons now contain inline SVG rather than <img> tags.

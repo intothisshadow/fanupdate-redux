@@ -132,8 +132,10 @@ For a single-category blog, use `show-cat.php` instead and set `$cat_id`:
 
 ```php
 <?php
-$cat_id = 3;   // category ID from the Categories admin tab
-$main_limit = 5;
+// FanUpdate Redux
+// subject: Collective
+$cat_id = 1;
+ $main_limit = 5;
 require_once('/path/to/fanupdate/show-cat.php');
 ?>
 ```
@@ -291,6 +293,21 @@ or clicking outside the image closes it.
 | `upload_max_filesize` | `2097152` (2 MB) | Maximum file size in bytes |
 | `upload_thumb_width` | `300` | Maximum thumbnail width in pixels |
 | `upload_thumb_height` | `300` | Maximum thumbnail height in pixels |
+
+**Image alignment** — add one of these classes to the `<a class="fu-lightbox">`
+element in your post body to position the image relative to surrounding text:
+
+| Class | Effect |
+|-------|--------|
+| `fu-img-left` | Float left — text wraps to the right |
+| `fu-img-right` | Float right — text wraps to the left |
+| `fu-img-center` | Centred block — no text wrap |
+
+Example:
+
+```html
+<a href="FULL_URL" class="fu-lightbox fu-img-right"><img src="THUMB_URL" alt="" /></a>
+```
 
 The `uploads/` directory is protected by an auto-written `.htaccess` that blocks
 PHP execution, so uploaded files cannot be executed as scripts even if a

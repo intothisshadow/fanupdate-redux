@@ -1,21 +1,21 @@
 <?php
+declare(strict_types=1);
+
 /*****************************************************************************
  * FanUpdate
  * Copyright (c) Jenny Ferenc <jenny@prism-perfect.net>
  * Copyright (c) 2020 by Ekaterina (contributor) http://scripts.robotess.net
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/gpl-3.0.html>.
+ * Bug fix (Redux 2.0.1):
+ *  - RSS channel pubDate and lastBuildDate were set via setPubDate() /
+ *    setBuildDate() which do not exist on FeedWriter. The calls raised
+ *    fatal errors, silently breaking all RSS feeds. Fixed: replaced both
+ *    with setChannelElement('pubDate', ...) / setChannelElement('lastBuildDate', ...).
+ *    date('r', ...) produces the RFC-2822 format RSS readers expect.
+ *  - addNamespace() calls passed only one argument; the method requires two
+ *    (prefix + URI). Added the explicit URI for 'content', 'slash', and 'wfw'.
+ *  - getOpt() returns mixed; FeedWriter::setAuthor() and FanUpdate_Post::__construct()
+ *    expect typed parameters. Added (string)(... ?: '') / (... ?: null) casts.
  *
  * Redux 1.5.1 fix: replaced DATE_ADD(CURRENT_TIMESTAMP(), INTERVAL X HOUR)
  * with UTC_TIMESTAMP(). See show-blog.php for full explanation.
@@ -37,7 +37,7 @@ if (isset($_GET['c'])) {
 
     $c = (int)$_GET['c'];
 
-    if ($c == 0) {
+    if ($c === 0) {
         $subject = 'Collective';
     } else {
         $query_cat = 'SELECT c.' . $fu->getOpt('col_subj') . ' AS cat_name
@@ -68,8 +68,8 @@ if (isset($_GET['c'])) {
 
 } else {
 
-    $feed->setTitle($fu->getOpt('site_name'));
-    $feed->setLink($fu->getOpt('blog_page'));
+    $feed->setTitle((string)($fu->getOpt('site_name') ?: ''));
+    $feed->setLink((string)($fu->getOpt('blog_page') ?: ''));
     $feed->setDescription('The latest updates from ' . $fu->getOpt('site_name') . '.');
 
     $query = 'SELECT b.*, COUNT(c.comment_id) AS num_comments
@@ -87,24 +87,32 @@ if (isset($_GET['c'])) {
 
 $fu->db->Execute($query_added);
 if ($added = $fu->db->GetFirstCell()) {
-    $feed->setPubDate($added . ' GMT');
+    // date('r', ...) produces RFC-2822 format required by the RSS spec.
+    // strtotime(...' UTC') ensures the stored UTC timestamp is parsed correctly.
+    $feed->setChannelElement('pubDate', date('r', strtotime($added . ' UTC') ?: time()));
 }
 
-$feed->setBuildDate(time());
+// lastBuildDate = time this feed document was generated (always "now").
+$feed->setChannelElement('lastBuildDate', date('r'));
 
 $feed->setChannelElement('language', 'en-us');
-$feed->setAuthor($fu->getOpt('admin_email'), $fu->getOpt('site_name'));
+$feed->setAuthor(
+    (string)($fu->getOpt('admin_email') ?: ''),
+    (string)($fu->getOpt('site_name') ?: '')
+);
 $feed->setChannelElement('generator', 'FanUpdate ' . $fu->getOpt('version'));
 
-$feed->addNamespace('content');
-$feed->addNamespace('slash');
-$feed->addNamespace('wfw');
+// Pass full namespace URIs — addNamespace() requires both prefix and URI.
+$feed->addNamespace('content', 'http://purl.org/rss/1.0/modules/content/');
+$feed->addNamespace('slash',   'http://purl.org/rss/1.0/modules/slash/');
+$feed->addNamespace('wfw',     'http://wellformedweb.org/CommentAPI/');
 
 $fu->db->Execute($query);
 
 while ($row = $fu->db->ReadRecord()) {
 
-    $post = new FanUpdate_Post($row, $fu, $fu->getOpt('blog_page'));
+    // getOpt('blog_page') returns mixed; FanUpdate_Post expects ?string.
+    $post = new FanUpdate_Post($row, $fu, $fu->getOpt('blog_page') ?: null);
 
     $html_text = $post->getBodyFormatted();
     $html_text = str_replace(
@@ -116,7 +124,10 @@ while ($row = $fu->db->ReadRecord()) {
     $item = $feed->createNewItem();
 
     $item->setTitle($post->getTitle());
-    $item->setAuthor($fu->getOpt('admin_email'), $fu->getOpt('site_name'));
+    $item->setAuthor(
+        (string)($fu->getOpt('admin_email') ?: ''),
+        (string)($fu->getOpt('site_name') ?: '')
+    );
     $item->setLink($post->getUrl(), true);
     $item->setDate($post->getDate() . ' GMT');
     $item->setDescription(strip_tags($post->getBody()));

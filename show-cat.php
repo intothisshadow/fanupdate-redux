@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /*****************************************************************************
  * FanUpdate
  * Copyright (c) Jenny Ferenc <jenny@prism-perfect.net>
@@ -41,7 +42,7 @@ if (!isset($cat_id) || !is_numeric($cat_id)) {
     require_once('blog-config.php');
     require_once('functions.php');
 
-    $fu =& FanUpdate::instance();
+    $fu = FanUpdate::instance();
     $fu->addOptFromDb();
 
     $query = 'SELECT * FROM ' . $fu->getOpt('catoptions_table') . ' WHERE cat_id=' . (int)$cat_id . ' LIMIT 1';
@@ -50,15 +51,15 @@ if (!isset($cat_id) || !is_numeric($cat_id)) {
 
     if (is_array($cat)) {
         foreach ($cat as $key => $value) {
-            if ($value != '') { // don't update defaults!
-                $fu->AddOpt($key, $value);
+            if ($value !== '') { // don't update defaults!
+                $fu->addOpt($key, $value);
             }
         }
     }
 
     // ____________________________________________________________ ARCHIVES
 
-    if (isset($_GET['view']) && $_GET['view'] == 'archive') {
+    if (isset($_GET['view']) && $_GET['view'] === 'archive') {
 
         ?>
         <h2>Archives</h2>
@@ -79,7 +80,7 @@ if (!isset($cat_id) || !is_numeric($cat_id)) {
             $post = new FanUpdate_Post($row, $fu);
 
             $year = $post->getYear();
-            if ($year != $lastyear) {
+            if ($year !== $lastyear) {
                 if (!empty($lastyear)) {
                     echo "</ul>\n";
                 }
@@ -87,7 +88,7 @@ if (!isset($cat_id) || !is_numeric($cat_id)) {
                 echo "<ul>\n";
             }
 
-            echo '<li><span class="date">' . $post->getDateForMatted() . ':</span> <a href="' . $post->getURL() . '">' . $post->getTitle() . "</a></li>\n";
+            echo '<li><span class="date">' . $post->getDateFormatted() . ':</span> <a href="' . $post->getUrl() . '">' . $post->getTitle() . "</a></li>\n";
 
             $lastyear = $year;
 
@@ -125,10 +126,12 @@ if (!isset($cat_id) || !is_numeric($cat_id)) {
         $query .= ' ORDER BY b.added DESC';
 
         if (!empty($q)) {
-            echo '<p>Search results for <strong>' . $q . "</strong></p>\n";
+            echo '<p>Search results for <strong>' . htmlspecialchars($q, ENT_QUOTES, 'UTF-8') . "</strong></p>\n";
         }
 
-        $fu->printBlog($query, $main_limit, $single_page);
+        // $main_limit is declared by the host page (e.g. $main_limit = 5).
+        // Cast to int to satisfy strict_types; default to 5 if unset.
+        $fu->printBlog($query, (int)($main_limit ?? 5), $single_page);
     }
 
     $fu->printBlogFooter($cat_id);

@@ -112,14 +112,28 @@ class SqlConnection
             return true;
         }
 
-        $cnn = @mysqli_connect($this->_host, $this->_user, $this->_pass);
+        // Suppress mysqli exception mode during connect so we can handle errors
+        // ourselves via trigger_error() — same pattern used in Execute().
+        // Never use @ operator (CLAUDE.md: "Never suppress errors with @ operators").
+        $driver = new \mysqli_driver();
+        $prev_report = $driver->report_mode;
+        $driver->report_mode = MYSQLI_REPORT_OFF;
+
+        $cnn = mysqli_connect($this->_host, $this->_user, $this->_pass);
+
+        $driver->report_mode = $prev_report;
+
         if ($cnn === false) {
             trigger_error('Could not connect to database server.', E_USER_ERROR);
             return false;
         }
         $this->_Cnn = $cnn;
 
-        if (!@mysqli_select_db($this->_Cnn, $this->_name)) {
+        $driver->report_mode = MYSQLI_REPORT_OFF;
+        $selected = mysqli_select_db($this->_Cnn, $this->_name);
+        $driver->report_mode = $prev_report;
+
+        if (!$selected) {
             trigger_error('Could not connect to specified database on server.', E_USER_ERROR);
             return false;
         }
@@ -127,7 +141,7 @@ class SqlConnection
         // Force UTF-8 at the connection level — eliminates need for encoding
         // conversion elsewhere, and replaces the deprecated utf8_encode/decode
         // pattern for data round-trips through the database.
-        @mysqli_set_charset($this->_Cnn, 'utf8mb4');
+        mysqli_set_charset($this->_Cnn, 'utf8mb4');
 
         return true;
     }

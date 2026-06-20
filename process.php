@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 
 /*****************************************************************************
  * FanUpdate
@@ -83,7 +84,7 @@ if (isset($_POST['submit_comment'])) {
     require_once('blog-config.php');
     require_once('functions.php');
 
-    $fu = &FanUpdate::instance();
+    $fu = FanUpdate::instance();
 
     $clean = clean_input($_POST);
 
@@ -161,7 +162,7 @@ if (isset($_POST['submit_comment'])) {
         $fu->addErr('Your comment is blank. You must have something to say!');
     } else {
 
-        $fu->AddOptFromDb();
+        $fu->addOptFromDb();
 
         // find entry — GetRecord() executes, fetches one row, and frees the
         // result atomically. Do NOT call NumRows() after GetRecord(); the
@@ -231,6 +232,7 @@ if (isset($_POST['submit_comment'])) {
                                 --$points;
                             } else {
                                 $fu->addErr('Please remove all spammy words from your comment and try again.');
+                                $pass_blacklist = false;
                                 break;
                             }
                         }
@@ -261,7 +263,7 @@ if (isset($_POST['submit_comment'])) {
                         if ($fu->getOpt('points_scoring')) {
 
                             // no host name
-                            if ($ip_hostname == $_SERVER['REMOTE_ADDR']) {
+                            if ($ip_hostname === $_SERVER['REMOTE_ADDR']) {
                                 $points -= 2;
                             }
 
@@ -277,7 +279,7 @@ if (isset($_POST['submit_comment'])) {
 
                             if ($num_links > 2) {
                                 $points -= $num_links;
-                            } elseif ($num_links == 0) {
+                            } elseif ($num_links === 0) {
                                 $points += 2;
                             }
 
@@ -314,7 +316,7 @@ if (isset($_POST['submit_comment'])) {
                         $clean['approved'] = 1;
                         $status = 'Approved';
 
-                        if ($fu->getOpt('comment_moderation') || ($fu->getOpt('points_scoring') && $points < $fu->getOpt('points_approval_threshold', true))) {
+                        if ($fu->getOpt('comment_moderation') || ($fu->getOpt('points_scoring') && $points < (int) $fu->getOpt('points_approval_threshold', true))) {
                             $clean['approved'] = 0;
                             $status = 'Pending';
                         }
@@ -336,7 +338,7 @@ if (isset($_POST['submit_comment'])) {
                         //                      name/email/url fields on return visits
                         //  samesite = Lax    — Lax not Strict: Strict would break cross-page remembrance
 
-                        if ($clean['remember_me'] == 'y') {
+                        if ($clean['remember_me'] === 'y') {
 
                             $cookie_life = time() + 31536000; // Life of one year
 
@@ -437,13 +439,14 @@ if (isset($_POST['submit_comment'])) {
                             $mailheaders = 'From: "FanUpdate ' . $fu->getOpt('version') . '" <' . $fu->getOpt('admin_email') . ">\r\n";
 
                             if ($points >= $fu->getOpt('points_pending_threshold', true)) {
-                                @mail($fu->getOpt('admin_email'), $subject, $msg, $mailheaders);
+                                // Cast to string: getOpt() returns mixed; mail() expects string $to.
+                                @mail((string)($fu->getOpt('admin_email') ?: ''), $subject, $msg, $mailheaders);
                             }
                         }
 
                         $result_string = "<!-- SUCCESS do not remove -->\n";
 
-                        if ($clean['approved'] == 0) {
+                        if ($clean['approved'] === 0) {
 
                             $result_string .= "<h3>Thank You</h3>\n";
                             $result_string .= '<p>Thank you for your comment. In an effort to reduce spam, your comment has been held for moderation and will not appear on the site until it has been approved.</p>' . "\n";
@@ -468,7 +471,7 @@ if (isset($_POST['submit_comment'])) {
 
     }
 
-    if ($_POST['submit_comment'] != 'ajax') {
+    if ($_POST['submit_comment'] !== 'ajax') {
         if (isset($clean['approved']) && $clean['approved'] > 0) {
             [$return] = explode('#', $clean['returnto']);
             header('Location: ' . $return . '#comment' . $clean['comment_id']);
@@ -485,7 +488,7 @@ if (isset($_POST['submit_comment'])) {
         $cmt->printComment();
     }
 
-    if ($_POST['submit_comment'] != 'ajax') {
+    if ($_POST['submit_comment'] !== 'ajax') {
         echo '<p><a href="' . $clean['returnto'] . '">Return to the previous page</a>.</p>' . "\n";
         $fu->getFooter(false);
     }

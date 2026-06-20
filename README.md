@@ -519,8 +519,12 @@ current browsers.
 
 ## PHP 8.2 compatibility notes
 
-This release resolves all PHP 8.2 deprecation warnings:
+This release resolves all PHP 8.2 deprecation warnings and enforces strict typing
+throughout the codebase:
 
+- **`declare(strict_types=1)`** — present in every PHP file; call sites that pass
+  `getOpt()` return values (which are `mixed`) directly to typed parameters have
+  been updated with explicit casts
 - **Dynamic properties** — all class properties are now explicitly declared
 - **`utf8_encode()` / `utf8_decode()`** — replaced with `mb_convert_encoding()`
   wrappers `fu_utf8_encode()` / `fu_utf8_decode()` in `functions.php`

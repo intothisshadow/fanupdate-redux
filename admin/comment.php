@@ -43,7 +43,7 @@ if (isset($_POST['action'])) {
     $clean['name']    = isset($_POST['name'])     ? clean_input($_POST['name'])                  : '';
     $clean['email']   = isset($_POST['email'])    ? clean_input($_POST['email'])                 : '';
     $clean['url']     = isset($_POST['url'])      ? clean_input($_POST['url'])                   : '';
-    $clean['comment'] = isset($_POST['comment'])  ? clean_input($_POST['comment'])               : '';
+    $clean['comment'] = isset($_POST['comment'])  ? clean_input($_POST['comment'], true)               : '';
     $clean['entry']   = isset($_POST['entry'])    ? (int) $_POST['entry']                        : 0;
     $clean['date']    = isset($_POST['date'])     ? clean_input($_POST['date'])                  : '';
     $clean['approved']= isset($_POST['approved']) ? (int) $_POST['approved']                     : 0;

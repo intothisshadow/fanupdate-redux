@@ -82,6 +82,18 @@
  *  - Restored missing methods: printWysiwyg(), printSmileyImgDropdown(),
  *    updateConfigKey(), reissueToken()
  *
+ * Bug fix (this release):
+ *  - printCredits(): credits link used a relative URL ("credits.php") which
+ *    produced a 404 when the admin was accessed via URL rewriting without an
+ *    explicit admin/ directory path. Fixed: link now uses an absolute URL
+ *    built from install_url so it resolves correctly in all routing scenarios.
+ *  - admin/credits.php no longer requires login (see that file). The credits
+ *    page displays read-only version/contributor information — no
+ *    authentication is needed to view it.
+ *  - isLoggedIn(): new non-redirecting helper to check session cookie validity
+ *    without triggering the login form. Used by admin/credits.php to show
+ *    the admin nav bar only when the user is authenticated.
+ *
  * Spam protection (Redux 2.0.1):
  *  - printBlog(): honeypot field (name="fax", CSS display:none) injected into
  *    every comment form. Any submission with a non-empty fax value is silently
@@ -393,7 +405,10 @@ class FanUpdate
 
         try {
             $doc     = new DOMDocument();
-            $success = @$doc->load($updatesFeedUrl);
+            libxml_use_internal_errors(true);
+            $success = $doc->load($updatesFeedUrl);
+            libxml_clear_errors();
+            libxml_use_internal_errors(false);
             if (!$success) {
                 throw new \RuntimeException('Was not able to retrieve updates from remote server');
             }
@@ -546,14 +561,53 @@ class FanUpdate
 
     // ── credits ─────────────────────────────────────────────────────────────
 
+    /**
+     * Render the "Powered by FanUpdate — credits" footer line.
+     *
+     * Uses an absolute URL for the credits link so it resolves correctly
+     * regardless of how the admin panel is routed (with or without an explicit
+     * admin/ path segment). The relative "credits.php" previously produced a
+     * 404 when URL rewriting stripped the directory from the request URI.
+     */
     public function printCredits(): void
     {
-        $version  = htmlspecialchars((string) $this->getOpt('version'), ENT_QUOTES, 'UTF-8');
-        $reduxUrl = htmlspecialchars(FU_URL_REDUX, ENT_QUOTES, 'UTF-8');
+        $version    = htmlspecialchars((string) $this->getOpt('version'), ENT_QUOTES, 'UTF-8');
+        $reduxUrl   = htmlspecialchars(FU_URL_REDUX, ENT_QUOTES, 'UTF-8');
+        $creditsUrl = htmlspecialchars(
+            rtrim((string) $this->getOpt('install_url'), '/') . '/admin/credits.php',
+            ENT_QUOTES, 'UTF-8'
+        );
 
         echo 'Powered by <a href="' . $reduxUrl . '" target="_blank" title="FanUpdate Redux">'
             . 'FanUpdate ' . $version . '</a>'
-            . ' &mdash; <a href="credits.php">credits</a>';
+            . ' &mdash; <a href="' . $creditsUrl . '">credits</a>';
+    }
+
+    // ── auth check (non-redirecting) ─────────────────────────────────────────
+
+    /**
+     * Returns true when the current request carries valid admin session cookies.
+     * Unlike login(), this never redirects or renders a login form — it is safe
+     * to call on pages that do not require authentication (e.g. credits.php).
+     */
+    public function isLoggedIn(): bool
+    {
+        if (!isset($_COOKIE['fu_username'], $_COOKIE['fu_token'])) {
+            return false;
+        }
+
+        $cookieUser  = clean_input($_COOKIE['fu_username']);
+        $cookieToken = clean_input($_COOKIE['fu_token']);
+        $storedHash  = (string) $this->getOpt('admin_password', true);
+
+        if ($storedHash === '') {
+            return false;
+        }
+
+        $expectedToken = hash_hmac('sha256', $cookieUser, $storedHash);
+
+        return $cookieUser === (string) $this->getOpt('admin_username', true)
+            && hash_equals($expectedToken, $cookieToken);
     }
 
     // ── cookie helper ────────────────────────────────────────────────────────
@@ -728,16 +782,10 @@ class FanUpdate
                 $post->getCatFromDb();
 
                 if ($post->allowComments()) {
-                    $query_comments =
-                        'SELECT * FROM ' . $this->getOpt('comments_table')
-                        . ' WHERE entry_id=' . $post->getID()
-                        . ' AND approved=1';
-                    $this->db->Execute($query_comments, null);
-                    $num_comments = 0;
-                    while ($this->db->ReadRecord()) {
-                        $num_comments++;
-                    }
-                    $this->db->FreeResult();
+                    $num_comments = (int) $this->db->GetFirstCell(
+                        'SELECT COUNT(*) FROM ' . $this->getOpt('comments_table')
+                        . ' WHERE entry_id=' . $post->getID() . ' AND approved=1'
+                    );
                     $post->addParam('num_comments', $num_comments);
                 }
 

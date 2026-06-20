@@ -36,7 +36,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'update') {
             continue;
         }
 
-        $value     = clean_input((string) ($values[$id] ?? ''));
+        $value     = clean_input((string) ($values[$id] ?? ''), true);
         $sql_key   = $fu->db->Escape($key);
         $sql_value = $fu->db->Escape($value);
 

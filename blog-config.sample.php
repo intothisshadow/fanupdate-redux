@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /*****************************************************************************
  * FanUpdate
  * Copyright (c) Jenny Ferenc <jenny@prism-perfect.net>
@@ -47,8 +48,6 @@ $fanupdate['dbname']		= 'database_name';
 // Currently, the supported options are:
 
 // Enthusiast			'e'
-// Flinx Collective		'f'
-// Fan Admin			'g'
 
 // Or if you don't use one, enter 'n'
 
@@ -57,8 +56,6 @@ $fanupdate['collective_script']	= 'n';
 // The name of your collective table. Here's the usual defaults:
 
 // Enthusiast			'owned'
-// Flinx Collective		'flinxcol_link'
-// Fan Admin			'fa_fl'
 
 // Or else enter your custom table name.
 // If using FanUpdate as a standard blog, this is your categories table.
@@ -87,12 +84,6 @@ $fanupdate['smilies_table']		= 'blog_smilies';
 
 $coltable['e']['id']		= 'listingid';
 $coltable['e']['subject']	= 'subject';
-
-$coltable['f']['id']		= 'linkID';
-$coltable['f']['subject']	= 'subject';
-
-$coltable['g']['id']		= 'fl_id';
-$coltable['g']['subject']	= 'flsubject';
 
 $coltable['n']['id']		= 'fl_id';
 $coltable['n']['subject']	= 'fl_subject';

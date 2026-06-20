@@ -195,7 +195,7 @@ $fu->getHeader('Dashboard');
 
         $query = 'SELECT c.*, COUNT(c.comment_id) AS num_comments
             FROM ' . $fu->getOpt('comments_table') . " c
-            WHERE c.approved > 0 AND c.email != '" . $fu->getOpt('admin_email') . "'
+            WHERE c.approved > 0 AND c.email != '" . $fu->db->Escape((string) ($fu->getOpt('admin_email') ?: '')) . "'
             GROUP BY c.name, c.email
             ORDER BY num_comments DESC LIMIT 5";
 

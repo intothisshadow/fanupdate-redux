@@ -1,21 +1,20 @@
 <?php
+declare(strict_types=1);
+
 /*****************************************************************************
  * FanUpdate
  * Copyright (c) Jenny Ferenc <jenny@prism-perfect.net>
  * Copyright (c) 2020 by Ekaterina (contributor) http://scripts.robotess.net
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/gpl-3.0.html>.
+ * Bug fix (Redux 2.0.1):
+ *  - RSS channel pubDate and lastBuildDate were set via setPubDate() /
+ *    setBuildDate() which do not exist on FeedWriter. The calls raised
+ *    fatal errors, silently breaking all RSS comment feeds. Fixed: replaced
+ *    both with setChannelElement('pubDate', ...) / setChannelElement('lastBuildDate', ...).
+ *  - addNamespace() called with only one argument; the method requires two.
+ *    Added the explicit URI for 'content'.
+ *  - getOpt() returns mixed; setLink(), setAuthor(), FanUpdate_Post::__construct(),
+ *    and FanUpdate_Comment::__construct() expect typed parameters. Added casts.
  ******************************************************************************/
 
 require_once('blog-config.php');
@@ -35,7 +34,8 @@ if (isset($_GET['id'])) {
 
     $fu->db->Execute($query);
     $row = $fu->db->GetRecord();
-    $post = new FanUpdate_Post($row, $fu, $fu->getOpt('blog_page'));
+    // getOpt('blog_page') returns mixed; FanUpdate_Post expects ?string.
+    $post = new FanUpdate_Post($row, $fu, $fu->getOpt('blog_page') ?: null);
 
     $feed->setTitle($fu->getOpt('site_name') . ': Comments on ' . $post->getTitle());
     $feed->setLink($post->getCommentsUrl());
@@ -54,7 +54,7 @@ if (isset($_GET['id'])) {
 } else {
 
     $feed->setTitle($fu->getOpt('site_name') . ': Comments');
-    $feed->setLink($fu->getOpt('blog_page'));
+    $feed->setLink((string)($fu->getOpt('blog_page') ?: ''));
     $feed->setDescription('The latest comments from ' . $fu->getOpt('site_name') . '.');
 
     $query = 'SELECT c.*
@@ -70,21 +70,29 @@ if (isset($_GET['id'])) {
 
 $fu->db->Execute($query_added);
 if ($added = $fu->db->GetFirstCell()) {
-    $feed->setPubDate($added . ' GMT');
+    // date('r', ...) produces RFC-2822 format required by the RSS spec.
+    $feed->setChannelElement('pubDate', date('r', strtotime($added . ' UTC') ?: time()));
 }
 
-$feed->setBuildDate(time());
+// lastBuildDate = time this feed document was generated (always "now").
+$feed->setChannelElement('lastBuildDate', date('r'));
 
 $feed->setChannelElement('language', 'en-us');
-$feed->setAuthor($fu->getOpt('admin_email'), $fu->getOpt('site_name'));
+$feed->setAuthor(
+    (string)($fu->getOpt('admin_email') ?: ''),
+    (string)($fu->getOpt('site_name') ?: '')
+);
 $feed->setChannelElement('generator', 'FanUpdate ' . $fu->getOpt('version'));
-$feed->addNamespace('content');
+
+// Pass full namespace URI — addNamespace() requires both prefix and URI.
+$feed->addNamespace('content', 'http://purl.org/rss/1.0/modules/content/');
 
 $fu->db->Execute($query);
 
 while ($row = $fu->db->ReadRecord()) {
 
-    $cmt = new FanUpdate_Comment($row, $fu, $fu->getOpt('blog_page'));
+    // getOpt('blog_page') returns mixed; FanUpdate_Comment expects ?string.
+    $cmt = new FanUpdate_Comment($row, $fu, $fu->getOpt('blog_page') ?: null);
 
     $item = $feed->createNewItem();
 

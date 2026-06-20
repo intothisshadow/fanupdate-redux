@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /*****************************************************************************
  * FanUpdate
  * Copyright (c) Jenny Ferenc <jenny@prism-perfect.net>

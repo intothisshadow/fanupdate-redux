@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 
 /*****************************************************************************
  * FanUpdate — install.php
@@ -329,7 +330,8 @@ if ($version_installed == 0) {
     while ($row = $fu->db->ReadRecord()) {
         $table = array_shift($row);
         if (!$fu->getOpt('collective_script') || $table != $fu->getOpt('collective_table')) {
-            if (in_array($table, $fu->getOpt('tables'), true)) {
+            // Cast to array: getOpt('tables') returns mixed; in_array() requires array.
+            if (in_array($table, (array)$fu->getOpt('tables'), true)) {
                 $fu->addErr('Table <strong>' . htmlspecialchars($table) . '</strong> already exists. Please choose a different name in your FanUpdate blog-config.php');
             }
         }

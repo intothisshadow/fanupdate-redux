@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /*****************************************************************************
  * FanUpdate
  * Copyright (c) Jenny Ferenc <jenny@prism-perfect.net>
@@ -36,7 +37,7 @@
 
     // ____________________________________________________________ ARCHIVES
 
-    if (isset($_GET['view']) && $_GET['view'] == 'archive') {
+    if (isset($_GET['view']) && $_GET['view'] === 'archive') {
 
         ?>
         <h2>Month Archives</h2>
@@ -131,10 +132,12 @@ ORDER BY c.' . $fu->getOpt('col_subj') . ' ASC';
         $query .= ' ORDER BY b.added DESC';
 
         if (!empty($q)) {
-            echo '<p>Search results for <strong>' . $q . "</strong></p>\n";
+            echo '<p>Search results for <strong>' . htmlspecialchars($q, ENT_QUOTES, 'UTF-8') . "</strong></p>\n";
         }
 
-        $fu->printBlog($query, $main_limit, $single_page);
+        // $main_limit is declared by the host page (e.g. $main_limit = 5).
+        // Cast to int to satisfy strict_types; default to 5 if unset.
+        $fu->printBlog($query, (int)($main_limit ?? 5), $single_page);
     }
 
     $fu->printBlogFooter();

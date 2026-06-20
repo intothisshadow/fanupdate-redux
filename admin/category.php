@@ -27,8 +27,8 @@ if (isset($_POST['action'])) {
 
     $clean['name']             = isset($_POST['name'])             ? clean_input($_POST['name'])             : '';
     $clean['cat_id']           = isset($_POST['cat_id'])           ? (int) $_POST['cat_id']                  : null;
-    $clean['entry_template']   = isset($_POST['entry_template'])   ? clean_input($_POST['entry_template'])   : '';
-    $clean['comment_template'] = isset($_POST['comment_template']) ? clean_input($_POST['comment_template']) : '';
+    $clean['entry_template']   = isset($_POST['entry_template'])   ? clean_input($_POST['entry_template'],   true) : '';
+    $clean['comment_template'] = isset($_POST['comment_template']) ? clean_input($_POST['comment_template'], true) : '';
     $clean['gravatar_default'] = isset($_POST['gravatar_default']) ? clean_input($_POST['gravatar_default']) : '';
     $clean['gravatar_size']    = isset($_POST['gravatar_size'])    ? (int) $_POST['gravatar_size']           : 40;
     $clean['gravatar_rating']  = isset($_POST['gravatar_rating'])  ? clean_input($_POST['gravatar_rating'])  : 'g';
@@ -46,7 +46,7 @@ if (isset($_POST['action'])) {
             $query = "INSERT INTO " . $fu->getOpt('collective_table') . "
                 (" . $fu->getOpt('col_subj') . ") VALUES ('$sql_name')";
             if ($fu->db->Execute($query)) {
-                $clean['cat_id'] = $fu->db->InsertID();
+                $clean['cat_id'] = $fu->db->GetLastSequence();
             } else {
                 $fu->addErr('Failed to add category.');
             }

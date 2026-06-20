@@ -138,7 +138,10 @@ $final_name = $unique . '_' . $safe_name;
 
 // ── destination directories ───────────────────────────────────────────────────
 
-$install_path = rtrim((string) $fu->getOpt('install_path'), '/');
+$install_path_opt = $fu->getOpt('install_path');
+$install_path = ($install_path_opt !== false && (string) $install_path_opt !== '')
+    ? rtrim((string) $install_path_opt, '/')
+    : dirname(__DIR__);   // fallback: resolve from upload.php's own location
 $install_url  = rtrim((string) $fu->getOpt('install_url'),  '/');
 
 $year  = date('Y');

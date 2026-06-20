@@ -5,6 +5,205 @@ All notable changes to this project are documented here.
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+- **`show-blog.php` / `show-cat.php` — loose comparisons replaced with strict** —
+  `$_GET['view'] == 'archive'` → `===`; `$year != $lastyear` → `!==`;
+  `$value != ''` (category options loop) → `!== ''`. Per CLAUDE.md: prefer strict
+  comparison throughout.
+
+- **`show-blog.php` / `show-cat.php` — search query output not HTML-escaped** —
+  `echo '<p>Search results for <strong>' . $q . '</strong></p>'` used `$q` directly.
+  `clean_input()` strips tags but leaves `&`, `"`, and other HTML-significant characters
+  unescaped. Wrapped with `htmlspecialchars($q, ENT_QUOTES, 'UTF-8')`.
+
+- **`admin/category.php` — HTML stripped from entry/comment templates on save** —
+  `clean_input($_POST['entry_template'])` and `clean_input($_POST['comment_template'])`
+  were called without `allowtags=true`. `clean_input()` calls `strip_tags()` by default,
+  silently stripping every `<h2>`, `<p>`, `<a>`, `<strong>` etc. from templates on each
+  save. Added `true` as second argument to preserve HTML in template fields.
+
+- **`admin/templates.php` — HTML stripped from template values on save** —
+  Same `clean_input()` / `strip_tags()` bug. Template option values contain HTML;
+  `clean_input(..., true)` now used.
+
+- **`admin/comment.php` — HTML stripped from comment body when admin edits a comment** —
+  `clean_input($_POST['comment'])` stripped all HTML from the comment body. Since
+  `process.php` converts BBCode to HTML (`[B]` → `<strong>`, `[URL]` → `<a>`, etc.),
+  stored comments can contain HTML markup; editing and re-saving corrupted that markup.
+  Fixed: `clean_input($_POST['comment'], true)`.
+
+- **`admin/index.php` — `admin_email` unescaped in Top commenters SQL query** —
+  `$fu->getOpt('admin_email')` was interpolated directly into a SQL WHERE clause without
+  `$fu->db->Escape()`. Although the value comes from the admin's own options, it should
+  always be escaped when placed in SQL. Fixed.
+
+- **`process.php` — loose comparisons replaced with strict** —
+  `$ip_hostname == $_SERVER['REMOTE_ADDR']` → `===`;
+  `$num_links == 0` → `=== 0`;
+  `$clean['approved'] == 0` → `=== 0`.
+  `getOpt('points_approval_threshold', true)` now cast to `(int)` before the `<`
+  comparison so PHP does not silently coerce a string.
+
+- **`admin/get-code.php` — `$subject` and `install_path` not HTML-escaped in textarea** —
+  Values echoed inside the `<textarea>` code snippet were not passed through
+  `htmlspecialchars()`. A subject or install path containing `&`, `<`, or `>` would
+  produce malformed HTML. Both now wrapped in `htmlspecialchars(..., ENT_QUOTES, 'UTF-8')`.
+
+- **`class/SqlConnection.php` — `@` error suppressors removed from `Connect()`** —
+  `@mysqli_connect()`, `@mysqli_select_db()`, and `@mysqli_set_charset()` used the `@`
+  error-control operator, violating CLAUDE.md ("Never suppress errors with @ operators").
+  Replaced: `mysqli_driver::report_mode` is set to `MYSQLI_REPORT_OFF` before each call
+  and restored afterward — the same pattern already used in `Execute()`. Return values are
+  checked explicitly and `trigger_error()` called on failure as before.
+
+- **`admin/upload.php` — `install_path` option absence causes upload failure** —
+  `rtrim((string) $fu->getOpt('install_path'), '/')` cast `false` to the empty string
+  when the option was not yet saved in the database (e.g. before first install completes).
+  An empty install path caused `mkdir()` to attempt creating
+  `//uploads/images/YYYY/MM/` relative to the web root, which silently fails on most
+  hosts. Added a fallback to `dirname(__DIR__)` (the fanupdate root resolved from
+  upload.php's own location) so the feature works even when the option is absent.
+
+### Files changed
+
+- `show-blog.php`
+- `show-cat.php`
+- `admin/category.php`
+- `admin/templates.php`
+- `admin/comment.php`
+- `admin/index.php`
+- `process.php`
+- `admin/get-code.php`
+- `class/SqlConnection.php`
+- `admin/upload.php`
+
+---
+
+## [Unreleased] (previous batch)
+
+- **`admin/category.php` — fatal `Error: Call to undefined method SqlConnection::InsertID()`** —
+  When adding a new category in standalone mode, the code called `$fu->db->InsertID()` to
+  retrieve the new category's auto-increment ID. This method does not exist on `SqlConnection`;
+  the correct method is `GetLastSequence()`. Fixed.
+
+- **`process.php` — blacklisted comments submitted despite error message** —
+  `$pass_blacklist` was initialised to `true` and never set to `false`, even when a
+  blacklisted word was found and `$fu->addErr()` was called (non-scoring mode). The `break`
+  only exited the while loop; `$pass_blacklist` stayed `true` and comment processing
+  continued. Fixed: `$pass_blacklist = false` added alongside `$fu->addErr()` so comments
+  containing blacklisted words are correctly blocked.
+
+- **`process.php` / `show-cat.php` — unnecessary reference assignment `=&` on singleton call** —
+  `$fu = &FanUpdate::instance()` and `$fu =& FanUpdate::instance()` are unnecessary —
+  PHP passes objects by handle, not value, so no reference is needed. In PHP 8, assigning
+  by reference from a non-reference-returning method produces an `E_NOTICE`. Fixed:
+  both changed to `$fu = FanUpdate::instance()`.
+
+- **`show-cat.php` — wrong-case method calls `AddOpt()`, `getDateForMatted()`, `getURL()`** —
+  `$fu->AddOpt()` (capital A) and `$post->getDateForMatted()` (capital M, wrong spelling)
+  and `$post->getURL()` (all caps) were inconsistent with the project's camelCase naming
+  standards. While PHP method calls are case-insensitive at runtime, these are naming
+  violations. Fixed: corrected to `addOpt()`, `getDateFormatted()`, and `getUrl()`.
+
+- **`process.php` — `AddOptFromDb()` wrong casing** — `$fu->AddOptFromDb()` corrected to
+  `$fu->addOptFromDb()` per camelCase standard.
+
+- **`process.php` — loose comparisons `!=` / `==` replaced with `!==` / `===`** —
+  `$_POST['submit_comment'] != 'ajax'` and `$clean['remember_me'] == 'y'` used loose
+  comparison. Both replaced with strict comparison per CLAUDE.md standards.
+
+- **`rss.php` — loose `$c == 0` replaced with `$c === 0`** — the category ID is already
+  cast to `(int)`, so strict comparison is appropriate.
+
+- **`class/FanUpdate.php` — `@` error suppression in `checkUpdates()` removed** —
+  `@$doc->load()` violated the "never suppress errors with @ operators" rule.
+  Replaced with `libxml_use_internal_errors(true)` / `libxml_clear_errors()` so
+  libxml warnings are swallowed cleanly without the error-control operator.
+
+- **`class/FanUpdate.php` — inefficient `SELECT *` comment count in `printBlog()`** —
+  The method fetched all approved comment rows with `SELECT *` and counted them in a PHP
+  `while` loop. Replaced with a single `SELECT COUNT(*)` via `GetFirstCell()`, which
+  is O(1) at the database level regardless of comment volume.
+
+- **`blog-config.sample.php` — removed obsolete Flinx Collective and Fan Admin references** —
+  Per TODO.md, all references to the deprecated `'f'` (Flinx Collective) and `'g'`
+  (Fan Admin) collective script options have been removed from the sample config.
+  The `$coltable['f']` and `$coltable['g']` entries and their associated comments
+  are gone. Only `'e'` (Enthusiast) and `'n'` (standalone) remain.
+
+### Files changed
+
+- `admin/category.php`
+- `process.php`
+- `show-cat.php`
+- `rss.php`
+- `class/FanUpdate.php`
+- `blog-config.sample.php`
+
+---
+
+- **`admin/credits.php` — footer credits link gave 404 for unauthenticated users** —
+  `printCredits()` in `class/FanUpdate.php` emitted `<a href="credits.php">` as a
+  relative URL. When the admin was accessed without an explicit `admin/` path segment
+  via URL rewriting, the relative URL resolved to the document root and produced a 404.
+  Additionally, `admin/credits.php` called `$fu->login()`, which forces a login redirect,
+  making the credits link unusable for any visitor who wasn't already authenticated — even
+  though credits are read-only public information.
+  Fixed:
+  - `printCredits()` now uses the absolute URL
+    `rtrim($install_url, '/') . '/admin/credits.php'` so the link resolves correctly
+    from any page on any site structure.
+  - A new `isLoggedIn(): bool` public method was added to `FanUpdate` — a non-redirecting
+    cookie check safe to call before any output.
+  - `admin/credits.php` no longer calls `$fu->login()`. The admin navigation bar is
+    shown only when `$fu->isLoggedIn()` returns `true`, so unauthenticated visitors
+    see the credits page without being bounced to the login form.
+
+- **`declare(strict_types=1)` added to all remaining PHP files** — the following files
+  were missing the declaration and have been updated. Where `getOpt()` (which returns
+  `mixed`) was passed directly to typed parameters, the necessary casts were added at the
+  same time:
+
+  - `process.php` — `@mail($to, ...)`: cast `$to` to `(string)($fu->getOpt('admin_email') ?: '')`
+  - `rss.php` — see below for full list of fixes
+  - `rss-comments.php` — see below
+  - `show-blog.php` — `printBlog()` second arg cast to `(int)($main_limit ?? 5)`
+  - `show-cat.php` — same `printBlog()` cast
+  - `install.php` — `in_array($table, $fu->getOpt('tables'), true)` →
+    `in_array($table, (array)$fu->getOpt('tables'), true)`
+  - `class/FeedItem.php` — declaration only
+  - `class/FeedWriter.php` — declaration only
+
+- **`rss.php` / `rss-comments.php` — RSS feeds broken by undefined `FeedWriter` methods** —
+  `$feed->setPubDate()` and `$feed->setBuildDate()` do not exist on `FeedWriter`; calling
+  them produced fatal errors, silently breaking all RSS output. Fixed: replaced both with
+  `$feed->setChannelElement('pubDate', date('r', ...))` and
+  `$feed->setChannelElement('lastBuildDate', date('r'))`, which use the RFC-2822 date
+  format the RSS spec requires.
+
+- **`rss.php` / `rss-comments.php` — `addNamespace()` called with one argument** —
+  `FeedWriter::addNamespace(string $prefix, string $uri)` requires two arguments; the
+  calls for `'content'`, `'slash'`, and `'wfw'` omitted the URI and produced
+  `ArgumentCountError`. Fixed: explicit namespace URIs added to every call site.
+
+### Files changed
+
+- `class/FanUpdate.php`
+- `admin/credits.php`
+- `process.php`
+- `rss.php`
+- `rss-comments.php`
+- `show-blog.php`
+- `show-cat.php`
+- `install.php`
+- `class/FeedItem.php`
+- `class/FeedWriter.php`
+
+---
+
 ## [Redux 2.0.1] — June 10, 2026
 
 ### Added
@@ -180,3 +379,4 @@ Original Jenny Ferenc releases. See git history for details.
 ## [1.x] — 2005–2007
 
 Original versions by Jenny Ferenc.
+

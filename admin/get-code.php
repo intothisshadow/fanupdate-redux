@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 /*****************************************************************************
  * FanUpdate
  * Copyright (c) Jenny Ferenc <jenny@prism-perfect.net>
@@ -59,20 +61,20 @@ if ($is_category) {
     <h2>Display Code</h2>
 
     <p>Edit the variables in this snippet according to the instructions below, then copy an paste it into the
-        PHP-enabled page where you'd like to display the blog for <strong><?php echo htmlspecialchars($subject, ENT_QUOTES, 'UTF-8'); ?></strong>.</p>
+        PHP-enabled page where you'd like to display the blog for <strong><?php echo htmlspecialchars((string)$subject, ENT_QUOTES, 'UTF-8'); ?></strong>.</p>
 
     <p><textarea cols="90" rows="<?php echo $is_category ? 8 : 7; ?>">&lt;?php
 // FanUpdate Redux
-// subject: <?php echo $subject; ?>
+// subject: <?php echo htmlspecialchars((string) $subject, ENT_QUOTES, 'UTF-8'); ?>
 
 <?php if ($is_category) { ?>
 $cat_id = <?php echo $sql_id; ?>;
 <?php } ?>
 $main_limit = <?php echo $is_category ? 1 : 5; ?>;
 <?php if ($is_category) { ?>
-require_once('<?php echo $fu->getOpt('install_path'); ?>/show-cat.php');
+require_once('<?php echo htmlspecialchars((string) $fu->getOpt('install_path'), ENT_QUOTES, 'UTF-8'); ?>/show-cat.php');
 <?php } else { ?>
-require_once('<?php echo $fu->getOpt('install_path'); ?>/show-blog.php');
+require_once('<?php echo htmlspecialchars((string) $fu->getOpt('install_path'), ENT_QUOTES, 'UTF-8'); ?>/show-blog.php');
 <?php } ?>
 ?&gt;</textarea></p>
 

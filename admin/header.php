@@ -17,6 +17,14 @@ declare(strict_types=1);
  *
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/gpl-3.0.html>.
+ *
+ * CSRF protection (added this release):
+ *  - Emits `const fuCsrfToken = "...";` so AJAX calls in fanupdate-admin.js,
+ *    fanupdate-post-admin.js and fanupdate-comment-admin.js (which build
+ *    their own request bodies rather than submitting an HTML <form>) can
+ *    include the token. Uses $this->generateCsrfToken() — header.php is
+ *    include()'d from FanUpdate::getHeader(), so $this is the FanUpdate
+ *    instance.
  ******************************************************************************/
 ?><!DOCTYPE html>
 <html lang="en">
@@ -53,6 +61,7 @@ declare(strict_types=1);
     </script>
 
     <script src="../assets/js/fanupdate.js"></script>
+    <script>const fuCsrfToken = <?php echo json_encode($this->generateCsrfToken(), JSON_THROW_ON_ERROR); ?>;</script>
     <script src="../assets/js/fanupdate-admin.js"></script>
 
 </head>

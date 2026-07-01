@@ -88,6 +88,19 @@ Redux 1.1.1+ wraps all version-detection queries in `try/catch` and temporarily
 disables exception mode inside `SqlConnection::Execute()`. Download the current
 `install.php` and `class/SqlConnection.php`.
 
+*(Historical note: as of the Milestone 2 database modernisation, `SqlConnection`
+no longer uses `ext/mysqli` at all — see the PDO entry below.)*
+
+### Fatal error: could not find driver (PDOException) / class 'PDO' not found
+
+`class/SqlConnection.php` was migrated from `ext/mysqli` to PDO as part of the
+Milestone 2 database modernisation. This requires the `pdo_mysql` PHP
+extension to be enabled on the server. Most shared hosts (including the
+standard cPanel PHP builds) enable it by default; if you see this error, ask
+your host to enable `pdo_mysql` (sometimes listed as `PDO_MYSQL` in the PHP
+extension selector), or check `php -m | grep pdo_mysql` on a server you
+control.
+
 ### WARNING: Could not execute query. Table '…blog_options' doesn't exist
 
 This warning appeared on the install form in pre-1.1.1 builds because

@@ -95,6 +95,7 @@ ORDER BY c.' . $fu->getOpt('col_subj') . ' ASC';
 // ____________________________________________________________ DISPLAY ENTRIES QUERY
 
         $single_page = false;
+        $params = [];
 
         $query = 'SELECT * FROM ' . $fu->getOpt('blog_table') . ' b';
 
@@ -107,26 +108,29 @@ ORDER BY c.' . $fu->getOpt('col_subj') . ' ASC';
 
         if (isset($_GET['c'])) {
 
-            $query .= " AND j.cat_id=$c";
+            $query .= ' AND j.cat_id = ?';
+            $params[] = $c;
 
         } elseif (!empty($_GET['q'])) {
 
             $q = clean_input($_GET['q']);
-            $sql_q = $fu->db->Escape($q);
 
-            $query .= " AND MATCH (b.title, b.body) AGAINST ('$sql_q' IN BOOLEAN MODE)";
+            $query .= ' AND MATCH (b.title, b.body) AGAINST (? IN BOOLEAN MODE)';
+            $params[] = $q;
 
         } elseif (!empty($_GET['id'])) {
 
             $id = (int)$_GET['id'];
-            $query .= ' AND b.entry_id=' . $id;
+            $query .= ' AND b.entry_id = ?';
+            $params[] = $id;
 
             $single_page = true;
 
         } elseif (!empty($_GET['m'])) {
 
             $m = (int)$_GET['m'];
-            $query .= " AND DATE_FORMAT(b.added, '%Y%m')='$m'";
+            $query .= " AND DATE_FORMAT(b.added, '%Y%m') = ?";
+            $params[] = (string) $m;
         }
 
         $query .= ' ORDER BY b.added DESC';
@@ -137,7 +141,7 @@ ORDER BY c.' . $fu->getOpt('col_subj') . ' ASC';
 
         // $main_limit is declared by the host page (e.g. $main_limit = 5).
         // Cast to int to satisfy strict_types; default to 5 if unset.
-        $fu->printBlog($query, (int)($main_limit ?? 5), $single_page);
+        $fu->printBlog($query, (int)($main_limit ?? 5), $single_page, $params);
     }
 
     $fu->printBlogFooter();

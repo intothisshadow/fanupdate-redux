@@ -20,6 +20,8 @@
  *
  * Security:
  *  - Only authenticated admins can reach this endpoint (login() exits if not)
+ *  - CSRF token (csrf_token field, appended to the FormData by
+ *    fanupdate-admin.js) required and verified before any file is processed
  *  - MIME type validated from file bytes, not Content-Type header
  *  - PHP execution blocked in uploads/ via .htaccess
  *  - Filename sanitised: spaces→underscores, non-[a-zA-Z0-9._-] removed,
@@ -60,6 +62,16 @@ function upload_json_ok(string $url, string $thumb, string $filename): never
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     upload_json_error('Method not allowed.');
+}
+
+// ── guard: CSRF token ─────────────────────────────────────────────────────────
+// This endpoint always returns JSON, so CSRF failure is reported the same way
+// as any other upload error rather than via verifyCsrfOrFail()'s plain-text
+// 403 body — the WYSIWYG upload JS only understands the {"ok":...} shape.
+
+if (!$fu->verifyCsrfToken(is_string($_POST['csrf_token'] ?? null) ? $_POST['csrf_token'] : null)) {
+    http_response_code(403);
+    upload_json_error('Security check failed. Please refresh the page and try again.');
 }
 
 // ── guard: file present ───────────────────────────────────────────────────────

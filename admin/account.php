@@ -22,7 +22,9 @@ $showNav = true;
 // POST handler — username, email, password
 // ─────────────────────────────────────────────────────────────────────────────
 
-if (isset($_POST['action'])) {
+if (isset($_POST['action']) && !$fu->verifyCsrfOrFail()) {
+    // CSRF check failed — error already queued; skip processing the action.
+} elseif (isset($_POST['action'])) {
 
     if ($_POST['action'] === 'update_username') {
 
@@ -47,8 +49,9 @@ if (isset($_POST['action'])) {
         } else {
             $fu->db->Execute(
                 "UPDATE " . $fu->getOpt('options_table') . "
-                 SET optvalue='" . $fu->db->Escape($new_email) . "'
-                 WHERE optkey='admin_email'"
+                 SET optvalue = ? WHERE optkey = 'admin_email'",
+                'Could not update email.',
+                [$new_email]
             );
             $fu->addSuccess('Email updated to <strong>' . htmlspecialchars($new_email, ENT_QUOTES, 'UTF-8') . '</strong>.');
         }
@@ -95,6 +98,7 @@ $fu->reportErrors();
 
     <!-- Change username -->
     <form action="account.php" method="post">
+        <?php echo $fu->csrfField(); ?>
         <fieldset>
             <legend>Username</legend>
             <p class="hint small" style="margin-bottom:0.75rem;">
@@ -110,6 +114,7 @@ $fu->reportErrors();
 
     <!-- Change email -->
     <form action="account.php" method="post">
+        <?php echo $fu->csrfField(); ?>
         <fieldset>
             <legend>Email</legend>
             <p class="hint small" style="margin-bottom:0.75rem;">
@@ -125,6 +130,7 @@ $fu->reportErrors();
 
     <!-- Change password -->
     <form action="account.php" method="post">
+        <?php echo $fu->csrfField(); ?>
         <fieldset>
             <legend>Password</legend>
             <p><label for="current_password">Current password</label>

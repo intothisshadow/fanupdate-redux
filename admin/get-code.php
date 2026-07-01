@@ -44,9 +44,9 @@ if ($is_category) {
 
     $query = 'SELECT ' . $fu->getOpt('col_subj') . ' AS cat_name
       FROM ' . $fu->getOpt('collective_table') . '
-      WHERE ' . $fu->getOpt('col_id') . "=$sql_id LIMIT 1";
+      WHERE ' . $fu->getOpt('col_id') . ' = ? LIMIT 1';
 
-    $subject = $fu->db->GetFirstCell($query);
+    $subject = $fu->db->GetFirstCell($query, [$sql_id]);
     if (empty($subject)) {
         $subject = 'category ' . $sql_id;
     }

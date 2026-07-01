@@ -45,9 +45,9 @@ if (!isset($cat_id) || !is_numeric($cat_id)) {
     $fu = FanUpdate::instance();
     $fu->addOptFromDb();
 
-    $query = 'SELECT * FROM ' . $fu->getOpt('catoptions_table') . ' WHERE cat_id=' . (int)$cat_id . ' LIMIT 1';
+    $query = 'SELECT * FROM ' . $fu->getOpt('catoptions_table') . ' WHERE cat_id = ? LIMIT 1';
 
-    $cat = $fu->db->GetRecord($query);
+    $cat = $fu->db->GetRecord($query, [(int) $cat_id]);
 
     if (is_array($cat)) {
         foreach ($cat as $key => $value) {
@@ -68,10 +68,10 @@ if (!isset($cat_id) || !is_numeric($cat_id)) {
         $query = 'SELECT b.entry_id, b.added, b.title
     FROM ' . $fu->getOpt('blog_table') . ' b
     JOIN ' . $fu->getOpt('catjoin_table') . ' j ON b.entry_id=j.entry_id
-    WHERE b.is_public > 0 AND b.added <= UTC_TIMESTAMP() AND j.cat_id=' . (int)$cat_id . '
+    WHERE b.is_public > 0 AND b.added <= UTC_TIMESTAMP() AND j.cat_id = ?
     ORDER BY b.added DESC';
 
-        $fu->db->Execute($query);
+        $fu->db->Execute($query, 'Could not execute query.', [(int) $cat_id]);
 
         $lastyear = '';
 
@@ -102,24 +102,26 @@ if (!isset($cat_id) || !is_numeric($cat_id)) {
 // ____________________________________________________________ DISPLAY ENTRIES QUERY
 
         $single_page = false;
+        $params = [(int) $cat_id];
 
         $query = 'SELECT b.*
     FROM ' . $fu->getOpt('blog_table') . ' b
     JOIN ' . $fu->getOpt('catjoin_table') . ' j ON b.entry_id=j.entry_id
-    WHERE b.is_public > 0 AND b.added <= UTC_TIMESTAMP() AND j.cat_id=' . (int)$cat_id;
+    WHERE b.is_public > 0 AND b.added <= UTC_TIMESTAMP() AND j.cat_id = ?';
 
         if (!empty($_GET['id'])) {
 
             $id = (int)$_GET['id'];
-            $query .= ' AND b.entry_id=' . $id;
+            $query .= ' AND b.entry_id = ?';
+            $params[] = $id;
 
             $single_page = true;
 
         } elseif (!empty($_GET['q'])) {
 
             $q = clean_input($_GET['q']);
-            $sql_q = $fu->db->Escape($q);
-            $query .= " AND MATCH (b.title, b.body) AGAINST ('$sql_q' IN BOOLEAN MODE)";
+            $query .= ' AND MATCH (b.title, b.body) AGAINST (? IN BOOLEAN MODE)';
+            $params[] = $q;
 
         }
 
@@ -131,7 +133,7 @@ if (!isset($cat_id) || !is_numeric($cat_id)) {
 
         // $main_limit is declared by the host page (e.g. $main_limit = 5).
         // Cast to int to satisfy strict_types; default to 5 if unset.
-        $fu->printBlog($query, (int)($main_limit ?? 5), $single_page);
+        $fu->printBlog($query, (int)($main_limit ?? 5), $single_page, $params);
     }
 
     $fu->printBlogFooter($cat_id);

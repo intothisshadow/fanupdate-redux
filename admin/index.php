@@ -194,12 +194,12 @@ $fu->getHeader('Dashboard');
         $fu->db->FreeResult();
 
         $query = 'SELECT c.*, COUNT(c.comment_id) AS num_comments
-            FROM ' . $fu->getOpt('comments_table') . " c
-            WHERE c.approved > 0 AND c.email != '" . $fu->db->Escape((string) ($fu->getOpt('admin_email') ?: '')) . "'
+            FROM ' . $fu->getOpt('comments_table') . ' c
+            WHERE c.approved > 0 AND c.email != ?
             GROUP BY c.name, c.email
-            ORDER BY num_comments DESC LIMIT 5";
+            ORDER BY num_comments DESC LIMIT 5';
 
-        $fu->db->Execute($query);
+        $fu->db->Execute($query, 'Could not execute query.', [(string) ($fu->getOpt('admin_email') ?: '')]);
 
         if ($fu->db->NumRows() > 0) {
             echo "<h3 style='margin-top:1.5rem;'>Top commenters</h3>\n<ul>\n";

@@ -4,7 +4,19 @@
  * Copyright (c) Jenny Ferenc <jenny@prism-perfect.net>
  * Copyright (c) 2020 by Ekaterina (contributor) http://scripts.robotess.net
  *
- * 
+ * Milestone 3 — Admin UI Cleanup (nested forms):
+ *  - The comment list's per-row "Delete" action used to be its own
+ *    <form>...</form> inside each table row. There was no outer form
+ *    wrapping the table here, so this was not an actual HTML nesting bug —
+ *    but it relied solely on a JS confirm() dialog as its only safeguard,
+ *    and its structure was inconsistent with the fix applied to
+ *    admin/blog.php (which had the same per-row delete pattern nested
+ *    inside a real outer form). Converted to the same pattern for
+ *    consistency and defence-in-depth: per-row "Delete" is now a plain
+ *    link to a server-side confirmation view with its own single form,
+ *    so no future addition of an outer form (e.g. bulk actions) can
+ *    accidentally reintroduce a nested-form bug here.
+ *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
@@ -33,11 +45,18 @@ $showform = false;   // default: show the list; only true when editing/adding
 $clean    = [];
 $cmt      = new FanUpdate_Comment([], $fu, $fu->getOpt('blog_page'));
 
+// Delete-confirmation view state.
+$confirmDeleteId       = 0;
+$confirmDeleteAbstract = '';
+$confirmDeleteName     = '';
+
 // ─────────────────────────────────────────────────────────────────────────────
 // POST handler
 // ─────────────────────────────────────────────────────────────────────────────
 
-if (isset($_POST['action'])) {
+if (isset($_POST['action']) && !$fu->verifyCsrfOrFail()) {
+    // CSRF check failed — error already queued; skip processing the action.
+} elseif (isset($_POST['action'])) {
 
     $clean['id']      = isset($_POST['id'])      ? (int) $_POST['id']                           : 0;
     $clean['name']    = isset($_POST['name'])     ? clean_input($_POST['name'])                  : '';
@@ -47,15 +66,6 @@ if (isset($_POST['action'])) {
     $clean['entry']   = isset($_POST['entry'])    ? (int) $_POST['entry']                        : 0;
     $clean['date']    = isset($_POST['date'])     ? clean_input($_POST['date'])                  : '';
     $clean['approved']= isset($_POST['approved']) ? (int) $_POST['approved']                     : 0;
-
-    $sql_id      = $fu->db->Escape((string) $clean['id']);
-    $sql_name    = $fu->db->Escape($clean['name']);
-    $sql_email   = $fu->db->Escape($clean['email']);
-    $sql_url     = $fu->db->Escape($clean['url']);
-    $sql_comment = $fu->db->Escape($clean['comment']);
-    $sql_entry   = $fu->db->Escape((string) $clean['entry']);
-    $sql_date    = $fu->db->Escape($clean['date']);
-    $sql_approved= $fu->db->Escape((string) $clean['approved']);
 
     if ($_POST['action'] === 'preview') {
 
@@ -78,13 +88,20 @@ if (isset($_POST['action'])) {
             $fu->addErr('The comment body cannot be blank.');
             $showform = true;
         } else {
-            $date = !empty($clean['date']) ? $sql_date : gmdate('Y-m-d H:i:s');
+            $date = !empty($clean['date']) ? $clean['date'] : gmdate('Y-m-d H:i:s');
             $query = "INSERT INTO " . $fu->getOpt('comments_table') . "
                 (name, email, url, comment, entry_id, added, approved)
-                VALUES ('$sql_name','$sql_email','$sql_url','$sql_comment',
-                        '$sql_entry','$date','$sql_approved')";
+                VALUES (?, ?, ?, ?, ?, ?, ?)";
 
-            if (!$fu->db->Execute($query)) {
+            if (!$fu->db->Execute($query, 'Could not execute query.', [
+                $clean['name'],
+                $clean['email'],
+                $clean['url'],
+                $clean['comment'],
+                $clean['entry'],
+                $date,
+                $clean['approved'],
+            ])) {
                 $fu->addErr('Failed to add comment.');
                 $showform = true;
             } else {
@@ -96,12 +113,21 @@ if (isset($_POST['action'])) {
     } elseif ($_POST['action'] === 'update') {
 
         $query = "UPDATE " . $fu->getOpt('comments_table') . "
-            SET name='$sql_name', email='$sql_email', url='$sql_url',
-                comment='$sql_comment', entry_id='$sql_entry',
-                added='$sql_date', approved='$sql_approved'
-            WHERE comment_id='$sql_id'";
+            SET name = ?, email = ?, url = ?,
+                comment = ?, entry_id = ?,
+                added = ?, approved = ?
+            WHERE comment_id = ?";
 
-        if (!$fu->db->Execute($query)) {
+        if (!$fu->db->Execute($query, 'Could not execute query.', [
+            $clean['name'],
+            $clean['email'],
+            $clean['url'],
+            $clean['comment'],
+            $clean['entry'],
+            $clean['date'],
+            $clean['approved'],
+            $clean['id'],
+        ])) {
             $fu->addErr('Failed to update comment #<strong>' . $clean['id'] . '</strong>.');
             $showform = true;
         } else {
@@ -111,10 +137,12 @@ if (isset($_POST['action'])) {
 
     } elseif ($_POST['action'] === 'delete') {
 
+        // Reached from the edit form's inline delete button, or from the
+        // confirm-delete view's form.
         $query = "DELETE FROM " . $fu->getOpt('comments_table') . "
-            WHERE comment_id='$sql_id'";
+            WHERE comment_id = ?";
 
-        if (!$fu->db->Execute($query)) {
+        if (!$fu->db->Execute($query, 'Could not execute query.', [$clean['id']])) {
             $fu->addErr('Failed to delete comment #<strong>' . $clean['id'] . '</strong>.');
         } else {
             $fu->addSuccess('Comment #<strong>' . $clean['id'] . '</strong> deleted.');
@@ -124,13 +152,34 @@ if (isset($_POST['action'])) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Delete confirmation view  (GET ?action=confirm-delete&id=N)
+// ─────────────────────────────────────────────────────────────────────────────
+
+if (!$showform && isset($_GET['action']) && $_GET['action'] === 'confirm-delete'
+    && isset($_GET['id']) && is_numeric($_GET['id'])
+) {
+    $confirmDeleteId = (int) $_GET['id'];
+    $query = "SELECT * FROM " . $fu->getOpt('comments_table') . " WHERE comment_id = ?";
+    $fu->db->Execute($query, 'Could not execute query.', [$confirmDeleteId]);
+    if ($row = $fu->db->ReadRecord()) {
+        $cmt_confirm            = new FanUpdate_Comment($row, $fu, $fu->getOpt('blog_page'));
+        $confirmDeleteAbstract  = $cmt_confirm->getAbstract(12);
+        $confirmDeleteName      = (string) $row['name'];
+    } else {
+        $confirmDeleteId = 0;
+        $fu->addErr('That comment no longer exists.');
+    }
+    $fu->db->FreeResult();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Load existing comment for edit  (GET ?id=N)
 // ─────────────────────────────────────────────────────────────────────────────
 
-if (!$showform && isset($_GET['id']) && is_numeric($_GET['id'])) {
+if (!$showform && $confirmDeleteId === 0 && isset($_GET['id']) && is_numeric($_GET['id'])) {
     $id    = (int) $_GET['id'];
-    $query = "SELECT * FROM " . $fu->getOpt('comments_table') . " WHERE comment_id='$id'";
-    $fu->db->Execute($query);
+    $query = "SELECT * FROM " . $fu->getOpt('comments_table') . " WHERE comment_id = ?";
+    $fu->db->Execute($query, 'Could not execute query.', [$id]);
     if ($row = $fu->db->ReadRecord()) {
         $cmt      = new FanUpdate_Comment($row, $fu, $fu->getOpt('blog_page'));
         $clean    = $row;
@@ -192,7 +241,7 @@ $fu->reportErrors();
 if (isset($_POST['action']) && $_POST['action'] === 'preview') { ?>
 <div id="preview">
     <h3>Preview</h3>
-    <div><?php echo $cmt->printComment(); ?></div>
+    <div><?php $cmt->printComment(); ?></div>
 </div>
 <?php } ?>
 
@@ -207,6 +256,7 @@ if ($showform) {
 ?>
 
 <form action="comment.php" method="post">
+    <?php echo $fu->csrfField(); ?>
 
     <div class="col-layout-12">
 
@@ -275,15 +325,44 @@ if ($showform) {
 
 </form>
 
+<?php } elseif ($confirmDeleteId > 0) {
+
+// ── Delete confirmation ──────────────────────────────────────────────────
+?>
+
+<fieldset>
+    <legend>Confirm deletion</legend>
+    <p>
+        Are you sure you want to delete comment #<?php echo $confirmDeleteId; ?>
+        from <strong><?php echo htmlspecialchars($confirmDeleteName, ENT_QUOTES, 'UTF-8'); ?></strong>
+        (&ldquo;<?php echo htmlspecialchars($confirmDeleteAbstract, ENT_QUOTES, 'UTF-8'); ?>&rdquo;)?
+        This cannot be undone.
+    </p>
+
+    <form action="comment.php" method="post">
+        <?php echo $fu->csrfField(); ?>
+        <input type="hidden" name="id" value="<?php echo $confirmDeleteId; ?>" />
+        <div class="primary">
+            <input type="submit" name="action" value="delete" class="delete" data-skip-confirm="1"
+                title="Permanently delete this comment, accesskey s" accesskey="s" />
+            <a href="comment.php" class="button">Cancel</a>
+        </div>
+    </form>
+</fieldset>
+
 <?php } else {
 
 // ── Comment list ──────────────────────────────────────────────────────────
 
 $where_parts = [];
+$where_params = [];
 
 if ($search !== '') {
-    $sql_search = $fu->db->Escape($search);
-    $where_parts[] = "(name LIKE '%$sql_search%' OR comment LIKE '%$sql_search%' OR email LIKE '%$sql_search%')";
+    $where_parts[] = '(name LIKE ? OR comment LIKE ? OR email LIKE ?)';
+    $like = '%' . $search . '%';
+    $where_params[] = $like;
+    $where_params[] = $like;
+    $where_params[] = $like;
 }
 
 if ($show === 'pending') {
@@ -302,7 +381,8 @@ $fu->db->ExecutePaginate(
      LEFT JOIN ' . $fu->getOpt('blog_table') . ' b ON c.entry_id = b.entry_id
      ' . $where . '
      ORDER BY c.added DESC',
-    (int) $fu->getOpt('num_per_page') ?: 20
+    (int) $fu->getOpt('num_per_page') ?: 20,
+    $where_params
 );
 
 if ($fu->db->NumRows() > 0) { ?>
@@ -341,11 +421,8 @@ if ($fu->db->NumRows() > 0) { ?>
             echo '<td>' . $status_badge . '</td>';
             echo '<td class="form"><a href="comment.php?id=' . (int) $row['comment_id'] . '" class="edit button">Edit</a></td>';
             echo '<td class="form">'
-                . '<form action="comment.php" method="post" style="display:inline;">'
-                . '<input type="hidden" name="id" value="' . (int) $row['comment_id'] . '" />'
-                . '<input type="submit" name="action" value="delete" class="delete"'
-                . ' title="Delete comment #' . (int) $row['comment_id'] . '" />'
-                . '</form></td>';
+                . '<a href="comment.php?action=confirm-delete&id=' . (int) $row['comment_id'] . '" class="delete button" data-skip-confirm="1"'
+                . ' title="Delete comment #' . (int) $row['comment_id'] . '">Delete</a></td>';
             echo '</tr>';
         }
         ?>

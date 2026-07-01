@@ -30,9 +30,9 @@ if (isset($_GET['id'])) {
 
     $id = (int)$_GET['id'];
 
-    $query = 'SELECT b.* FROM ' . $fu->getOpt('blog_table') . ' b WHERE b.entry_id=' . $id . ' LIMIT 1';
+    $query = 'SELECT b.* FROM ' . $fu->getOpt('blog_table') . ' b WHERE b.entry_id = ? LIMIT 1';
 
-    $fu->db->Execute($query);
+    $fu->db->Execute($query, 'Could not execute query.', [$id]);
     $row = $fu->db->GetRecord();
     // getOpt('blog_page') returns mixed; FanUpdate_Post expects ?string.
     $post = new FanUpdate_Post($row, $fu, $fu->getOpt('blog_page') ?: null);
@@ -42,14 +42,16 @@ if (isset($_GET['id'])) {
     $feed->setDescription('The latest comments on "' . $post->getTitle() . '" from ' . $fu->getOpt('site_name') . '.');
 
     $query = 'SELECT c.*
-    FROM ' . $fu->getOpt('comments_table') . " c
-    WHERE c.entry_id=$id AND c.approved > 0
-    ORDER BY c.added DESC LIMIT 20";
+    FROM ' . $fu->getOpt('comments_table') . ' c
+    WHERE c.entry_id = ? AND c.approved > 0
+    ORDER BY c.added DESC LIMIT 20';
+    $query_params = [$id];
 
     $query_added = 'SELECT c.added
-	FROM ' . $fu->getOpt('comments_table') . " c
-	WHERE c.entry_id=$id AND c.approved > 0
-	ORDER BY c.added DESC LIMIT 1";
+	FROM ' . $fu->getOpt('comments_table') . ' c
+	WHERE c.entry_id = ? AND c.approved > 0
+	ORDER BY c.added DESC LIMIT 1';
+    $query_added_params = [$id];
 
 } else {
 
@@ -61,14 +63,16 @@ if (isset($_GET['id'])) {
     FROM ' . $fu->getOpt('comments_table') . ' c
     WHERE c.approved > 0
     ORDER BY c.added DESC LIMIT 20';
+    $query_params = [];
 
     $query_added = 'SELECT c.added
 	FROM ' . $fu->getOpt('comments_table') . ' c
 	WHERE c.approved > 0
 	ORDER BY c.added DESC LIMIT 1';
+    $query_added_params = [];
 }
 
-$fu->db->Execute($query_added);
+$fu->db->Execute($query_added, 'Could not execute query.', $query_added_params);
 if ($added = $fu->db->GetFirstCell()) {
     // date('r', ...) produces RFC-2822 format required by the RSS spec.
     $feed->setChannelElement('pubDate', date('r', strtotime($added . ' UTC') ?: time()));
@@ -87,7 +91,7 @@ $feed->setChannelElement('generator', 'FanUpdate ' . $fu->getOpt('version'));
 // Pass full namespace URI — addNamespace() requires both prefix and URI.
 $feed->addNamespace('content', 'http://purl.org/rss/1.0/modules/content/');
 
-$fu->db->Execute($query);
+$fu->db->Execute($query, 'Could not execute query.', $query_params);
 
 while ($row = $fu->db->ReadRecord()) {
 

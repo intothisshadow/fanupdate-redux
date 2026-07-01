@@ -21,21 +21,22 @@ $clean   = [];
 // POST handler
 // ─────────────────────────────────────────────────────────────────────────────
 
-if (isset($_POST['action'])) {
+if (isset($_POST['action']) && !$fu->verifyCsrfOrFail()) {
+    // CSRF check failed — error already queued; skip processing the action.
+} elseif (isset($_POST['action'])) {
 
     if ($_POST['action'] === 'add') {
 
         $clean['badword'] = isset($_POST['badword']) ? clean_input($_POST['badword']) : '';
-        $sql_word         = $fu->db->Escape($clean['badword']);
 
-        $query = "SELECT COUNT(*) FROM " . $fu->getOpt('blacklist_table') . " WHERE badword='$sql_word'";
-        $exists = (int) $fu->db->GetFirstCell($query);
+        $query = "SELECT COUNT(*) FROM " . $fu->getOpt('blacklist_table') . " WHERE badword = ?";
+        $exists = (int) $fu->db->GetFirstCell($query, [$clean['badword']]);
 
         if ($exists > 0) {
             $fu->addErr('Word <strong>' . htmlspecialchars($clean['badword'], ENT_QUOTES, 'UTF-8') . '</strong> is already blacklisted.');
         } else {
-            $query = "INSERT INTO " . $fu->getOpt('blacklist_table') . " (badword) VALUES ('$sql_word')";
-            if ($fu->db->Execute($query)) {
+            $query = "INSERT INTO " . $fu->getOpt('blacklist_table') . " (badword) VALUES (?)";
+            if ($fu->db->Execute($query, 'Could not execute query.', [$clean['badword']])) {
                 $fu->addSuccess('Word <strong>' . htmlspecialchars($clean['badword'], ENT_QUOTES, 'UTF-8') . '</strong> blacklisted.');
             } else {
                 $fu->addErr('Failed to add word to blacklist.');
@@ -47,10 +48,10 @@ if (isset($_POST['action'])) {
 
         $words = isset($_POST['badword']) && is_array($_POST['badword']) ? $_POST['badword'] : [];
         foreach ($words as $word) {
-            $sql_id = $fu->db->Escape(clean_input($word));
-            $query  = "DELETE FROM " . $fu->getOpt('blacklist_table') . " WHERE badword='$sql_id'";
-            if ($fu->db->Execute($query)) {
-                $fu->addSuccess('Word <strong>' . htmlspecialchars($sql_id, ENT_QUOTES, 'UTF-8') . '</strong> removed from blacklist.');
+            $word_clean = clean_input($word);
+            $query  = "DELETE FROM " . $fu->getOpt('blacklist_table') . " WHERE badword = ?";
+            if ($fu->db->Execute($query, 'Could not execute query.', [$word_clean])) {
+                $fu->addSuccess('Word <strong>' . htmlspecialchars($word_clean, ENT_QUOTES, 'UTF-8') . '</strong> removed from blacklist.');
             }
         }
         $clean = [];
@@ -80,6 +81,7 @@ $fu->reportErrors();
 ?>
 
 <form action="blacklist.php" method="post" style="margin-bottom:1.5rem;">
+    <?php echo $fu->csrfField(); ?>
     <p>
         <label for="badword">Add word to blacklist</label>
         <input type="text" id="badword" name="badword" size="20" maxlength="50"
@@ -124,6 +126,7 @@ if ($fu->db->NumRows() > 0) { ?>
     </table>
 
     <p style="margin-top:1rem;">
+        <?php echo $fu->csrfField(); ?>
         <input type="submit" name="action" value="delete" class="delete"
                title="Delete selected words" />
     </p>

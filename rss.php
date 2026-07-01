@@ -43,9 +43,9 @@ if (isset($_GET['c'])) {
         $query_cat = 'SELECT c.' . $fu->getOpt('col_subj') . ' AS cat_name
         FROM ' . $fu->getOpt('catjoin_table') . ' j
         JOIN ' . $fu->getOpt('collective_table') . ' c ON j.cat_id=c.' . $fu->getOpt('col_id') . '
-        WHERE j.cat_id=' . $c;
+        WHERE j.cat_id = ?';
 
-        $subject = $fu->db->GetFirstCell($query_cat);
+        $subject = $fu->db->GetFirstCell($query_cat, [$c]);
     }
 
     $feed->setTitle($fu->getOpt('site_name') . ': ' . $subject);
@@ -56,15 +56,17 @@ if (isset($_GET['c'])) {
     FROM ' . $fu->getOpt('blog_table') . ' b
     JOIN ' . $fu->getOpt('catjoin_table') . ' j ON b.entry_id=j.entry_id
     LEFT JOIN ' . $fu->getOpt('comments_table') . ' c ON b.entry_id=c.entry_id
-    WHERE b.is_public > 0 AND b.added <= UTC_TIMESTAMP() AND j.cat_id=' . $c . '
+    WHERE b.is_public > 0 AND b.added <= UTC_TIMESTAMP() AND j.cat_id = ?
     GROUP BY b.entry_id
     ORDER BY b.added DESC LIMIT 20';
+    $query_params = [$c];
 
     $query_added = 'SELECT b.added
     FROM ' . $fu->getOpt('blog_table') . ' b
     JOIN ' . $fu->getOpt('catjoin_table') . ' j ON b.entry_id=j.entry_id
-    WHERE b.is_public > 0 AND b.added <= UTC_TIMESTAMP() AND j.cat_id=' . $c . '
+    WHERE b.is_public > 0 AND b.added <= UTC_TIMESTAMP() AND j.cat_id = ?
     ORDER BY b.added DESC LIMIT 1';
+    $query_added_params = [$c];
 
 } else {
 
@@ -78,14 +80,16 @@ if (isset($_GET['c'])) {
     WHERE b.is_public > 0 AND b.added <= UTC_TIMESTAMP()
     GROUP BY b.entry_id
     ORDER BY b.added DESC LIMIT 20';
+    $query_params = [];
 
     $query_added = 'SELECT b.added
     FROM ' . $fu->getOpt('blog_table') . ' b
     WHERE b.is_public > 0 AND b.added <= UTC_TIMESTAMP()
     ORDER BY b.added DESC LIMIT 1';
+    $query_added_params = [];
 }
 
-$fu->db->Execute($query_added);
+$fu->db->Execute($query_added, 'Could not execute query.', $query_added_params);
 if ($added = $fu->db->GetFirstCell()) {
     // date('r', ...) produces RFC-2822 format required by the RSS spec.
     // strtotime(...' UTC') ensures the stored UTC timestamp is parsed correctly.
@@ -107,7 +111,7 @@ $feed->addNamespace('content', 'http://purl.org/rss/1.0/modules/content/');
 $feed->addNamespace('slash',   'http://purl.org/rss/1.0/modules/slash/');
 $feed->addNamespace('wfw',     'http://wellformedweb.org/CommentAPI/');
 
-$fu->db->Execute($query);
+$fu->db->Execute($query, 'Could not execute query.', $query_params);
 
 while ($row = $fu->db->ReadRecord()) {
 

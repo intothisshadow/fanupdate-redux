@@ -5,13 +5,49 @@
  * Copyright (c) Jay Pipes http://www.jpipes.com/
  * Copyright (c) 2008 by Jenny Ferenc (contributor) <jenny@prism-perfect.net>
  * Copyright (c) 2020 by Ekaterina (contributor) http://scripts.robotess.net
+ * Copyright (c) 2026 by Ariane (contributor)
  *
- * Refactored for PHP 8.2+ compatibility:
- *  - All dynamic properties declared explicitly
- *  - Removed get_magic_quotes_gpc() (removed in PHP 8.0)
- *  - Removed function_exists('mysqli_real_escape_string') fallback (always available)
- *  - Strict return types added throughout
- *  - #[\AllowDynamicProperties] NOT used — all properties declared instead
+ * Milestone 2 — Database Modernisation (Redux):
+ *  - Backing engine migrated from ext/mysqli to PDO (pdo_mysql).
+ *  - PDO configured with ATTR_ERRMODE = ERRMODE_EXCEPTION and
+ *    ATTR_EMULATE_PREPARES = false, so every query — including the legacy
+ *    Execute()/GetRecord()/GetFirstCell()/GetAll() call sites — now goes
+ *    through a real server-side prepared statement instead of a raw
+ *    mysqli_query() string.
+ *  - The existing public API (Execute, GetRecord, GetFirstCell, GetAll,
+ *    ReadRecord, ReadRecordPaginate, ExecutePaginate, NumRows,
+ *    AffectedRows, GetLastSequence, FreeResult, PrintPaginate) is preserved
+ *    exactly so call sites elsewhere in the codebase continue to work
+ *    unmodified.
+ *  - Every legacy method that accepts a SQL string now also accepts an
+ *    optional trailing `array $params` for bound parameters — this lets
+ *    call sites migrate to parameter binding without changing method names.
+ *  - New convenience methods for bound-parameter queries: query(), fetch(),
+ *    fetchAll(), fetchColumn() — these let PDOException propagate rather
+ *    than trigger_error(), per CLAUDE.md ("Improve database error handling
+ *    using PDO exceptions").
+ *  - Transaction helpers added: beginTransaction(), commit(), rollBack(),
+ *    inTransaction().
+ *  - Escape() has been REMOVED (Milestone 2, Phase 3 complete — see
+ *    "TODO security.md"). Every call site across the codebase now uses
+ *    bound parameters via query()/fetch()/fetchAll()/Execute(). Do not
+ *    re-add a manual-escaping helper; use bound parameters instead.
+ *
+ * Milestone 2.5 — Database Layer Modernisation (Redux):
+ *  - Query execution consolidated behind one private helper
+ *    (runStatement()) used by both Execute() and query(), so the
+ *    prepare/bind/execute/bookkeeping logic exists in exactly one place.
+ *    Execute() wraps it in try/catch to preserve legacy trigger_error()
+ *    behaviour; query() lets PDOException propagate.
+ *  - Row-fetching consolidated behind two private helpers (fetchOneRow(),
+ *    fetchAllRows()) shared by GetRecord()/fetch(), GetFirstCell()/
+ *    fetchColumn(), and GetAll()/fetchAll() — each public method is now a
+ *    thin wrapper that differs only in how it obtains the PDOStatement
+ *    (existing result vs. a fresh bound-parameter query) and its
+ *    error-handling contract (legacy silent-failure vs. exception).
+ *  - @throws PHPDoc added to every method that can propagate a
+ *    PDOException, so calling code can see the exception contract without
+ *    reading the implementation.
  *
  * Bug fix (Redux 1.1.2):
  *  - ExecutePaginate(): replaced broken NumRows()-after-GetFirstCell() count
@@ -38,14 +74,12 @@ class SqlConnection
     private string $_pass = '';
     private string $_name = '';
 
-    /** @var \mysqli|false */
-    private $_Cnn = false;
+    private ?\PDO $_pdo = null;
 
-    /** @var \mysqli_result[] */
+    /** @var \PDOStatement[] */
     private array $_Results = [];
 
-    /** @var \mysqli_result|bool */
-    private $_Res = false;
+    private ?\PDOStatement $_Res = null;
 
     private int $_NumQueries = 0;
 
@@ -91,6 +125,27 @@ class SqlConnection
         $this->_name = $name;
     }
 
+    /** Connect lazily on first query if a caller never called Connect() explicitly. */
+    private function ensureConnected(): void
+    {
+        if ($this->_pdo === null) {
+            $this->Connect();
+        }
+    }
+
+    /**
+     * Escape hatch to the underlying PDO instance for code that needs
+     * PDO-native functionality not wrapped by this class.
+     */
+    public function pdo(): \PDO
+    {
+        $this->ensureConnected();
+
+        /** @var \PDO $pdo */
+        $pdo = $this->_pdo;
+        return $pdo;
+    }
+
     // ── connection ──────────────────────────────────────────────────────────
 
     /**
@@ -108,79 +163,131 @@ class SqlConnection
         }
 
         // Short-circuit when already connected (and no new credentials given).
-        if ($this->_Cnn !== false && $host === '') {
+        if ($this->_pdo !== null && $host === '') {
             return true;
         }
 
-        // Suppress mysqli exception mode during connect so we can handle errors
-        // ourselves via trigger_error() — same pattern used in Execute().
-        // Never use @ operator (CLAUDE.md: "Never suppress errors with @ operators").
-        $driver = new \mysqli_driver();
-        $prev_report = $driver->report_mode;
-        $driver->report_mode = MYSQLI_REPORT_OFF;
-
-        $cnn = mysqli_connect($this->_host, $this->_user, $this->_pass);
-
-        $driver->report_mode = $prev_report;
-
-        if ($cnn === false) {
-            trigger_error('Could not connect to database server.', E_USER_ERROR);
-            return false;
-        }
-        $this->_Cnn = $cnn;
-
-        $driver->report_mode = MYSQLI_REPORT_OFF;
-        $selected = mysqli_select_db($this->_Cnn, $this->_name);
-        $driver->report_mode = $prev_report;
-
-        if (!$selected) {
-            trigger_error('Could not connect to specified database on server.', E_USER_ERROR);
-            return false;
+        // Shared-hosting configs sometimes specify dbhost as "host:port" (the
+        // format mysqli_connect() also accepted). PDO's mysql driver needs
+        // the port as a separate DSN segment, so split it out here.
+        $dsnHost = $this->_host;
+        $dsnPort = '';
+        if (str_contains($dsnHost, ':')) {
+            [$dsnHost, $maybePort] = explode(':', $dsnHost, 2);
+            if (ctype_digit($maybePort)) {
+                $dsnPort = ';port=' . $maybePort;
+            }
         }
 
-        // Force UTF-8 at the connection level — eliminates need for encoding
-        // conversion elsewhere, and replaces the deprecated utf8_encode/decode
-        // pattern for data round-trips through the database.
-        mysqli_set_charset($this->_Cnn, 'utf8mb4');
+        $dsn = 'mysql:host=' . $dsnHost . $dsnPort . ';dbname=' . $this->_name . ';charset=utf8mb4';
+
+        try {
+            $this->_pdo = new \PDO($dsn, $this->_user, $this->_pass, [
+                \PDO::ATTR_ERRMODE                  => \PDO::ERRMODE_EXCEPTION,
+                \PDO::ATTR_EMULATE_PREPARES         => false,
+                \PDO::ATTR_DEFAULT_FETCH_MODE       => \PDO::FETCH_ASSOC,
+                // Buffered queries preserve the old mysqli behaviour that the
+                // rest of this class (and NumRows()/AffectedRows() callers)
+                // depend on — e.g. rowCount() being meaningful for SELECTs,
+                // and being able to run further queries before a result set
+                // is fully consumed.
+                \PDO::MYSQL_ATTR_USE_BUFFERED_QUERY => true,
+            ]);
+        } catch (\PDOException $e) {
+            trigger_error('Could not connect to database server: ' . $e->getMessage(), E_USER_ERROR);
+            return false;
+        }
 
         return true;
     }
 
     // ── query execution ─────────────────────────────────────────────────────
 
-    public function Execute(string $Sql, ?string $err_msg = 'Could not execute query.'): bool
+    /**
+     * Prepare and execute a statement, tracking it as the "current" result
+     * for GetLastResult()/NumRows()/AffectedRows()/FreeResult().
+     *
+     * This is the single place that talks to PDO::prepare()/execute() for
+     * both the legacy Execute()-family API and the new query()-family API —
+     * everything else in this class goes through here.
+     *
+     * @param array<int|string, mixed> $params
+     * @throws \PDOException on prepare or execute failure.
+     */
+    private function runStatement(string $sql, array $params = []): \PDOStatement
     {
-        if (!$this->_Cnn) {
-            $this->Connect();
-        }
-
+        $this->ensureConnected();
         $this->_NumQueries++;
 
-        // PHP 8.0+: mysqli may throw mysqli_sql_exception in some configs.
-        // Disable exception mode for the query and restore it after, so callers
-        // can pass $err_msg=null to safely probe for table existence.
-        $driver = new \mysqli_driver();
-        $prev_report = $driver->report_mode;
-        mysqli_report(MYSQLI_REPORT_OFF);
+        /** @var \PDO $pdo */
+        $pdo  = $this->_pdo;
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
 
-        $res = mysqli_query($this->_Cnn, $Sql);
+        $this->_Res       = $stmt;
+        $this->_Results[] = $stmt;
 
-        mysqli_report($prev_report);
+        return $stmt;
+    }
 
-        if ($res === false) {
+    /**
+     * Fetch a single row from a statement and free it.
+     *
+     * Shared by GetRecord()/fetch() (FETCH_ASSOC) and GetFirstCell()/
+     * fetchColumn() (FETCH_NUM).
+     */
+    private function fetchOneRow(\PDOStatement $stmt, int $fetchMode): array|false
+    {
+        $row = $stmt->fetch($fetchMode);
+        $this->FreeResult();
+        return $row === false ? false : $row;
+    }
+
+    /**
+     * Fetch every remaining row from a statement and free it.
+     *
+     * Shared by GetAll() and fetchAll().
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function fetchAllRows(\PDOStatement $stmt): array
+    {
+        $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+        $this->FreeResult();
+        return $rows ?: [];
+    }
+
+    /**
+     * Execute a query. Preserves the legacy signature/behaviour (returns
+     * bool, reports failures via trigger_error()) so existing call sites
+     * keep working unmodified.
+     *
+     * Bound parameters are supported via the optional trailing $params
+     * array — pass `?` placeholders in $Sql and the values here instead of
+     * building the query string manually. This is the recommended way to
+     * migrate an existing Execute() call site to prepared statements
+     * without changing its shape.
+     *
+     * Does NOT throw — a failed query is reported via trigger_error() (or
+     * silently, when $err_msg is null) and the method returns false, so
+     * that legacy call sites written before Milestone 2 keep working
+     * without a try/catch. New code that wants exceptions should use
+     * query() instead.
+     *
+     * @param array<int|string, mixed> $params
+     */
+    public function Execute(string $Sql, ?string $err_msg = 'Could not execute query.', array $params = []): bool
+    {
+        try {
+            $this->runStatement($Sql, $params);
+        } catch (\PDOException $e) {
             if ($err_msg !== null) {
                 trigger_error(
-                    $err_msg . ' ' . mysqli_error($this->_Cnn) . ': ' . $Sql,
+                    $err_msg . ' ' . $e->getMessage() . ': ' . $Sql,
                     E_USER_WARNING
                 );
             }
             return false;
-        }
-
-        $this->_Res = $res;
-
-        if ($this->_Res instanceof \mysqli_result) {
-            $this->_Results[] = $this->_Res;
         }
 
         return true;
@@ -189,19 +296,12 @@ class SqlConnection
     /**
      * Execute a query with pagination support.
      *
-     * FIX (Redux 1.1.2): The previous implementation called GetFirstCell()
-     * (which internally calls FreeResult(), popping the result off $_Results),
-     * then called NumRows() which reads end($_Results) — now pointing at a
-     * stale earlier result. The bogus $numrows value was then used in an
-     * `if ($numrows > 1)` branch that could silently overwrite total_results
-     * with 1, causing only one post to be shown.
+     * FIX (Redux 1.1.2): see class docblock — count is computed via a
+     * COUNT(*) subquery rather than relying on result-stack state.
      *
-     * The fix wraps the base query in a subquery for counting:
-     *   SELECT COUNT(*) FROM (...) AS _fu_count_sub
-     * This always returns exactly one integer regardless of GROUP BY clauses,
-     * and does not depend on the result stack state after GetFirstCell().
+     * @param array<int|string, mixed> $params
      */
-    public function ExecutePaginate(string $Sql, int $max_results = 0): void
+    public function ExecutePaginate(string $Sql, int $max_results = 0, array $params = []): void
     {
         if ($max_results > 0) {
             $this->max_results = $max_results;
@@ -210,13 +310,10 @@ class SqlConnection
         $this->page = isset($_GET['p']) ? (int) $_GET['p'] : 1;
 
         // Strip ORDER BY from the base query to build the count subquery.
-        // Use a subquery wrapper so GROUP BY is counted correctly:
-        //   SELECT COUNT(*) FROM (SELECT ... FROM ... WHERE ... GROUP BY ...) AS _fu_count_sub
         $sql_without_order = preg_replace('/\s+ORDER\s+BY\s+.+$/is', '', $Sql);
         $count_sql = 'SELECT COUNT(*) FROM (' . $sql_without_order . ') AS _fu_count_sub';
 
-        // GetFirstCell() executes and frees in one shot — no result stack side-effects.
-        $this->total_results = (int) $this->GetFirstCell($count_sql);
+        $this->total_results = (int) $this->GetFirstCell($count_sql, $params);
 
         if (isset($_GET['nopage'])) {
             $this->max_results = $this->total_results;
@@ -224,7 +321,9 @@ class SqlConnection
 
         $this->cur_row = 0;
         $this->Execute(
-            $Sql . ' LIMIT ' . (($this->page - 1) * $this->max_results) . ', ' . $this->max_results
+            $Sql . ' LIMIT ' . (($this->page - 1) * $this->max_results) . ', ' . $this->max_results,
+            'Could not execute query.',
+            $params
         );
     }
 
@@ -232,10 +331,12 @@ class SqlConnection
 
     public function ReadRecord(): array|false
     {
-        if (!$this->GetLastResult()) {
+        $res = $this->GetLastResult();
+        if ($res === false) {
             return false;
         }
-        return mysqli_fetch_assoc($this->GetLastResult()) ?: false;
+        $row = $res->fetch(\PDO::FETCH_ASSOC);
+        return $row === false ? false : $row;
     }
 
     public function ReadRecordPaginate(): array|false
@@ -247,46 +348,18 @@ class SqlConnection
         return $this->ReadRecord();
     }
 
-    public function GetRecord(string $sql = ''): array
-    {
-        if ($sql !== '') {
-            $this->Execute($sql);
-        }
-
-        if (!$this->GetLastResult()) {
-            return [];
-        }
-
-        $return = mysqli_fetch_assoc($this->GetLastResult());
-        $this->FreeResult();
-        return $return ?: [];
-    }
-
-    public function GetFirstCell(string $sql = ''): mixed
-    {
-        if ($sql !== '') {
-            $this->Execute($sql);
-        }
-
-        if (!$this->GetLastResult()) {
-            return false;
-        }
-
-        $row = mysqli_fetch_row($this->GetLastResult());
-        $this->FreeResult();
-        return $row[0] ?? false;
-    }
-
     /**
-     * Fetch all rows from the last (or a new) query as an array of associative
-     * arrays, then free the result.
+     * Run $sql (if given) and return the first row as an associative array,
+     * or [] on no rows / query failure. See Execute() for the legacy
+     * silent-failure contract this preserves.
      *
-     * @return array<int, array<string, mixed>>
+     * @param array<int|string, mixed> $params
+     * @return array<string, mixed>
      */
-    public function GetAll(string $sql = ''): array
+    public function GetRecord(string $sql = '', array $params = []): array
     {
         if ($sql !== '') {
-            $this->Execute($sql);
+            $this->Execute($sql, 'Could not execute query.', $params);
         }
 
         $res = $this->GetLastResult();
@@ -294,18 +367,169 @@ class SqlConnection
             return [];
         }
 
-        $rows = [];
-        while ($row = mysqli_fetch_assoc($res)) {
-            $rows[] = $row;
-        }
-        $this->FreeResult();
-        return $rows;
+        $row = $this->fetchOneRow($res, \PDO::FETCH_ASSOC);
+        return $row === false ? [] : $row;
     }
 
-    public function GetLastResult(): \mysqli_result|false
+    /**
+     * Run $sql (if given) and return the first column of the first row, or
+     * false on no rows / query failure.
+     *
+     * @param array<int|string, mixed> $params
+     * @return int|float|string|bool|null Actual column value on success;
+     *         `false` specifically signals "no row" / "query failed" and is
+     *         indistinguishable from a column value of `false` — callers
+     *         that store literal boolean `false` in a column should use
+     *         fetchColumn() (which has the same caveat) with a NULL check
+     *         on the raw PDOStatement instead.
+     */
+    public function GetFirstCell(string $sql = '', array $params = []): mixed
+    {
+        if ($sql !== '') {
+            $this->Execute($sql, 'Could not execute query.', $params);
+        }
+
+        $res = $this->GetLastResult();
+        if ($res === false) {
+            return false;
+        }
+
+        $row = $this->fetchOneRow($res, \PDO::FETCH_NUM);
+        return $row === false ? false : ($row[0] ?? false);
+    }
+
+    /**
+     * Run $sql (if given) and return every row as an array of associative
+     * arrays, or [] on no rows / query failure.
+     *
+     * @param array<int|string, mixed> $params
+     * @return array<int, array<string, mixed>>
+     */
+    public function GetAll(string $sql = '', array $params = []): array
+    {
+        if ($sql !== '') {
+            $this->Execute($sql, 'Could not execute query.', $params);
+        }
+
+        $res = $this->GetLastResult();
+        if ($res === false) {
+            return [];
+        }
+
+        return $this->fetchAllRows($res);
+    }
+
+    public function GetLastResult(): \PDOStatement|false
     {
         $result = end($this->_Results);
-        return ($result instanceof \mysqli_result) ? $result : false;
+        return ($result instanceof \PDOStatement) ? $result : false;
+    }
+
+    // ── new bound-parameter convenience API (Milestone 2) ──────────────────
+    //
+    // Unlike the legacy Execute()/GetRecord()/GetFirstCell()/GetAll() family
+    // above (which trigger_error() on failure to preserve old behaviour),
+    // these methods let PDOException propagate to the caller, per CLAUDE.md's
+    // request to "improve database error handling using PDO exceptions" for
+    // newly written code. Wrap calls in try/catch where a graceful
+    // user-facing error is required.
+    //
+    // NOTE: a lowercase execute() alias was deliberately NOT added — PHP
+    // method names are case-insensitive, so `execute()` would collide with
+    // the legacy `Execute()` above and fail to compile. Use Execute() (with
+    // bound $params) for statements that don't return rows.
+
+    /**
+     * Run a bound-parameter query and return the raw PDOStatement for
+     * callers that need full control (e.g. streaming a large result set
+     * without GetAll()'s full fetchAll()).
+     *
+     * @param array<int|string, mixed> $params
+     * @throws \PDOException on prepare or execute failure.
+     */
+    public function query(string $sql, array $params = []): \PDOStatement
+    {
+        return $this->runStatement($sql, $params);
+    }
+
+    /**
+     * Run a bound-parameter query and return the first row (or []).
+     *
+     * @param array<int|string, mixed> $params
+     * @return array<string, mixed>
+     * @throws \PDOException on prepare or execute failure.
+     */
+    public function fetch(string $sql, array $params = []): array
+    {
+        $stmt = $this->query($sql, $params);
+        $row  = $this->fetchOneRow($stmt, \PDO::FETCH_ASSOC);
+        return $row === false ? [] : $row;
+    }
+
+    /**
+     * Run a bound-parameter query and return every row.
+     *
+     * @param array<int|string, mixed> $params
+     * @return array<int, array<string, mixed>>
+     * @throws \PDOException on prepare or execute failure.
+     */
+    public function fetchAll(string $sql, array $params = []): array
+    {
+        $stmt = $this->query($sql, $params);
+        return $this->fetchAllRows($stmt);
+    }
+
+    /**
+     * Run a bound-parameter query and return the first column of the first
+     * row, or false when there are no rows.
+     *
+     * @param array<int|string, mixed> $params
+     * @return int|float|string|bool|null See GetFirstCell() for the same
+     *         "false means no row" caveat.
+     * @throws \PDOException on prepare or execute failure.
+     */
+    public function fetchColumn(string $sql, array $params = []): mixed
+    {
+        $stmt = $this->query($sql, $params);
+        $row  = $this->fetchOneRow($stmt, \PDO::FETCH_NUM);
+        return $row === false ? false : ($row[0] ?? false);
+    }
+
+    // ── transactions ─────────────────────────────────────────────────────────
+
+    /** @throws \PDOException if a transaction is already active. */
+    public function beginTransaction(): bool
+    {
+        $this->ensureConnected();
+        /** @var \PDO $pdo */
+        $pdo = $this->_pdo;
+        return $pdo->beginTransaction();
+    }
+
+    /** @throws \PDOException if there is no active transaction. */
+    public function commit(): bool
+    {
+        $this->ensureConnected();
+        /** @var \PDO $pdo */
+        $pdo = $this->_pdo;
+        return $pdo->commit();
+    }
+
+    /** @throws \PDOException if there is no active transaction. */
+    public function rollBack(): bool
+    {
+        $this->ensureConnected();
+        /** @var \PDO $pdo */
+        $pdo = $this->_pdo;
+        return $pdo->rollBack();
+    }
+
+    public function inTransaction(): bool
+    {
+        $this->ensureConnected();
+        /** @var \PDO $pdo */
+        $pdo = $this->_pdo;
+        return $pdo->inTransaction();
     }
 
     // ── statistics ──────────────────────────────────────────────────────────
@@ -323,17 +547,20 @@ class SqlConnection
     public function NumRows(): int
     {
         $res = $this->GetLastResult();
-        return $res ? mysqli_num_rows($res) : 0;
+        return $res ? $res->rowCount() : 0;
     }
 
     public function AffectedRows(): int
     {
-        return (int) mysqli_affected_rows($this->_Cnn);
+        return $this->_Res !== null ? $this->_Res->rowCount() : 0;
     }
 
     public function GetLastSequence(): int
     {
-        return (int) mysqli_insert_id($this->_Cnn);
+        $this->ensureConnected();
+        /** @var \PDO $pdo */
+        $pdo = $this->_pdo;
+        return (int) $pdo->lastInsertId();
     }
 
     // ── result management ───────────────────────────────────────────────────
@@ -342,24 +569,9 @@ class SqlConnection
     {
         $last = $this->GetLastResult();
         if ($last !== false) {
-            mysqli_free_result(array_pop($this->_Results));
+            $stmt = array_pop($this->_Results);
+            $stmt->closeCursor();
         }
-    }
-
-    // ── escaping ────────────────────────────────────────────────────────────
-
-    /**
-     * Escape a value for safe insertion into a SQL query.
-     * get_magic_quotes_gpc() was removed in PHP 8.0; stripslashes() companion
-     * call removed accordingly.
-     */
-    public function Escape(string $value): string
-    {
-        if (!$this->_Cnn) {
-            $this->Connect();
-        }
-
-        return trim(mysqli_real_escape_string($this->_Cnn, $value));
     }
 
     // ── pagination output ───────────────────────────────────────────────────

@@ -706,30 +706,30 @@ if (!$fu->noErr()) {
         ];
 
         foreach ($new_words as $_word) {
-            $safe = $fu->db->Escape($_word);
             $fu->db->Execute(
-                'INSERT IGNORE INTO ' . $fu->getOpt('blacklist_table') . " (`badword`) VALUES ('$safe')",
-                null
+                'INSERT IGNORE INTO ' . $fu->getOpt('blacklist_table') . ' (`badword`) VALUES (?)',
+                null,
+                [$_word]
             );
             if ($fu->db->AffectedRows() > 0) {
                 $fu->addSuccess('Added <strong>' . htmlspecialchars($_word) . '</strong> to blacklist.');
             }
         }
-        unset($_word, $safe);
+        unset($_word);
 
         $retired_words = ['hoodia', 'ringtones', 'webcam'];
 
         foreach ($retired_words as $_word) {
-            $safe = $fu->db->Escape($_word);
             $fu->db->Execute(
-                'DELETE FROM ' . $fu->getOpt('blacklist_table') . " WHERE badword='$safe'",
-                null
+                'DELETE FROM ' . $fu->getOpt('blacklist_table') . ' WHERE badword = ?',
+                null,
+                [$_word]
             );
             if ($fu->db->AffectedRows() > 0) {
                 $fu->addSuccess('Removed retired blacklist word <strong>' . htmlspecialchars($_word) . '</strong>.');
             }
         }
-        unset($_word, $safe);
+        unset($_word);
 
         $files = [];
         $files[] = 'add-fl.php';
@@ -773,17 +773,14 @@ if (!$fu->noErr()) {
         }
 
         foreach ($setting as $val) {
-            $optkey  = $fu->db->Escape($val['optkey']);
-            $optdesc = $fu->db->Escape($val['optdesc']);
+            $query = 'UPDATE ' . $fu->getOpt('options_table') . ' SET optdesc = ? WHERE optkey = ?';
 
-            $query = 'UPDATE ' . $fu->getOpt('options_table') . " SET optdesc='$optdesc' WHERE optkey='$optkey'";
-
-            if ($fu->db->Execute($query)) {
+            if ($fu->db->Execute($query, 'Could not execute query.', [$val['optdesc'], $val['optkey']])) {
                 if ($fu->db->AffectedRows() > 0) {
-                    $fu->addSuccess('Updated description for <strong>' . $optkey . '</strong>');
+                    $fu->addSuccess('Updated description for <strong>' . $val['optkey'] . '</strong>');
                 }
             } else {
-                $fu->addErr('Failed to update description for <strong>' . $optkey . '</strong>.');
+                $fu->addErr('Failed to update description for <strong>' . $val['optkey'] . '</strong>.');
             }
         }
     }
@@ -801,13 +798,13 @@ if (!$fu->noErr()) {
                 continue;
             }
 
-            $optkey   = $fu->db->Escape($setting[$val]['optkey']);
-            $optvalue = $fu->db->Escape($clean['value'][$key]);
-            $optdesc  = $fu->db->Escape($setting[$val]['optdesc']);
+            $query = 'INSERT INTO ' . $fu->getOpt('options_table') . ' SET optkey = ?, optvalue = ?, optdesc = ?';
 
-            $query = 'INSERT INTO ' . $fu->getOpt('options_table') . " SET optkey='$optkey', optvalue='$optvalue', optdesc='$optdesc'";
-
-            if ($fu->db->Execute($query)) {
+            if ($fu->db->Execute($query, 'Could not execute query.', [
+                $setting[$val]['optkey'],
+                $clean['value'][$key],
+                $setting[$val]['optdesc'],
+            ])) {
                 $fu->addSuccess('Set <strong>' . htmlspecialchars($setting[$val]['optkey']) . '</strong> = ' . nl2br(htmlspecialchars($clean['value'][$key])));
             } else {
                 $fu->addErr('Failed to insert <strong>' . htmlspecialchars($setting[$val]['optkey']) . '</strong>');
@@ -815,9 +812,9 @@ if (!$fu->noErr()) {
         }
     }
 
-    $query = 'UPDATE ' . $fu->getOpt('options_table') . " SET optvalue='" . $fu->getOpt('version') . "' WHERE optkey='_db_version'";
+    $query = 'UPDATE ' . $fu->getOpt('options_table') . " SET optvalue = ? WHERE optkey='_db_version'";
 
-    if (!$fu->db->Execute($query)) {
+    if (!$fu->db->Execute($query, 'Could not execute query.', [(string) $fu->getOpt('version')])) {
         $fu->addErr('Failed to set current db version.');
     }
 

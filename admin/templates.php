@@ -23,7 +23,9 @@ $showNav = true;
 // POST handler
 // ─────────────────────────────────────────────────────────────────────────────
 
-if (isset($_POST['action']) && $_POST['action'] === 'update') {
+if (isset($_POST['action']) && $_POST['action'] === 'update' && !$fu->verifyCsrfOrFail()) {
+    // CSRF check failed — error already queued; skip processing the action.
+} elseif (isset($_POST['action']) && $_POST['action'] === 'update') {
 
     $keys   = isset($_POST['key'])   && is_array($_POST['key'])   ? $_POST['key']   : [];
     $values = isset($_POST['value']) && is_array($_POST['value']) ? $_POST['value'] : [];
@@ -37,13 +39,11 @@ if (isset($_POST['action']) && $_POST['action'] === 'update') {
         }
 
         $value     = clean_input((string) ($values[$id] ?? ''), true);
-        $sql_key   = $fu->db->Escape($key);
-        $sql_value = $fu->db->Escape($value);
 
         $query = "UPDATE " . $fu->getOpt('options_table') . "
-            SET optvalue='$sql_value' WHERE optkey='$sql_key'";
+            SET optvalue = ? WHERE optkey = ?";
 
-        if (!$fu->db->Execute($query)) {
+        if (!$fu->db->Execute($query, 'Could not execute query.', [$value, $key])) {
             $fu->addErr('Failed to update <strong>' . htmlspecialchars($key, ENT_QUOTES, 'UTF-8') . '</strong>.');
         } elseif ($fu->db->AffectedRows() > 0) {
             $fu->addSuccess('Template <strong>' . htmlspecialchars($key, ENT_QUOTES, 'UTF-8') . '</strong> updated.');
@@ -87,6 +87,7 @@ $fu->reportErrors();
 ?>
 
 <form action="templates.php" method="post">
+    <?php echo $fu->csrfField(); ?>
     <?php
     foreach ($rows as $id => $row) {
         $optkey = (string) $row['optkey'];

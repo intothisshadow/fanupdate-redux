@@ -23,7 +23,9 @@ $clean    = [];
 // POST handler
 // ─────────────────────────────────────────────────────────────────────────────
 
-if (isset($_POST['action'])) {
+if (isset($_POST['action']) && !$fu->verifyCsrfOrFail()) {
+    // CSRF check failed — error already queued; skip processing the action.
+} elseif (isset($_POST['action'])) {
 
     $clean['name']             = isset($_POST['name'])             ? clean_input($_POST['name'])             : '';
     $clean['cat_id']           = isset($_POST['cat_id'])           ? (int) $_POST['cat_id']                  : null;
@@ -33,19 +35,12 @@ if (isset($_POST['action'])) {
     $clean['gravatar_size']    = isset($_POST['gravatar_size'])    ? (int) $_POST['gravatar_size']           : 40;
     $clean['gravatar_rating']  = isset($_POST['gravatar_rating'])  ? clean_input($_POST['gravatar_rating'])  : 'g';
 
-    $sql_name     = $fu->db->Escape($clean['name']);
-    $sql_et       = $fu->db->Escape($clean['entry_template']);
-    $sql_ct       = $fu->db->Escape($clean['comment_template']);
-    $sql_gdefault = $fu->db->Escape($clean['gravatar_default']);
-    $sql_gsize    = $fu->db->Escape((string) $clean['gravatar_size']);
-    $sql_grating  = $fu->db->Escape($clean['gravatar_rating']);
-
     if ($_POST['action'] === 'add') {
 
         if (!$fu->getOpt('collective_script')) {
             $query = "INSERT INTO " . $fu->getOpt('collective_table') . "
-                (" . $fu->getOpt('col_subj') . ") VALUES ('$sql_name')";
-            if ($fu->db->Execute($query)) {
+                (" . $fu->getOpt('col_subj') . ") VALUES (?)";
+            if ($fu->db->Execute($query, 'Could not execute query.', [$clean['name']])) {
                 $clean['cat_id'] = $fu->db->GetLastSequence();
             } else {
                 $fu->addErr('Failed to add category.');
@@ -55,8 +50,15 @@ if (isset($_POST['action'])) {
         if ($clean['cat_id'] !== null) {
             $query = "INSERT INTO " . $fu->getOpt('catjoin_table') . "
                 (cat_id, entry_template, comment_template, gravatar_default, gravatar_size, gravatar_rating)
-                VALUES ('$clean[cat_id]','$sql_et','$sql_ct','$sql_gdefault','$sql_gsize','$sql_grating')";
-            if ($fu->db->Execute($query)) {
+                VALUES (?, ?, ?, ?, ?, ?)";
+            if ($fu->db->Execute($query, 'Could not execute query.', [
+                $clean['cat_id'],
+                $clean['entry_template'],
+                $clean['comment_template'],
+                $clean['gravatar_default'],
+                $clean['gravatar_size'],
+                $clean['gravatar_rating'],
+            ])) {
                 $fu->addSuccess('Category <strong>' . htmlspecialchars($clean['name'], ENT_QUOTES, 'UTF-8') . '</strong> added.');
             } else {
                 $fu->addErr('Failed to save category settings.');
@@ -66,21 +68,26 @@ if (isset($_POST['action'])) {
     } elseif ($_POST['action'] === 'update' && $clean['cat_id'] !== null) {
 
         if (!$fu->getOpt('collective_script')) {
-            $sql_id = $fu->db->Escape((string) $clean['cat_id']);
             $query  = "UPDATE " . $fu->getOpt('collective_table') . "
-                SET " . $fu->getOpt('col_subj') . "='$sql_name'
-                WHERE " . $fu->getOpt('col_id') . "='$sql_id'";
-            $fu->db->Execute($query);
+                SET " . $fu->getOpt('col_subj') . " = ?
+                WHERE " . $fu->getOpt('col_id') . " = ?";
+            $fu->db->Execute($query, 'Could not execute query.', [$clean['name'], $clean['cat_id']]);
         }
 
-        $sql_id = $fu->db->Escape((string) $clean['cat_id']);
         $query  = "UPDATE " . $fu->getOpt('catjoin_table') . "
-            SET entry_template='$sql_et', comment_template='$sql_ct',
-                gravatar_default='$sql_gdefault', gravatar_size='$sql_gsize',
-                gravatar_rating='$sql_grating'
-            WHERE cat_id='$sql_id'";
+            SET entry_template = ?, comment_template = ?,
+                gravatar_default = ?, gravatar_size = ?,
+                gravatar_rating = ?
+            WHERE cat_id = ?";
 
-        if ($fu->db->Execute($query)) {
+        if ($fu->db->Execute($query, 'Could not execute query.', [
+            $clean['entry_template'],
+            $clean['comment_template'],
+            $clean['gravatar_default'],
+            $clean['gravatar_size'],
+            $clean['gravatar_rating'],
+            $clean['cat_id'],
+        ])) {
             $fu->addSuccess('Category updated.');
         } else {
             $fu->addErr('Failed to update category.');
@@ -88,9 +95,8 @@ if (isset($_POST['action'])) {
 
     } elseif ($_POST['action'] === 'delete' && $clean['cat_id'] !== null && !$fu->getOpt('collective_script')) {
 
-        $sql_id = $fu->db->Escape((string) $clean['cat_id']);
-        $fu->db->Execute("DELETE FROM " . $fu->getOpt('collective_table') . " WHERE " . $fu->getOpt('col_id') . "='$sql_id'");
-        $fu->db->Execute("DELETE FROM " . $fu->getOpt('catjoin_table') . " WHERE cat_id='$sql_id'");
+        $fu->db->Execute("DELETE FROM " . $fu->getOpt('collective_table') . " WHERE " . $fu->getOpt('col_id') . " = ?", 'Could not execute query.', [$clean['cat_id']]);
+        $fu->db->Execute("DELETE FROM " . $fu->getOpt('catjoin_table') . " WHERE cat_id = ?", 'Could not execute query.', [$clean['cat_id']]);
         $fu->addSuccess('Category deleted.');
     }
 }
@@ -99,18 +105,17 @@ if (isset($_POST['action'])) {
 if (isset($_GET['id']) && is_numeric($_GET['id'])) {
     $showform = true;
     $id       = (int) $_GET['id'];
-    $sql_id   = $fu->db->Escape((string) $id);
 
     $query = 'SELECT ' . $fu->getOpt('collective_table') . '.*,
         ' . $fu->getOpt('col_subj') . ' AS cname,
         ' . $fu->getOpt('col_id') . ' AS cid,
         j.*
         FROM ' . $fu->getOpt('collective_table') . '
-        LEFT JOIN ' . $fu->getOpt('catjoin_table') . " j
-            ON " . $fu->getOpt('col_id') . "='$sql_id' AND j.cat_id='$sql_id'
-        WHERE " . $fu->getOpt('col_id') . "='$sql_id'";
+        LEFT JOIN ' . $fu->getOpt('catjoin_table') . ' j
+            ON ' . $fu->getOpt('col_id') . ' = j.cat_id
+        WHERE ' . $fu->getOpt('col_id') . ' = ?';
 
-    $fu->db->Execute($query);
+    $fu->db->Execute($query, 'Could not execute query.', [$id]);
     if ($row = $fu->db->ReadRecord()) {
         $clean = $row;
         $clean['cat_id'] = $id;
@@ -140,6 +145,7 @@ $fu->reportErrors();
 if ($showform) { ?>
 
 <form action="category.php" method="post">
+    <?php echo $fu->csrfField(); ?>
 
     <div class="col-layout-12">
 
@@ -258,6 +264,7 @@ if ($showform) { ?>
                 if (!$fu->getOpt('collective_script')) {
                     echo '<td class="form">'
                         . '<form action="category.php" method="post" style="display:inline;">'
+                        . $fu->csrfField()
                         . '<input type="hidden" name="cat_id" value="' . (int) $row['cid'] . '" />'
                         . '<input type="submit" name="action" value="delete" class="delete"'
                         . ' title="Delete ' . htmlspecialchars((string) $row['cname'], ENT_QUOTES, 'UTF-8') . '" />'

@@ -16,7 +16,7 @@ This Redux release updates the codebase to **PHP 8.2+** and includes a full admi
 |-------------|---------|
 | PHP | 8.2+ |
 | MySQL / MariaDB | 5.7+ / 10.3+ |
-| PHP extensions | `mysqli`, `mbstring`, `gd` (CAPTCHA and image uploads) |
+| PHP extensions | `pdo_mysql`, `mbstring`, `gd` (CAPTCHA and image uploads) |
 
 > **Note:** The GD extension is required for image thumbnail generation and the
 > CAPTCHA feature. It is available on virtually all shared hosts by default.
@@ -391,8 +391,7 @@ category source. Supported scripts:
 | Script | Config value |
 |--------|-------------|
 | Enthusiast 3 | `'e'` |
-| Flinx Collective | `'f'` |
-| Fan Admin | `'g'` |
+| Fanatically       |              |
 | Standalone / none | `'n'` |
 
 Set `$fanupdate['collective_script']` in `blog-config.php` to the appropriate
@@ -462,6 +461,48 @@ The `fu_username` and `fu_token` session cookies are issued with:
 The site must run on HTTPS for `Secure` cookies to work. The admin panel will
 function on HTTP but the cookies will not be sent to the browser, effectively
 preventing login.
+
+### CSRF protection
+
+Every administrative POST request — adding, editing, or deleting entries,
+comments, categories, blacklist words, smilies, templates, options, account
+details, and image uploads, plus the login form itself — requires a valid CSRF
+token. Tokens are generated with `random_bytes(32)`, stored server-side in a
+PHP session, and compared with `hash_equals()` to prevent timing attacks.
+
+The session used to store the token is separate from the `fu_username` /
+`fu_token` login cookies above and carries the same cookie flags (`Secure`,
+`HttpOnly`, `SameSite=Strict`), under the cookie name `fu_session`. As with the
+login cookies, this requires HTTPS.
+
+Requests that submit an HTML form (the standard admin pages, including the new
+blog/comment delete-confirmation views — see "Deleting entries and comments"
+below) receive the token via a hidden `csrf_token` field. Requests made via
+JavaScript `fetch()` — the approve-comment and image-upload actions — include
+the token from a page-level `fuCsrfToken` value emitted in the admin `<head>`.
+A missing or invalid token is rejected before any action is processed; the
+approve-comment AJAX request receives an HTTP 403 response instead of a page
+re-render, so the browser-side code can distinguish a rejected request from a
+successful one.
+
+### Deleting entries and comments
+
+Deleting a blog entry or comment is a two-step, page-based flow rather than a
+single click:
+
+1. Clicking **Delete** — on the entries list, comments list, or an entry's
+   edit page — navigates to a confirmation view (`?action=confirm-delete&id=N`)
+   that names what will be removed and does not touch the database.
+2. The confirmation view has its own **Delete** button in a real form. Only
+   submitting that form actually deletes the record.
+
+This works with JavaScript disabled, and protects against a stray click on a
+table row deleting something by accident — there's no JS `confirm()` popup to
+miss or auto-dismiss.
+
+On the entries list, checking one or more boxes and clicking **Delete
+selected** goes through the same two-step flow for all of them at once,
+listing every affected title before you confirm.
 
 ---
 
@@ -587,8 +628,8 @@ fanupdate/
 │   ├── js/
 │   │   ├── fanupdate.js              # Core utilities + table sorting + lightbox
 │   │   ├── fanupdate-admin.js        # Admin panel init (confirm-delete, WYSIWYG, image upload)
-│   │   ├── fanupdate-comment-admin.js# Comment approve/delete AJAX
-│   │   ├── fanupdate-post-admin.js   # Post delete AJAX
+│   │   ├── fanupdate-comment-admin.js# Comment approve AJAX
+│   │   ├── fanupdate-post-admin.js   # Entry list "select all" checkbox wiring
 │   │   ├── fanupdate-comment-submit.js# Front-end comment submission AJAX
 │   │   └── select-all.js             # Checkbox select-all, dynamic categories, timestamp
 │   ├── fonts/
@@ -601,6 +642,7 @@ fanupdate/
 └── docs/
     ├── CHANGELOG.md         # This project's changelog
     ├── TROUBLESHOOTING.md   # Common issues and fixes
+    ├── DATABASE.md          # Database layer developer docs (PDO API, query patterns)
     ├── readme.txt           # Original readme
     └── changelog.txt        # Original changelog
 ```

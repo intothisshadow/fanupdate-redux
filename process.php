@@ -169,11 +169,11 @@ if (isset($_POST['submit_comment'])) {
         // result is already freed by then and NumRows() would return 0.
         $sql_entry = (int)$clean['entry'];
 
-        $query_check = 'SELECT * FROM ' . $fu->getOpt('blog_table') . "
-          WHERE entry_id=$sql_entry
-          LIMIT 1";
+        $query_check = 'SELECT * FROM ' . $fu->getOpt('blog_table') . '
+          WHERE entry_id = ?
+          LIMIT 1';
 
-        $row = $fu->db->GetRecord($query_check);
+        $row = $fu->db->GetRecord($query_check, [$sql_entry]);
 
         if (!empty($row)) {
 
@@ -301,10 +301,14 @@ if (isset($_POST['submit_comment'])) {
 
                             // previous comments from email
                             if (!empty($clean['email'])) {
-                                $sql_email = $fu->db->Escape($clean['email']);
-
-                                $num_approved = $fu->db->GetFirstCell('SELECT COUNT(*) FROM ' . $fu->getOpt('comments_table') . " WHERE email='$sql_email' AND approved = 1 AND added < DATE_ADD(CURRENT_TIMESTAMP(), INTERVAL -7 DAY)");
-                                $num_spam = $fu->db->GetFirstCell('SELECT COUNT(*) FROM ' . $fu->getOpt('comments_table') . " WHERE email='$sql_email' AND approved = 0 AND added < DATE_ADD(CURRENT_TIMESTAMP(), INTERVAL -7 DAY)");
+                                $num_approved = $fu->db->GetFirstCell(
+                                    'SELECT COUNT(*) FROM ' . $fu->getOpt('comments_table') . ' WHERE email = ? AND approved = 1 AND added < DATE_ADD(CURRENT_TIMESTAMP(), INTERVAL -7 DAY)',
+                                    [$clean['email']]
+                                );
+                                $num_spam = $fu->db->GetFirstCell(
+                                    'SELECT COUNT(*) FROM ' . $fu->getOpt('comments_table') . ' WHERE email = ? AND approved = 0 AND added < DATE_ADD(CURRENT_TIMESTAMP(), INTERVAL -7 DAY)',
+                                    [$clean['email']]
+                                );
 
                                 $points += $num_approved;
                                 $points -= $num_spam;
@@ -358,22 +362,22 @@ if (isset($_POST['submit_comment'])) {
 
                         $clean['added'] = gmdate('Y-m-d H:i:s');
 
-                        $sql_entry   = (int) $clean['entry'];
-                        $sql_name    = $fu->db->Escape($clean['name']);
-                        $sql_email   = $fu->db->Escape($clean['email']);
-                        $sql_url     = $fu->db->Escape($clean['url']);
-                        $sql_comment = $fu->db->Escape($clean['comment']);
-                        $sql_approved = $clean['approved'];
-                        $sql_added   = $fu->db->Escape($clean['added']);
-                        $sql_points  = $points;
+                        $sql_entry = (int) $clean['entry'];
 
-                        $sql_agent = $fu->db->Escape($_SERVER['HTTP_USER_AGENT']);
-                        $sql_ip    = ip2long($_SERVER['REMOTE_ADDR']);
+                        $query = 'INSERT INTO ' . $fu->getOpt('comments_table') . '
+	                      (entry_id, name, email, url, comment, approved, added, points)
+	                      VALUES (?, ?, ?, ?, ?, ?, ?, ?)';
 
-                        $query = 'INSERT INTO ' . $fu->getOpt('comments_table') . " (entry_id, name, email, url, comment, approved, added, points)
-	                      VALUES ($sql_entry, '$sql_name', '$sql_email', '$sql_url', '$sql_comment', $sql_approved, '$sql_added', $sql_points)";
-
-                        $fu->db->Execute($query);
+                        $fu->db->Execute($query, 'Could not execute query.', [
+                            $sql_entry,
+                            $clean['name'],
+                            $clean['email'],
+                            $clean['url'],
+                            $clean['comment'],
+                            (int) $clean['approved'],
+                            $clean['added'],
+                            $points,
+                        ]);
 
                         $clean['comment_id'] = $fu->db->GetLastSequence();
 

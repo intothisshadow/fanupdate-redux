@@ -120,6 +120,22 @@
  * no system(), no passthru(), no preg_replace /e modifier, file writes
  * limited to blog-config.php via updateConfigKey() and login() MD5 upgrade.
  *
+ * CSRF protection (added this release):
+ *  - ensureSession(): starts a PHP session (secure/httponly/SameSite=Strict
+ *    cookie) used solely to store the CSRF token. This is separate from the
+ *    existing HMAC auth cookies (fu_username/fu_token), which continue to
+ *    control login state exactly as before.
+ *  - generateCsrfToken() / verifyCsrfToken() / csrfField(): central CSRF
+ *    token API. Tokens are 32 random bytes (hex-encoded), stored in
+ *    $_SESSION and compared with hash_equals() to prevent timing attacks.
+ *  - verifyCsrfOrFail(): called at the top of every admin POST handler.
+ *    Rejects missing/invalid tokens before any action is processed. AJAX
+ *    requests (mode=ajax, used by the post/comment delete buttons) get a
+ *    403 response instead of a re-rendered page, so fetch() callers can
+ *    detect the failure instead of treating a 200 response as success.
+ *  - login(): the login form itself is also CSRF-protected (login CSRF can
+ *    be used to force a victim into an attacker's account).
+ *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
@@ -156,6 +172,10 @@ class FanUpdate
     public array $smilies     = [];
     public array $smiley_imgs = [];
     public array $observers   = [];
+
+    // ── CSRF protection ─────────────────────────────────────────────────────
+    private const CSRF_SESSION_KEY = 'fu_csrf_token';
+    public const  CSRF_FIELD_NAME  = 'csrf_token';
 
     private array $config = [
         'version' => FU_VERSION,
@@ -232,6 +252,136 @@ class FanUpdate
     public function getCleanSelf(): string
     {
         return $this->_clean_self;
+    }
+
+    // ── CSRF protection ─────────────────────────────────────────────────────
+
+    /**
+     * Start (or resume) the PHP session used to store the CSRF token.
+     *
+     * This is intentionally separate from the HMAC auth cookies
+     * (fu_username/fu_token) that control login state — the session here is
+     * used solely for CSRF and has no bearing on authentication.
+     *
+     * The session cookie mirrors the security attributes already used for
+     * the auth cookies (secure, httponly, SameSite=Strict).
+     */
+    private function ensureSession(): void
+    {
+        $status = session_status();
+
+        if ($status === PHP_SESSION_ACTIVE) {
+            return;
+        }
+
+        if ($status === PHP_SESSION_DISABLED) {
+            // Sessions unavailable on this host — CSRF tokens cannot be
+            // stored. verifyCsrfToken() will safely fail closed in this case.
+            return;
+        }
+
+        session_set_cookie_params([
+            'lifetime' => 0,
+            'path'     => '/',
+            'secure'   => true,
+            'httponly' => true,
+            'samesite' => 'Strict',
+        ]);
+
+        session_name('fu_session');
+        session_start();
+    }
+
+    /**
+     * Return the current CSRF token for this session, generating one on
+     * first use. Safe to call multiple times per request — the token is
+     * reused for the lifetime of the session so multiple forms on the same
+     * page (and subsequent page loads) share one valid token.
+     */
+    public function generateCsrfToken(): string
+    {
+        $this->ensureSession();
+
+        if (
+            empty($_SESSION[self::CSRF_SESSION_KEY])
+            || !is_string($_SESSION[self::CSRF_SESSION_KEY])
+        ) {
+            $_SESSION[self::CSRF_SESSION_KEY] = bin2hex(random_bytes(32));
+        }
+
+        return $_SESSION[self::CSRF_SESSION_KEY];
+    }
+
+    /**
+     * Compare a submitted token against the session's stored token using a
+     * timing-safe comparison. Returns false (never throws) when no token is
+     * stored yet or the submitted value is missing/empty.
+     */
+    public function verifyCsrfToken(?string $token): bool
+    {
+        $this->ensureSession();
+
+        $stored = $_SESSION[self::CSRF_SESSION_KEY] ?? '';
+
+        if (!is_string($stored) || $stored === '' || $token === null || $token === '') {
+            return false;
+        }
+
+        return hash_equals($stored, $token);
+    }
+
+    /**
+     * Render a hidden <input> carrying the current CSRF token. Include this
+     * inside every admin <form method="post">.
+     */
+    public function csrfField(): string
+    {
+        $token = htmlspecialchars($this->generateCsrfToken(), ENT_QUOTES, 'UTF-8');
+
+        return '<input type="hidden" name="' . self::CSRF_FIELD_NAME . '" value="' . $token . '" />';
+    }
+
+    /**
+     * Validate the CSRF token on the current request. Call this as the very
+     * first thing inside an admin page's POST handler, before any action is
+     * processed.
+     *
+     * Behaviour on failure:
+     *  - AJAX requests (POST field mode=ajax, used by the post/comment
+     *    delete buttons and the approve-comment link) receive an immediate
+     *    403 response with a short plain-text body and the script exits.
+     *    This is necessary because those callers only check response.ok —
+     *    a 200 response re-rendering the page with an error banner would be
+     *    silently treated as "delete succeeded" by the JS callback.
+     *  - Regular (non-AJAX) form submissions get an error message queued via
+     *    addErr() and this method returns false so the caller can skip
+     *    processing the submitted action while still rendering the normal
+     *    page (with the error shown via reportErrors()).
+     *
+     * Non-POST requests always return true — there is nothing to verify.
+     */
+    public function verifyCsrfOrFail(): bool
+    {
+        if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+            return true;
+        }
+
+        $token = $_POST[self::CSRF_FIELD_NAME] ?? null;
+
+        if ($this->verifyCsrfToken(is_string($token) ? $token : null)) {
+            return true;
+        }
+
+        if (($_POST['mode'] ?? '') === 'ajax') {
+            http_response_code(403);
+            header('Content-Type: text/plain; charset=UTF-8');
+            echo 'Security check failed. Please refresh the page and try again.';
+            exit;
+        }
+
+        $this->addErr('Security check failed (your session may have expired). Please try again.');
+
+        return false;
     }
 
     // ── options ─────────────────────────────────────────────────────────────
@@ -669,8 +819,10 @@ class FanUpdate
         // ── POST check ───────────────────────────────────────────────────────
         if ($showform && isset($_POST['action']) && $_POST['action'] === 'login') {
 
-            // ── rate limit check ─────────────────────────────────────────────
-            if ($rateLimiter->isLockedOut()) {
+            if (!$this->verifyCsrfOrFail()) {
+                // Invalid/missing CSRF token — error already queued by
+                // verifyCsrfOrFail(); fall through to render the login form.
+            } elseif ($rateLimiter->isLockedOut()) {
                 $this->addErr(
                     'Too many failed login attempts. '
                         . 'Please try again in ' . $rateLimiter->humanTimeRemaining() . '.'
@@ -745,6 +897,7 @@ class FanUpdate
             $this->getHeader('Login');
 ?>
             <form action="<?php echo clean_input($_SERVER['REQUEST_URI']); ?>" method="post">
+                <?php echo $this->csrfField(); ?>
                 <?php $this->reportErrors(); ?>
                 <p><label for="username">Username:</label>
                     <input type="text" id="username" name="username" size="20" tabindex="1" />
@@ -772,9 +925,9 @@ class FanUpdate
 
     // ── blog rendering ──────────────────────────────────────────────────────
 
-    public function printBlog(string $query, int $main_limit = 5, bool $single_page = false): void
+    public function printBlog(string $query, int $main_limit = 5, bool $single_page = false, array $params = []): void
     {
-        $this->db->ExecutePaginate($query, $main_limit);
+        $this->db->ExecutePaginate($query, $main_limit, $params);
 
         if ($this->db->NumRows() > 0) {
             while ($row = $this->db->ReadRecordPaginate()) {

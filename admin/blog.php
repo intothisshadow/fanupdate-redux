@@ -3,6 +3,25 @@
 /*****************************************************************************
  * FanUpdate — admin/blog.php
  *
+ * Milestone 3 — Admin UI Cleanup (nested forms):
+ *  - The entry list previously wrapped the whole table (including each row's
+ *    own <form>...delete...</form>) inside an outer
+ *    <form id="blog-select-form">. Nested <form> elements are invalid HTML5 —
+ *    per the parsing spec, the browser ignores the inner <form> start tag
+ *    (the "form element pointer" is already set), so the inner hidden id
+ *    field and delete button silently become children of the OUTER form,
+ *    and the inner </form> close tag prematurely closes the outer form
+ *    instead. This left rows after the first delete button outside any form
+ *    at all in the parsed DOM.
+ *  - Fixed by making the outer "select" form the ONLY form around the list:
+ *    it now has a real purpose (bulk delete of checked entries) with a
+ *    "Delete selected" submit button. Per-row "Delete" is now a plain link
+ *    (not a form) to a new confirm-delete view, so nothing nests.
+ *  - Destructive actions (single delete, bulk delete) now go through a
+ *    dedicated server-side confirmation view with its own single, valid
+ *    <form>, rather than relying on a JS confirm() dialog as the only
+ *    safeguard. This works with JavaScript disabled.
+ *
  * Bug fix (Redux 2.0.1):
  *  - Added "Allow comments" toggle to the new-entry and edit-entry forms.
  *    The blog table has a comments_on column and FanUpdate_Post::commentsOn()
@@ -61,11 +80,21 @@ $showNav  = true;
 $showform = false;
 $clean    = [];
 
+// Delete-confirmation view state (single entry).
+$confirmDeleteId    = 0;
+$confirmDeleteTitle = '';
+
+// Delete-confirmation view state (bulk).
+/** @var int[] */
+$confirmBulkIds = [];
+
 // ─────────────────────────────────────────────────────────────────────────────
 // POST / GET handler
 // ─────────────────────────────────────────────────────────────────────────────
 
-if (isset($_POST['action'])) {
+if (isset($_POST['action']) && !$fu->verifyCsrfOrFail()) {
+    // CSRF check failed — error already queued; skip processing the action.
+} elseif (isset($_POST['action'])) {
 
     $clean['title']      = isset($_POST['title'])      ? clean_input($_POST['title'])            : '';
     // allowtags=true: the body is HTML — images, links, bold, etc. must be preserved.
@@ -75,11 +104,19 @@ if (isset($_POST['action'])) {
     $clean['cat']        = isset($_POST['cat'])         ? (int) $_POST['cat']               : 0;
     $clean['is_public']    = isset($_POST['is_public'])     ? (int) $_POST['is_public']         : 0;
     $clean['comments_on'] = isset($_POST['comments_on'])   ? (int) $_POST['comments_on']       : 0;
-    $clean['id']         = isset($_POST['id'])          ? (int) $_POST['id']                : 0;
+    // 'id' is scalar for single-entry actions (add/update/delete/preview) and an
+    // array (id[]) for bulk-delete actions — never both on the same request.
+    $clean['id']         = (isset($_POST['id']) && !is_array($_POST['id'])) ? (int) $_POST['id'] : 0;
     $clean['date']       = isset($_POST['date'])        ? clean_input($_POST['date'])        : '';
 
-    $sql_title  = $fu->db->Escape($clean['title']);
-    $sql_body   = $fu->db->Escape($clean['body']);
+    /** @var int[] $bulkIds */
+    $bulkIds = [];
+    if (isset($_POST['id']) && is_array($_POST['id'])) {
+        $bulkIds = array_values(array_unique(array_filter(
+            array_map('intval', $_POST['id']),
+            static fn (int $v): bool => $v > 0
+        )));
+    }
 
     if ($_POST['action'] === 'preview') {
 
@@ -91,15 +128,23 @@ if (isset($_POST['action'])) {
         // blog table has no cat_id column — category is stored in catjoin
         $query = "INSERT INTO " . $fu->getOpt('blog_table') . "
             (title, body, is_public, comments_on, added)
-            VALUES ('$sql_title','$sql_body','" . (int)$clean['is_public'] . "','" . (int)$clean['comments_on'] . "','" . $fu->db->Escape($clean['date']) . "')";
+            VALUES (?, ?, ?, ?, ?)";
 
-        if ($fu->db->Execute($query)) {
+        if ($fu->db->Execute($query, 'Could not execute query.', [
+            $clean['title'],
+            $clean['body'],
+            (int) $clean['is_public'],
+            (int) $clean['comments_on'],
+            $clean['date'],
+        ])) {
             $new_entry_id = $fu->db->GetLastSequence();
             // Write the category link into the catjoin table
             if ($clean['cat'] > 0) {
                 $fu->db->Execute(
                     "INSERT INTO " . $fu->getOpt('catjoin_table') . "
-                    (entry_id, cat_id) VALUES ('$new_entry_id','" . (int)$clean['cat'] . "')"
+                    (entry_id, cat_id) VALUES (?, ?)",
+                    'Could not execute query.',
+                    [$new_entry_id, (int) $clean['cat']]
                 );
             }
             $fu->addSuccess('Entry <strong>' . htmlspecialchars($clean['title'], ENT_QUOTES, 'UTF-8') . '</strong> added.');
@@ -111,22 +156,33 @@ if (isset($_POST['action'])) {
 
         // blog table has no cat_id column — update post fields only
         $query = "UPDATE " . $fu->getOpt('blog_table') . "
-            SET title='$sql_title', body='$sql_body',
-                is_public='" . (int)$clean['is_public'] . "',
-                comments_on='" . (int)$clean['comments_on'] . "',
-                added='" . $fu->db->Escape($clean['date']) . "'
-            WHERE entry_id='" . (int)$clean['id'] . "'";
+            SET title = ?, body = ?,
+                is_public = ?,
+                comments_on = ?,
+                added = ?
+            WHERE entry_id = ?";
 
-        if ($fu->db->Execute($query)) {
+        if ($fu->db->Execute($query, 'Could not execute query.', [
+            $clean['title'],
+            $clean['body'],
+            (int) $clean['is_public'],
+            (int) $clean['comments_on'],
+            $clean['date'],
+            (int) $clean['id'],
+        ])) {
             // Replace the category link in catjoin
             $fu->db->Execute(
                 "DELETE FROM " . $fu->getOpt('catjoin_table') . "
-                WHERE entry_id='" . (int)$clean['id'] . "'"
+                WHERE entry_id = ?",
+                'Could not execute query.',
+                [(int) $clean['id']]
             );
             if ($clean['cat'] > 0) {
                 $fu->db->Execute(
                     "INSERT INTO " . $fu->getOpt('catjoin_table') . "
-                    (entry_id, cat_id) VALUES ('" . (int)$clean['id'] . "','" . (int)$clean['cat'] . "')"
+                    (entry_id, cat_id) VALUES (?, ?)",
+                    'Could not execute query.',
+                    [(int) $clean['id'], (int) $clean['cat']]
                 );
             }
             $fu->addSuccess('Entry <strong>' . htmlspecialchars($clean['title'], ENT_QUOTES, 'UTF-8') . '</strong> updated.');
@@ -136,24 +192,66 @@ if (isset($_POST['action'])) {
         }
     } elseif ($_POST['action'] === 'delete') {
 
-        $fu->db->Execute("DELETE FROM " . $fu->getOpt('blog_table') . " WHERE entry_id='" . (int)$clean['id'] . "'");
-        $fu->db->Execute("DELETE FROM " . $fu->getOpt('catjoin_table') . " WHERE entry_id='" . (int)$clean['id'] . "'");
-        $fu->db->Execute("DELETE FROM " . $fu->getOpt('comments_table') . " WHERE entry_id='" . (int)$clean['id'] . "'");
+        // Reached only from the single-entry confirm-delete view's form.
+        $fu->db->Execute("DELETE FROM " . $fu->getOpt('blog_table') . " WHERE entry_id = ?", 'Could not execute query.', [(int) $clean['id']]);
+        $fu->db->Execute("DELETE FROM " . $fu->getOpt('catjoin_table') . " WHERE entry_id = ?", 'Could not execute query.', [(int) $clean['id']]);
+        $fu->db->Execute("DELETE FROM " . $fu->getOpt('comments_table') . " WHERE entry_id = ?", 'Could not execute query.', [(int) $clean['id']]);
         $fu->addSuccess('Entry deleted.');
+
+    } elseif ($_POST['action'] === 'bulk-delete') {
+
+        // Submitted from the entry list's select form — show a confirmation
+        // view listing exactly which entries will be removed before anything
+        // is actually deleted.
+        if (empty($bulkIds)) {
+            $fu->addErr('No entries were selected.');
+        } else {
+            $confirmBulkIds = $bulkIds;
+        }
+
+    } elseif ($_POST['action'] === 'bulk-delete-confirmed') {
+
+        // Reached only from the bulk confirm-delete view's form.
+        if (empty($bulkIds)) {
+            $fu->addErr('No entries were selected.');
+        } else {
+            foreach ($bulkIds as $bulkId) {
+                $fu->db->Execute("DELETE FROM " . $fu->getOpt('blog_table') . " WHERE entry_id = ?", 'Could not execute query.', [$bulkId]);
+                $fu->db->Execute("DELETE FROM " . $fu->getOpt('catjoin_table') . " WHERE entry_id = ?", 'Could not execute query.', [$bulkId]);
+                $fu->db->Execute("DELETE FROM " . $fu->getOpt('comments_table') . " WHERE entry_id = ?", 'Could not execute query.', [$bulkId]);
+            }
+            $count = count($bulkIds);
+            $fu->addSuccess($count . ' ' . ($count === 1 ? 'entry' : 'entries') . ' deleted.');
+        }
     }
+} elseif (isset($_GET['action']) && $_GET['action'] === 'confirm-delete' && isset($_GET['id']) && is_numeric($_GET['id'])) {
+
+    // Single-entry delete confirmation view (GET, no side effects).
+    $confirmDeleteId = (int) $_GET['id'];
+    $query = "SELECT entry_id, title FROM " . $fu->getOpt('blog_table') . " WHERE entry_id = ?";
+    $fu->db->Execute($query, 'Could not execute query.', [$confirmDeleteId]);
+    if ($row = $fu->db->ReadRecord()) {
+        $confirmDeleteTitle = (string) $row['title'];
+    } else {
+        $confirmDeleteId = 0;
+        $fu->addErr('That entry no longer exists.');
+    }
+    $fu->db->FreeResult();
 } elseif (isset($_GET['id']) && is_numeric($_GET['id'])) {
 
     $showform = true;
     $id       = (int) $_GET['id'];
-    $query    = "SELECT * FROM " . $fu->getOpt('blog_table') . " WHERE entry_id='$id'";
-    $fu->db->Execute($query);
+    $query    = "SELECT * FROM " . $fu->getOpt('blog_table') . " WHERE entry_id = ?";
+    $fu->db->Execute($query, 'Could not execute query.', [$id]);
     if ($row = $fu->db->ReadRecord()) {
         $clean = $row;
     }
     $fu->db->FreeResult();
     // Load the category from catjoin (blog table has no cat_id column)
     $fu->db->Execute(
-        "SELECT cat_id FROM " . $fu->getOpt('catjoin_table') . " WHERE entry_id='$id' LIMIT 1"
+        "SELECT cat_id FROM " . $fu->getOpt('catjoin_table') . " WHERE entry_id = ? LIMIT 1",
+        'Could not execute query.',
+        [$id]
     );
     if ($cat_row = $fu->db->ReadRecord()) {
         $clean['cat_id'] = (int) $cat_row['cat_id'];
@@ -196,6 +294,7 @@ if ($showform) {
 ?>
 
     <form action="blog.php" method="post">
+        <?php echo $fu->csrfField(); ?>
 
         <div class="col-layout-12">
 
@@ -282,8 +381,8 @@ if ($showform) {
                     </div>
                     <?php if ($entry_id > 0) { ?>
                         <div class="secondary">
-                            <input type="submit" name="action" value="delete" class="delete"
-                                title="Delete this entry, accesskey x" accesskey="x" />
+                            <a href="blog.php?action=confirm-delete&id=<?php echo $entry_id; ?>" class="delete button"
+                                title="Delete this entry, accesskey x" accesskey="x">Delete</a>
                         </div>
                     <?php } ?>
                 </fieldset>
@@ -304,6 +403,76 @@ if ($showform) {
         </div>
 
     </form>
+
+<?php } elseif ($confirmDeleteId > 0) {
+
+    // ── Single-entry delete confirmation ────────────────────────────────────
+?>
+
+    <fieldset>
+        <legend>Confirm deletion</legend>
+        <p>
+            Are you sure you want to delete
+            <strong><?php echo htmlspecialchars($confirmDeleteTitle, ENT_QUOTES, 'UTF-8'); ?></strong>?
+            This cannot be undone, and all comments on this entry will also be deleted.
+        </p>
+
+        <form action="blog.php" method="post">
+            <?php echo $fu->csrfField(); ?>
+            <input type="hidden" name="id" value="<?php echo $confirmDeleteId; ?>" />
+            <div class="primary">
+                <input type="submit" name="action" value="delete" class="delete" data-skip-confirm="1"
+                    title="Permanently delete this entry, accesskey s" accesskey="s" />
+                <a href="blog.php" class="button">Cancel</a>
+            </div>
+        </form>
+    </fieldset>
+
+<?php } elseif (!empty($confirmBulkIds)) {
+
+    // ── Bulk delete confirmation ────────────────────────────────────────────
+
+    $placeholders = implode(',', array_fill(0, count($confirmBulkIds), '?'));
+    $fu->db->Execute(
+        "SELECT entry_id, title FROM " . $fu->getOpt('blog_table') . " WHERE entry_id IN ($placeholders)",
+        'Could not execute query.',
+        $confirmBulkIds
+    );
+    $confirmRows = [];
+    while ($row = $fu->db->ReadRecord()) {
+        $confirmRows[] = $row;
+    }
+    $fu->db->FreeResult();
+
+    $bulkCount = count($confirmBulkIds);
+?>
+
+    <fieldset>
+        <legend>Confirm deletion</legend>
+        <p>
+            Are you sure you want to delete the following <?php echo $bulkCount; ?>
+            <?php echo $bulkCount === 1 ? 'entry' : 'entries'; ?>?
+            This cannot be undone, and all comments on these entries will also be deleted.
+        </p>
+
+        <ul class="catlist">
+            <?php foreach ($confirmRows as $row) { ?>
+                <li><?php echo htmlspecialchars((string) $row['title'], ENT_QUOTES, 'UTF-8'); ?></li>
+            <?php } ?>
+        </ul>
+
+        <form action="blog.php" method="post">
+            <?php echo $fu->csrfField(); ?>
+            <?php foreach ($confirmBulkIds as $bulkId) { ?>
+                <input type="hidden" name="id[]" value="<?php echo (int) $bulkId; ?>" />
+            <?php } ?>
+            <div class="primary">
+                <input type="submit" name="action" value="bulk-delete-confirmed" class="delete" data-skip-confirm="1"
+                    title="Permanently delete these entries, accesskey s" accesskey="s" />
+                <a href="blog.php" class="button">Cancel</a>
+            </div>
+        </form>
+    </fieldset>
 
 <?php } else {
 
@@ -350,6 +519,7 @@ if ($showform) {
     </div>
 
     <form action="blog.php" method="post" id="blog-select-form">
+        <?php echo $fu->csrfField(); ?>
 
         <?php
         // Build the query:
@@ -361,21 +531,29 @@ if ($showform) {
      LEFT JOIN ' . $fu->getOpt('catjoin_table') . ' j ON b.entry_id = j.entry_id
      LEFT JOIN ' . $fu->getOpt('comments_table') . ' com ON b.entry_id = com.entry_id';
 
+        $entry_params = [];
+
         if ($filter_cat > 0) {
-            $entry_query .= ' JOIN ' . $fu->getOpt('catjoin_table') . " cat ON b.entry_id = cat.entry_id AND cat.cat_id = $filter_cat";
+            $entry_query .= ' JOIN ' . $fu->getOpt('catjoin_table') . ' cat ON b.entry_id = cat.entry_id AND cat.cat_id = ?';
+            $entry_params[] = $filter_cat;
         }
 
         if ($filter_search !== '') {
-            $sql_search = $fu->db->Escape($filter_search);
-            $entry_query .= " WHERE MATCH (b.title, b.body) AGAINST ('$sql_search' IN BOOLEAN MODE)";
+            $entry_query .= ' WHERE MATCH (b.title, b.body) AGAINST (? IN BOOLEAN MODE)';
+            $entry_params[] = $filter_search;
         }
 
         $entry_query .= ' GROUP BY b.entry_id ORDER BY b.added DESC';
 
         $fu->db->FreeResult();
-        $fu->db->ExecutePaginate($entry_query, (int) $fu->getOpt('num_per_page') ?: 20);
+        $fu->db->ExecutePaginate($entry_query, (int) $fu->getOpt('num_per_page') ?: 20, $entry_params);
 
         if ($fu->db->total_results > 0) { ?>
+
+            <div style="display:flex; justify-content:flex-end; margin-bottom:0.75rem;">
+                <input type="submit" name="action" value="bulk-delete" class="delete" data-skip-confirm="1"
+                    title="Delete all checked entries" />
+            </div>
 
             <table class="sortable" aria-label="Blog entries">
                 <thead>
@@ -412,11 +590,8 @@ if ($showform) {
                         echo '<td>' . $public_badge . '</td>';
                         echo '<td class="form"><a href="blog.php?id=' . $post->getID() . '" class="edit button">Edit</a></td>';
                         echo '<td class="form">'
-                            . '<form action="blog.php" method="post" style="display:inline;">'
-                            . '<input type="hidden" name="id" value="' . $post->getID() . '" />'
-                            . '<input type="submit" name="action" value="delete" class="delete"'
-                            . ' title="Delete \'' . htmlspecialchars($post->getTitle(), ENT_QUOTES, 'UTF-8') . '\'" />'
-                            . '</form></td>';
+                            . '<a href="blog.php?action=confirm-delete&id=' . $post->getID() . '" class="delete button" data-skip-confirm="1"'
+                            . ' title="Delete \'' . htmlspecialchars($post->getTitle(), ENT_QUOTES, 'UTF-8') . '\'">Delete</a></td>';
                         echo '</tr>';
                     }
                     ?>

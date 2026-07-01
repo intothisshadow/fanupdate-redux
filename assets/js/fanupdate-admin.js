@@ -42,6 +42,11 @@
  *  - The hidden file input is shared across all WYSIWYG instances on the page
  *    (there is only ever one on blog.php) and reused on subsequent uploads.
  *
+ * CSRF protection (added this release):
+ *  - fuUploadImage() appends the page's CSRF token (global `fuCsrfToken`,
+ *    emitted by admin/header.php) to the upload FormData so admin/upload.php
+ *    can verify it before processing the file.
+ *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
@@ -53,13 +58,28 @@
 function confirmDelete(e) {
     const button = getEventTarget(e);
     if (!confirm(button.title + '?')) {
+        // addEventListener handlers can't cancel the default action just by
+        // returning false (that only works for old-style onclick="" attributes)
+        // — preventDefault() is required to actually stop the click/submit.
+        e.preventDefault();
         return false;
     }
     return true;
 }
 
+/**
+ * confirmDeleteInit — wire a JS confirm() dialog onto every '.delete'
+ * element as a safeguard for pages that delete directly from a single form
+ * (e.g. the comment/category/blacklist/smilies/templates edit forms).
+ *
+ * Elements carrying [data-skip-confirm] are skipped: these are pages where a
+ * dedicated server-side confirmation view already exists (see admin/blog.php
+ * and admin/comment.php, Milestone 3), so a second JS-only dialog on top of
+ * it would just be redundant friction.
+ */
 function confirmDeleteInit() {
     css.getElementsByClass(document, 'delete', '*').forEach(el => {
+        if (el.hasAttribute('data-skip-confirm')) { return; }
         el.addEventListener('click', confirmDelete);
     });
 }
@@ -144,6 +164,7 @@ function fuUploadImage(e, uploadBtn) {
 
     const fd = new FormData();
     fd.append('image', file);
+    fd.append('csrf_token', typeof fuCsrfToken !== 'undefined' ? fuCsrfToken : '');
 
     fetch('upload.php', { method: 'POST', body: fd })
         .then(r => {

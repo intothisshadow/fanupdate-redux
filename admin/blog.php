@@ -3,78 +3,46 @@
 /*****************************************************************************
  * FanUpdate — admin/blog.php
  *
- * Milestone 3 — Admin UI Cleanup (nested forms):
- *  - The entry list previously wrapped the whole table (including each row's
- *    own <form>...delete...</form>) inside an outer
- *    <form id="blog-select-form">. Nested <form> elements are invalid HTML5 —
- *    per the parsing spec, the browser ignores the inner <form> start tag
- *    (the "form element pointer" is already set), so the inner hidden id
- *    field and delete button silently become children of the OUTER form,
- *    and the inner </form> close tag prematurely closes the outer form
- *    instead. This left rows after the first delete button outside any form
- *    at all in the parsed DOM.
- *  - Fixed by making the outer "select" form the ONLY form around the list:
- *    it now has a real purpose (bulk delete of checked entries) with a
- *    "Delete selected" submit button. Per-row "Delete" is now a plain link
- *    (not a form) to a new confirm-delete view, so nothing nests.
- *  - Destructive actions (single delete, bulk delete) now go through a
- *    dedicated server-side confirmation view with its own single, valid
- *    <form>, rather than relying on a JS confirm() dialog as the only
- *    safeguard. This works with JavaScript disabled.
+ * Blog entry CRUD (add/edit/preview/delete, single and bulk) and the entry
+ * list with category filter and search. Delegates persistence to
+ * BlogService/BlogRepository; this page parses/sanitises $_POST and $_GET,
+ * enforces CSRF, and renders. The category-dropdown queries read
+ * collective/category data (not blog-entry data) and still query $fu->db
+ * directly.
  *
- * Bug fix (Redux 2.0.1):
- *  - Added "Allow comments" toggle to the new-entry and edit-entry forms.
- *    The blog table has a comments_on column and FanUpdate_Post::commentsOn()
- *    reads it, but the admin form never exposed it — every entry was saved
- *    with comments_on = 0 (off) because the field was absent from the form
- *    and therefore absent from both INSERT and UPDATE queries.
- *    Fix: read comments_on from POST, include it in INSERT/UPDATE, and render
- *    a <select> for it in the Settings fieldset.
+ * Destructive actions (single and bulk delete) go through a dedicated
+ * server-side confirmation view with its own <form>, so they work with
+ * JavaScript disabled. The entry list uses a single outer <form> (bulk
+ * delete); per-row delete is a plain link to the confirmation view rather
+ * than a nested <form>, since nested forms are invalid HTML5.
  *
- * Bug fix (this release):
- *  - clean_input($_POST['body']) was called without allowtags=true, causing
- *    strip_tags() to remove every HTML tag from the post body on save.
- *    Images inserted via the WYSIWYG image button (e.g.
- *    <a href="…" class="fu-lightbox"><img src="…" /></a>) were silently
- *    stripped on the first save. Fixed: body cleaned with allowtags=true.
- *
- * Bug fix (this release):
- *  - New-entry date default used date('Y-m-d H:i:s') — PHP server local time.
- *    show-blog.php filters with WHERE added <= UTC_TIMESTAMP(). On servers
- *    whose PHP timezone is ahead of UTC (e.g. UTC+3 in Finland) new entries
- *    got a local timestamp that appeared to be in the future relative to UTC,
- *    so they were excluded from the front-end query and never shown to visitors.
- *    Fixed: default changed to gmdate('Y-m-d H:i:s') (UTC), matching the
- *    UTC_TIMESTAMP() comparator. The date field in the form still shows the
- *    UTC timestamp for the admin to edit; timezone_offset handles display
- *    conversion at render time in FanUpdate_Post::getDateFormatted().
- *
- * Bug fix (Redux 1.5.2):
- *  - Added class="wysiwyg" to the body <textarea> so fanupdate-admin.js
- *    can attach the WYSIWYG toolbar (makeWysiwyg targets textarea.wysiwyg).
- *    Previously the textarea had no class, so the toolbar was never inserted
- *    and the JS call to makeWysiwyg was silently a no-op.
- *  - Category <select> on new-entry form was using $clean['cat_id'] for
- *    selected state, but on a new entry $clean has no 'cat_id' key.  Changed
- *    to check $clean['cat'] first (set on POST) then $clean['cat_id'] (set
- *    when editing an existing entry loaded from DB).
- *
- * HTML modernisation (unchanged from prior version):
- *  - PNG tick/cross images → CSS badge spans
- *  - <table summary=""> → <table aria-label="">
- *  - type="text/javascript" removed from <script> tags
- *  - page-header row with new-entry-btn replacing new-entry-button.png
- *  - All other PHP/SQL logic preserved exactly
+ * Notes on non-obvious behaviour:
+ *  - The body is cleaned with clean_input(..., allowtags: true) since it is
+ *    HTML (images, links, formatting from the WYSIWYG editor) and must not
+ *    be stripped.
+ *  - New-entry dates default to gmdate(...) (UTC) to match the
+ *    UTC_TIMESTAMP() comparator used in show-blog.php; a local-time default
+ *    would hide new entries on servers whose PHP timezone is ahead of UTC.
  ******************************************************************************/
 
 declare(strict_types=1);
 
 require_once('../blog-config.php');
 require_once('../functions.php');
+require_once('../class/Repository/BlogRepositoryInterface.php');
+require_once('../class/Repository/BlogRepository.php');
+require_once('../class/Service/BlogService.php');
 
 $fu = FanUpdate::instance();
 $fu->addOptFromDb();
 $fu->login();
+
+$blogService = new BlogService(new BlogRepository(
+    $fu->db,
+    (string) $fu->getOpt('blog_table'),
+    (string) $fu->getOpt('catjoin_table'),
+    (string) $fu->getOpt('comments_table')
+));
 
 $showNav  = true;
 $showform = false;
@@ -125,28 +93,18 @@ if (isset($_POST['action']) && !$fu->verifyCsrfOrFail()) {
 
     } elseif ($_POST['action'] === 'add') {
 
-        // blog table has no cat_id column — category is stored in catjoin
-        $query = "INSERT INTO " . $fu->getOpt('blog_table') . "
-            (title, body, is_public, comments_on, added)
-            VALUES (?, ?, ?, ?, ?)";
+        // blog table has no cat_id column — category is stored in catjoin,
+        // linked by BlogService::createEntry() after a successful insert.
+        $newEntryId = $blogService->createEntry([
+            'title'       => $clean['title'],
+            'body'        => $clean['body'],
+            'cat'         => $clean['cat'],
+            'is_public'   => $clean['is_public'],
+            'comments_on' => $clean['comments_on'],
+            'date'        => $clean['date'],
+        ]);
 
-        if ($fu->db->Execute($query, 'Could not execute query.', [
-            $clean['title'],
-            $clean['body'],
-            (int) $clean['is_public'],
-            (int) $clean['comments_on'],
-            $clean['date'],
-        ])) {
-            $new_entry_id = $fu->db->GetLastSequence();
-            // Write the category link into the catjoin table
-            if ($clean['cat'] > 0) {
-                $fu->db->Execute(
-                    "INSERT INTO " . $fu->getOpt('catjoin_table') . "
-                    (entry_id, cat_id) VALUES (?, ?)",
-                    'Could not execute query.',
-                    [$new_entry_id, (int) $clean['cat']]
-                );
-            }
+        if ($newEntryId > 0) {
             $fu->addSuccess('Entry <strong>' . htmlspecialchars($clean['title'], ENT_QUOTES, 'UTF-8') . '</strong> added.');
         } else {
             $fu->addErr('Failed to add entry.');
@@ -154,37 +112,18 @@ if (isset($_POST['action']) && !$fu->verifyCsrfOrFail()) {
         }
     } elseif ($_POST['action'] === 'update') {
 
-        // blog table has no cat_id column — update post fields only
-        $query = "UPDATE " . $fu->getOpt('blog_table') . "
-            SET title = ?, body = ?,
-                is_public = ?,
-                comments_on = ?,
-                added = ?
-            WHERE entry_id = ?";
+        // blog table has no cat_id column — BlogService::updateEntry()
+        // replaces the catjoin link after a successful update.
+        $ok = $blogService->updateEntry($clean['id'], [
+            'title'       => $clean['title'],
+            'body'        => $clean['body'],
+            'cat'         => $clean['cat'],
+            'is_public'   => $clean['is_public'],
+            'comments_on' => $clean['comments_on'],
+            'date'        => $clean['date'],
+        ]);
 
-        if ($fu->db->Execute($query, 'Could not execute query.', [
-            $clean['title'],
-            $clean['body'],
-            (int) $clean['is_public'],
-            (int) $clean['comments_on'],
-            $clean['date'],
-            (int) $clean['id'],
-        ])) {
-            // Replace the category link in catjoin
-            $fu->db->Execute(
-                "DELETE FROM " . $fu->getOpt('catjoin_table') . "
-                WHERE entry_id = ?",
-                'Could not execute query.',
-                [(int) $clean['id']]
-            );
-            if ($clean['cat'] > 0) {
-                $fu->db->Execute(
-                    "INSERT INTO " . $fu->getOpt('catjoin_table') . "
-                    (entry_id, cat_id) VALUES (?, ?)",
-                    'Could not execute query.',
-                    [(int) $clean['id'], (int) $clean['cat']]
-                );
-            }
+        if ($ok) {
             $fu->addSuccess('Entry <strong>' . htmlspecialchars($clean['title'], ENT_QUOTES, 'UTF-8') . '</strong> updated.');
         } else {
             $fu->addErr('Failed to update entry.');
@@ -193,9 +132,7 @@ if (isset($_POST['action']) && !$fu->verifyCsrfOrFail()) {
     } elseif ($_POST['action'] === 'delete') {
 
         // Reached only from the single-entry confirm-delete view's form.
-        $fu->db->Execute("DELETE FROM " . $fu->getOpt('blog_table') . " WHERE entry_id = ?", 'Could not execute query.', [(int) $clean['id']]);
-        $fu->db->Execute("DELETE FROM " . $fu->getOpt('catjoin_table') . " WHERE entry_id = ?", 'Could not execute query.', [(int) $clean['id']]);
-        $fu->db->Execute("DELETE FROM " . $fu->getOpt('comments_table') . " WHERE entry_id = ?", 'Could not execute query.', [(int) $clean['id']]);
+        $blogService->deleteEntry($clean['id']);
         $fu->addSuccess('Entry deleted.');
 
     } elseif ($_POST['action'] === 'bulk-delete') {
@@ -215,11 +152,7 @@ if (isset($_POST['action']) && !$fu->verifyCsrfOrFail()) {
         if (empty($bulkIds)) {
             $fu->addErr('No entries were selected.');
         } else {
-            foreach ($bulkIds as $bulkId) {
-                $fu->db->Execute("DELETE FROM " . $fu->getOpt('blog_table') . " WHERE entry_id = ?", 'Could not execute query.', [$bulkId]);
-                $fu->db->Execute("DELETE FROM " . $fu->getOpt('catjoin_table') . " WHERE entry_id = ?", 'Could not execute query.', [$bulkId]);
-                $fu->db->Execute("DELETE FROM " . $fu->getOpt('comments_table') . " WHERE entry_id = ?", 'Could not execute query.', [$bulkId]);
-            }
+            $blogService->deleteEntries($bulkIds);
             $count = count($bulkIds);
             $fu->addSuccess($count . ' ' . ($count === 1 ? 'entry' : 'entries') . ' deleted.');
         }
@@ -228,35 +161,21 @@ if (isset($_POST['action']) && !$fu->verifyCsrfOrFail()) {
 
     // Single-entry delete confirmation view (GET, no side effects).
     $confirmDeleteId = (int) $_GET['id'];
-    $query = "SELECT entry_id, title FROM " . $fu->getOpt('blog_table') . " WHERE entry_id = ?";
-    $fu->db->Execute($query, 'Could not execute query.', [$confirmDeleteId]);
-    if ($row = $fu->db->ReadRecord()) {
-        $confirmDeleteTitle = (string) $row['title'];
+    $confirmation    = $blogService->getDeleteConfirmation($confirmDeleteId);
+    if ($confirmation !== null) {
+        $confirmDeleteTitle = $confirmation['title'];
     } else {
         $confirmDeleteId = 0;
         $fu->addErr('That entry no longer exists.');
     }
-    $fu->db->FreeResult();
 } elseif (isset($_GET['id']) && is_numeric($_GET['id'])) {
 
     $showform = true;
     $id       = (int) $_GET['id'];
-    $query    = "SELECT * FROM " . $fu->getOpt('blog_table') . " WHERE entry_id = ?";
-    $fu->db->Execute($query, 'Could not execute query.', [$id]);
-    if ($row = $fu->db->ReadRecord()) {
-        $clean = $row;
+    $entry    = $blogService->getEntryForEdit($id);
+    if ($entry !== null) {
+        $clean = $entry;
     }
-    $fu->db->FreeResult();
-    // Load the category from catjoin (blog table has no cat_id column)
-    $fu->db->Execute(
-        "SELECT cat_id FROM " . $fu->getOpt('catjoin_table') . " WHERE entry_id = ? LIMIT 1",
-        'Could not execute query.',
-        [$id]
-    );
-    if ($cat_row = $fu->db->ReadRecord()) {
-        $clean['cat_id'] = (int) $cat_row['cat_id'];
-    }
-    $fu->db->FreeResult();
 } elseif (isset($_GET['action']) && $_GET['action'] === 'new') {
     $showform = true;
     // gmdate() writes UTC — must match the UTC_TIMESTAMP() comparator in
@@ -432,19 +351,8 @@ if ($showform) {
 
     // ── Bulk delete confirmation ────────────────────────────────────────────
 
-    $placeholders = implode(',', array_fill(0, count($confirmBulkIds), '?'));
-    $fu->db->Execute(
-        "SELECT entry_id, title FROM " . $fu->getOpt('blog_table') . " WHERE entry_id IN ($placeholders)",
-        'Could not execute query.',
-        $confirmBulkIds
-    );
-    $confirmRows = [];
-    while ($row = $fu->db->ReadRecord()) {
-        $confirmRows[] = $row;
-    }
-    $fu->db->FreeResult();
-
-    $bulkCount = count($confirmBulkIds);
+    $confirmRows = $blogService->getBulkDeleteConfirmation($confirmBulkIds);
+    $bulkCount   = count($confirmBulkIds);
 ?>
 
     <fieldset>
@@ -457,7 +365,7 @@ if ($showform) {
 
         <ul class="catlist">
             <?php foreach ($confirmRows as $row) { ?>
-                <li><?php echo htmlspecialchars((string) $row['title'], ENT_QUOTES, 'UTF-8'); ?></li>
+                <li><?php echo htmlspecialchars($row['title'], ENT_QUOTES, 'UTF-8'); ?></li>
             <?php } ?>
         </ul>
 
@@ -522,31 +430,7 @@ if ($showform) {
         <?php echo $fu->csrfField(); ?>
 
         <?php
-        // Build the query:
-        // catjoin LEFT JOIN to get cat info, comments LEFT JOIN for counts.
-        // Category filter requires an additional JOIN to avoid ambiguous cat_id.
-        $entry_query = 'SELECT b.entry_id, b.title, b.is_public, b.comments_on, b.added,
-     COUNT(DISTINCT com.comment_id) AS num_comments
-     FROM ' . $fu->getOpt('blog_table') . ' b
-     LEFT JOIN ' . $fu->getOpt('catjoin_table') . ' j ON b.entry_id = j.entry_id
-     LEFT JOIN ' . $fu->getOpt('comments_table') . ' com ON b.entry_id = com.entry_id';
-
-        $entry_params = [];
-
-        if ($filter_cat > 0) {
-            $entry_query .= ' JOIN ' . $fu->getOpt('catjoin_table') . ' cat ON b.entry_id = cat.entry_id AND cat.cat_id = ?';
-            $entry_params[] = $filter_cat;
-        }
-
-        if ($filter_search !== '') {
-            $entry_query .= ' WHERE MATCH (b.title, b.body) AGAINST (? IN BOOLEAN MODE)';
-            $entry_params[] = $filter_search;
-        }
-
-        $entry_query .= ' GROUP BY b.entry_id ORDER BY b.added DESC';
-
-        $fu->db->FreeResult();
-        $fu->db->ExecutePaginate($entry_query, (int) $fu->getOpt('num_per_page') ?: 20, $entry_params);
+        $blogService->search($filter_cat, $filter_search, (int) $fu->getOpt('num_per_page') ?: 20);
 
         if ($fu->db->total_results > 0) { ?>
 

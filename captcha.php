@@ -6,23 +6,9 @@ declare(strict_types=1);
  * Copyright (c) 2007 by Jenny Ferenc (contributor) <jenny@prism-perfect.net>
  * Copyright (c) 2020 by Ekaterina (contributor) http://scripts.robotess.net
  *
- * PHP 8.2 fixes:
- *  - declare(strict_types=1) added
- *  - $font declared as a typed property with explicit path using __DIR__
- *    (resolves correctly regardless of where captcha.php is called from)
- *  - mt_rand() replaced with random_int() (cryptographically secure)
- *  - Dynamic property creation removed (class property declared explicitly)
- *
- * Bug fix (Redux 2.0.1):
- *  - session_set_cookie_params() called before session_start() to add
- *    Secure + SameSite=Lax so the PHPSESSID cookie issued here is sent
- *    correctly when process.php receives the comment submission over HTTPS.
- *    Without Secure the browser may not send the cookie with the AJAX POST,
- *    causing $_SESSION['security_code'] to be absent in process.php and
- *    every CAPTCHA check to fail silently.
- *  - $_SESSION['security_code'] assignment moved before image output so the
- *    session value is set as early as possible (before any output that could
- *    theoretically abort execution).
+ * Generates a CAPTCHA image and stores the expected code in the session.
+ * Session cookie params (Secure + SameSite=Lax) must match process.php so
+ * both requests share the same session over HTTPS.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by

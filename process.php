@@ -6,47 +6,9 @@ declare(strict_types=1);
  * Copyright (c) Jenny Ferenc <jenny@prism-perfect.net>
  * Copyright (c) 2020 by Ekaterina (contributor) http://scripts.robotess.net
  *
- * Bug fix (Redux 2.0.4):
- *  - Entry lookup used Execute() + NumRows() + GetRecord() in sequence.
- *    GetRecord() calls ReadRecord() then FreeResult() internally, so by the
- *    time NumRows() ran the result had already been freed — it always returned
- *    0, the entry was never found, no comment was saved, and the AJAX
- *    response was empty. Fixed: replaced the three-call sequence with a
- *    single GetRecord() call which executes, fetches, and frees atomically.
- *  - $result_string was only assigned inside deeply-nested conditionals;
- *    any early exit left it undefined and triggered a PHP notice on echo.
- *    Initialised to '' at the top of the POST block.
- *
- * Bug fix (Redux 2.0.7):
- *  - Captcha session was destroyed unconditionally immediately after the
- *    check — regardless of whether the check passed or failed. On HTTPS
- *    sites where install_url was still set to http://, the PHPSESSID cookie
- *    set by captcha.php (loaded as http://) would not be sent with the AJAX
- *    POST to process.php (upgraded to https://) because the cookie lacked
- *    the Secure flag. The session was therefore always empty and the captcha
- *    check always failed silently with no output, causing the empty-response
- *    symptom. Fixed:
- *    (1) session_set_cookie_params() called before session_start() to add
- *        Secure + SameSite=Lax so the PHPSESSID cookie is sent correctly
- *        over HTTPS.
- *    (2) Session is only destroyed after a successful captcha check, not on
- *        failure — allowing the user to retry without reloading the page.
- *    Also: captcha.php updated identically so both ends use the same session
- *    cookie parameters.
- *
- * Spam protection improvements (Redux 2.0.1):
- *  - Honeypot field: a hidden input named 'fax' is injected into the comment
- *    form. Real users never see it (CSS display:none); bots fill it in
- *    automatically. Any non-empty value → silent discard.
- *  - Time gate: a hidden 'fu_form_time' timestamp is injected when the form
- *    renders. Submissions arriving in under FU_MIN_COMMENT_SECONDS (3 s) are
- *    silently discarded as bot traffic.
- *  - Duplicate guard: identical comment text from the same IP within
- *    FU_DUPE_WINDOW seconds (5 min) is silently discarded.
- *  - Per-IP rate limit: more than CommentRateLimiter::MAX_COMMENTS_PER_WINDOW
- *    comments in CommentRateLimiter::WINDOW_SECONDS trigger a 10-minute block.
- *    All four checks run before any database work and before any user-visible
- *    error messages, so bot traffic is silently dropped.
+ * Handles comment submission: spam gates (honeypot, time gate, per-IP rate
+ * limit, duplicate guard), CSRF/captcha verification, blacklist filtering,
+ * point-based spam scoring, and comment persistence.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -160,6 +122,12 @@ if (isset($_POST['submit_comment'])) {
     } elseif (empty($clean['comment'])) {
 
         $fu->addErr('Your comment is blank. You must have something to say!');
+
+        // an update install may be swapping files right now — reject rather
+        // than risk a request straddling old and new code mid-write
+    } elseif ($fu->isMaintenanceModeEnabled()) {
+
+        $fu->addErr('Comments are temporarily unavailable while the site is being updated. Please try again in a few minutes.');
     } else {
 
         $fu->addOptFromDb();

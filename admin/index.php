@@ -22,12 +22,46 @@ declare(strict_types=1);
 
 require_once('../blog-config.php');
 require_once('../functions.php');
+require_once('../version.php');
+require_once('../class/Update/ReleaseInfo.php');
+require_once('../class/Update/UpdateProviderInterface.php');
+require_once('../class/Update/GitHubUpdateProvider.php');
+require_once('../class/Repository/UpdateRepositoryInterface.php');
+require_once('../class/Repository/UpdateRepository.php');
+require_once('../class/Service/UpdateManager.php');
 
 $fu = FanUpdate::instance();
 $fu->addOptFromDb();
 $fu->login();
 
 $showNav = true;
+
+// ── Update notice ───────────────────────────────────────────────────────
+// runAutomaticCheckIfDue() only makes a live GitHub call when automatic
+// checks are enabled AND the configured interval has actually elapsed since
+// the last check (manual or automatic) — otherwise it's exactly as cheap as
+// the cached-only getStatusSummary() this used to call. This is the "no cron
+// available" opportunistic-check pattern: the Dashboard is the
+// highest-traffic admin page, so it's the natural place to notice a check
+// is due without needing a real cron job.
+
+$updateRepository = new UpdateRepository($fu->db, (string) $fu->getOpt('options_table'));
+$updateConfig     = $updateRepository->getConfig();
+$updateProvider   = new GitHubUpdateProvider(
+    FU_UPDATE_PROVIDER_OWNER,
+    FU_UPDATE_PROVIDER_REPO,
+    (!empty($updateConfig['githubToken']) && is_string($updateConfig['githubToken'])) ? $updateConfig['githubToken'] : null
+);
+$updateManager  = new UpdateManager($updateProvider, $updateRepository, FU_VERSION);
+$updateSummary  = $updateManager->runAutomaticCheckIfDue();
+
+if (isset($_POST['action']) && $_POST['action'] === 'dismiss_update') {
+    if ($fu->verifyCsrfOrFail()) {
+        $updateManager->dismissNotice();
+        header('Location: index.php');
+        exit;
+    }
+}
 
 // ── Unapproved comment count ──────────────────────────────────────────────
 
@@ -54,6 +88,27 @@ $fu->getHeader('Dashboard');
         <i class="ti ti-plus" aria-hidden="true"></i> New entry
     </a>
 </div>
+
+<?php if ($updateSummary['updateAvailable'] && !$updateSummary['noticeDismissed']) { ?>
+<div class="success" style="display:flow-root;">
+    <p style="margin-bottom:0.5rem;">
+        <strong>FanUpdate <?php echo htmlspecialchars((string) $updateSummary['latestVersion'], ENT_QUOTES, 'UTF-8'); ?> is available</strong>
+        (you have <?php echo htmlspecialchars($updateSummary['installedVersion'], ENT_QUOTES, 'UTF-8'); ?>).
+        <?php if (!empty($updateSummary['latestName'])) { ?>&mdash; <?php echo htmlspecialchars((string) $updateSummary['latestName'], ENT_QUOTES, 'UTF-8'); ?><?php } ?>
+    </p>
+    <p style="margin-bottom:0;">
+        <a href="update.php" class="button update" style="margin-right:0.5rem;">Update now</a>
+        <?php if (!empty($updateSummary['latestUrl'])) { ?>
+        <a href="<?php echo htmlspecialchars((string) $updateSummary['latestUrl'], ENT_QUOTES, 'UTF-8'); ?>" target="_blank" rel="noopener">View release notes</a>
+        <?php } ?>
+        <form action="index.php" method="post" style="display:inline;">
+            <?php echo $fu->csrfField(); ?>
+            <input type="hidden" name="action" value="dismiss_update" />
+            <button type="submit" class="button" style="margin-left:0.5rem;">Dismiss</button>
+        </form>
+    </p>
+</div>
+<?php } ?>
 
 <?php if ($unapproved_comments > 0) { ?>
 <p class="success">

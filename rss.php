@@ -6,19 +6,9 @@ declare(strict_types=1);
  * Copyright (c) Jenny Ferenc <jenny@prism-perfect.net>
  * Copyright (c) 2020 by Ekaterina (contributor) http://scripts.robotess.net
  *
- * Bug fix (Redux 2.0.1):
- *  - RSS channel pubDate and lastBuildDate were set via setPubDate() /
- *    setBuildDate() which do not exist on FeedWriter. The calls raised
- *    fatal errors, silently breaking all RSS feeds. Fixed: replaced both
- *    with setChannelElement('pubDate', ...) / setChannelElement('lastBuildDate', ...).
- *    date('r', ...) produces the RFC-2822 format RSS readers expect.
- *  - addNamespace() calls passed only one argument; the method requires two
- *    (prefix + URI). Added the explicit URI for 'content', 'slash', and 'wfw'.
- *  - getOpt() returns mixed; FeedWriter::setAuthor() and FanUpdate_Post::__construct()
- *    expect typed parameters. Added (string)(... ?: '') / (... ?: null) casts.
- *
- * Redux 1.5.1 fix: replaced DATE_ADD(CURRENT_TIMESTAMP(), INTERVAL X HOUR)
- * with UTC_TIMESTAMP(). See show-blog.php for full explanation.
+ * Generates the RSS 2.0 feed of blog entries, either site-wide or scoped to
+ * a single category (when ?c= is supplied). Dates are compared against
+ * UTC_TIMESTAMP() so entries publish correctly regardless of server timezone.
  ******************************************************************************/
 
 require_once('blog-config.php');

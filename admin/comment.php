@@ -4,18 +4,13 @@
  * Copyright (c) Jenny Ferenc <jenny@prism-perfect.net>
  * Copyright (c) 2020 by Ekaterina (contributor) http://scripts.robotess.net
  *
- * Milestone 3 — Admin UI Cleanup (nested forms):
- *  - The comment list's per-row "Delete" action used to be its own
- *    <form>...</form> inside each table row. There was no outer form
- *    wrapping the table here, so this was not an actual HTML nesting bug —
- *    but it relied solely on a JS confirm() dialog as its only safeguard,
- *    and its structure was inconsistent with the fix applied to
- *    admin/blog.php (which had the same per-row delete pattern nested
- *    inside a real outer form). Converted to the same pattern for
- *    consistency and defence-in-depth: per-row "Delete" is now a plain
- *    link to a server-side confirmation view with its own single form,
- *    so no future addition of an outer form (e.g. bulk actions) can
- *    accidentally reintroduce a nested-form bug here.
+ * Comment CRUD, moderation (approve/pending/spam), and listing/search.
+ * Delegates persistence to CommentService/CommentRepository; this page
+ * parses/sanitises $_POST and $_GET, enforces CSRF, builds the
+ * FanUpdate_Comment domain object used for preview/gravatar/abstract
+ * rendering, and renders. Destructive actions (delete) go through a
+ * server-side confirmation view with its own <form>, so they work with
+ * JavaScript disabled.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -35,10 +30,19 @@ declare(strict_types=1);
 
 require_once('../blog-config.php');
 require_once('../functions.php');
+require_once('../class/Repository/CommentRepositoryInterface.php');
+require_once('../class/Repository/CommentRepository.php');
+require_once('../class/Service/CommentService.php');
 
 $fu = FanUpdate::instance();
 $fu->addOptFromDb();
 $fu->login();
+
+$commentService = new CommentService(new CommentRepository(
+    $fu->db,
+    (string) $fu->getOpt('comments_table'),
+    (string) $fu->getOpt('blog_table')
+));
 
 $showNav  = true;
 $showform = false;   // default: show the list; only true when editing/adding
@@ -89,19 +93,18 @@ if (isset($_POST['action']) && !$fu->verifyCsrfOrFail()) {
             $showform = true;
         } else {
             $date = !empty($clean['date']) ? $clean['date'] : gmdate('Y-m-d H:i:s');
-            $query = "INSERT INTO " . $fu->getOpt('comments_table') . "
-                (name, email, url, comment, entry_id, added, approved)
-                VALUES (?, ?, ?, ?, ?, ?, ?)";
 
-            if (!$fu->db->Execute($query, 'Could not execute query.', [
-                $clean['name'],
-                $clean['email'],
-                $clean['url'],
-                $clean['comment'],
-                $clean['entry'],
-                $date,
-                $clean['approved'],
-            ])) {
+            $ok = $commentService->addComment([
+                'name'     => $clean['name'],
+                'email'    => $clean['email'],
+                'url'      => $clean['url'],
+                'comment'  => $clean['comment'],
+                'entry_id' => $clean['entry'],
+                'date'     => $date,
+                'approved' => $clean['approved'],
+            ]);
+
+            if (!$ok) {
                 $fu->addErr('Failed to add comment.');
                 $showform = true;
             } else {
@@ -112,22 +115,17 @@ if (isset($_POST['action']) && !$fu->verifyCsrfOrFail()) {
 
     } elseif ($_POST['action'] === 'update') {
 
-        $query = "UPDATE " . $fu->getOpt('comments_table') . "
-            SET name = ?, email = ?, url = ?,
-                comment = ?, entry_id = ?,
-                added = ?, approved = ?
-            WHERE comment_id = ?";
+        $ok = $commentService->updateComment($clean['id'], [
+            'name'     => $clean['name'],
+            'email'    => $clean['email'],
+            'url'      => $clean['url'],
+            'comment'  => $clean['comment'],
+            'entry_id' => $clean['entry'],
+            'date'     => $clean['date'],
+            'approved' => $clean['approved'],
+        ]);
 
-        if (!$fu->db->Execute($query, 'Could not execute query.', [
-            $clean['name'],
-            $clean['email'],
-            $clean['url'],
-            $clean['comment'],
-            $clean['entry'],
-            $clean['date'],
-            $clean['approved'],
-            $clean['id'],
-        ])) {
+        if (!$ok) {
             $fu->addErr('Failed to update comment #<strong>' . $clean['id'] . '</strong>.');
             $showform = true;
         } else {
@@ -139,10 +137,7 @@ if (isset($_POST['action']) && !$fu->verifyCsrfOrFail()) {
 
         // Reached from the edit form's inline delete button, or from the
         // confirm-delete view's form.
-        $query = "DELETE FROM " . $fu->getOpt('comments_table') . "
-            WHERE comment_id = ?";
-
-        if (!$fu->db->Execute($query, 'Could not execute query.', [$clean['id']])) {
+        if (!$commentService->deleteComment($clean['id'])) {
             $fu->addErr('Failed to delete comment #<strong>' . $clean['id'] . '</strong>.');
         } else {
             $fu->addSuccess('Comment #<strong>' . $clean['id'] . '</strong> deleted.');
@@ -159,9 +154,8 @@ if (!$showform && isset($_GET['action']) && $_GET['action'] === 'confirm-delete'
     && isset($_GET['id']) && is_numeric($_GET['id'])
 ) {
     $confirmDeleteId = (int) $_GET['id'];
-    $query = "SELECT * FROM " . $fu->getOpt('comments_table') . " WHERE comment_id = ?";
-    $fu->db->Execute($query, 'Could not execute query.', [$confirmDeleteId]);
-    if ($row = $fu->db->ReadRecord()) {
+    $row             = $commentService->getDeleteConfirmation($confirmDeleteId);
+    if ($row !== null) {
         $cmt_confirm            = new FanUpdate_Comment($row, $fu, $fu->getOpt('blog_page'));
         $confirmDeleteAbstract  = $cmt_confirm->getAbstract(12);
         $confirmDeleteName      = (string) $row['name'];
@@ -169,7 +163,6 @@ if (!$showform && isset($_GET['action']) && $_GET['action'] === 'confirm-delete'
         $confirmDeleteId = 0;
         $fu->addErr('That comment no longer exists.');
     }
-    $fu->db->FreeResult();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -177,15 +170,13 @@ if (!$showform && isset($_GET['action']) && $_GET['action'] === 'confirm-delete'
 // ─────────────────────────────────────────────────────────────────────────────
 
 if (!$showform && $confirmDeleteId === 0 && isset($_GET['id']) && is_numeric($_GET['id'])) {
-    $id    = (int) $_GET['id'];
-    $query = "SELECT * FROM " . $fu->getOpt('comments_table') . " WHERE comment_id = ?";
-    $fu->db->Execute($query, 'Could not execute query.', [$id]);
-    if ($row = $fu->db->ReadRecord()) {
+    $id  = (int) $_GET['id'];
+    $row = $commentService->getCommentForEdit($id);
+    if ($row !== null) {
         $cmt      = new FanUpdate_Comment($row, $fu, $fu->getOpt('blog_page'));
         $clean    = $row;
         $showform = true;
     }
-    $fu->db->FreeResult();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -354,36 +345,7 @@ if ($showform) {
 
 // ── Comment list ──────────────────────────────────────────────────────────
 
-$where_parts = [];
-$where_params = [];
-
-if ($search !== '') {
-    $where_parts[] = '(name LIKE ? OR comment LIKE ? OR email LIKE ?)';
-    $like = '%' . $search . '%';
-    $where_params[] = $like;
-    $where_params[] = $like;
-    $where_params[] = $like;
-}
-
-if ($show === 'pending') {
-    $where_parts[] = 'approved = 0';
-} elseif ($show === 'spam') {
-    $where_parts[] = 'approved = 2';
-} else {
-    $where_parts[] = 'approved > 0';
-}
-
-$where = 'WHERE ' . implode(' AND ', $where_parts);
-
-$fu->db->ExecutePaginate(
-    'SELECT c.*, b.title AS entry_title
-     FROM ' . $fu->getOpt('comments_table') . ' c
-     LEFT JOIN ' . $fu->getOpt('blog_table') . ' b ON c.entry_id = b.entry_id
-     ' . $where . '
-     ORDER BY c.added DESC',
-    (int) $fu->getOpt('num_per_page') ?: 20,
-    $where_params
-);
+$commentService->search($show, $search, (int) $fu->getOpt('num_per_page') ?: 20);
 
 if ($fu->db->NumRows() > 0) { ?>
 

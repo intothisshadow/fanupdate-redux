@@ -18,13 +18,11 @@ declare(strict_types=1);
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/gpl-3.0.html>.
  *
- * CSRF protection (added this release):
- *  - Emits `const fuCsrfToken = "...";` so AJAX calls in fanupdate-admin.js,
- *    fanupdate-post-admin.js and fanupdate-comment-admin.js (which build
- *    their own request bodies rather than submitting an HTML <form>) can
- *    include the token. Uses $this->generateCsrfToken() — header.php is
- *    include()'d from FanUpdate::getHeader(), so $this is the FanUpdate
- *    instance.
+ * Note: emits `const fuCsrfToken = "...";` so AJAX calls in fanupdate-admin.js,
+ * fanupdate-post-admin.js, and fanupdate-comment-admin.js (which build their
+ * own request bodies rather than submitting an HTML <form>) can include the
+ * CSRF token. header.php is include()'d from FanUpdate::getHeader(), so
+ * $this refers to the FanUpdate instance.
  ******************************************************************************/
 ?><!DOCTYPE html>
 <html lang="en">
@@ -88,6 +86,7 @@ declare(strict_types=1);
                     <li><a href="comment.php"   class="comments"><i class="ti ti-message-circle" aria-hidden="true"></i> Comments</a></li>
                     <li><a href="category.php"  class="categories"><i class="ti ti-tag" aria-hidden="true"></i> Categories</a></li>
                     <li><a href="options.php"   class="options"><i class="ti ti-settings" aria-hidden="true"></i> Options</a></li>
+                    <li><a href="update.php"    class="updates"><i class="ti ti-refresh" aria-hidden="true"></i> Updates</a></li>
                 </ul>
 
                 <div id="nav-end">

@@ -1,19 +1,35 @@
 <?php
-/* ─── admin/category.php — HTML modernisation patch notes ─────────────────
- * Changes from previous version:
- *  - <table summary="..."> → <table aria-label="...">
- *  - <ul class="subnav"> wrapped in <div class="subnav-bar"> for bar styling
- *  - All PHP logic and SQL preserved exactly
- * ───────────────────────────────────────────────────────────────────────── */
+/*****************************************************************************
+ * FanUpdate — admin/category.php
+ *
+ * Category CRUD and listing, supporting both standalone mode (FanUpdate owns
+ * category data) and integrated mode (an external collective script owns it).
+ * Delegates persistence to CategoryService/CategoryRepository; this page
+ * only parses/sanitises $_POST and $_GET, enforces CSRF, and renders. See
+ * CategoryService's class docblock for the standalone/integrated behaviour.
+ ******************************************************************************/
 
 declare(strict_types=1);
 
 require_once('../blog-config.php');
 require_once('../functions.php');
+require_once('../class/Repository/CategoryRepositoryInterface.php');
+require_once('../class/Repository/CategoryRepository.php');
+require_once('../class/Service/CategoryService.php');
 
 $fu = FanUpdate::instance();
 $fu->addOptFromDb();
 $fu->login();
+
+$categoryService = new CategoryService(new CategoryRepository(
+    $fu->db,
+    (string) $fu->getOpt('collective_table'),
+    (string) $fu->getOpt('catjoin_table'),
+    (string) $fu->getOpt('col_id'),
+    (string) $fu->getOpt('col_subj')
+));
+
+$standalone = !$fu->getOpt('collective_script');
 
 $showNav  = true;
 $showform = false;
@@ -37,67 +53,35 @@ if (isset($_POST['action']) && !$fu->verifyCsrfOrFail()) {
 
     if ($_POST['action'] === 'add') {
 
-        if (!$fu->getOpt('collective_script')) {
-            $query = "INSERT INTO " . $fu->getOpt('collective_table') . "
-                (" . $fu->getOpt('col_subj') . ") VALUES (?)";
-            if ($fu->db->Execute($query, 'Could not execute query.', [$clean['name']])) {
-                $clean['cat_id'] = $fu->db->GetLastSequence();
-            } else {
-                $fu->addErr('Failed to add category.');
-            }
+        $result = $categoryService->createCategory($clean, $standalone);
+
+        if ($result['standalone_insert_ok'] === false) {
+            $fu->addErr('Failed to add category.');
         }
 
-        if ($clean['cat_id'] !== null) {
-            $query = "INSERT INTO " . $fu->getOpt('catjoin_table') . "
-                (cat_id, entry_template, comment_template, gravatar_default, gravatar_size, gravatar_rating)
-                VALUES (?, ?, ?, ?, ?, ?)";
-            if ($fu->db->Execute($query, 'Could not execute query.', [
-                $clean['cat_id'],
-                $clean['entry_template'],
-                $clean['comment_template'],
-                $clean['gravatar_default'],
-                $clean['gravatar_size'],
-                $clean['gravatar_rating'],
-            ])) {
-                $fu->addSuccess('Category <strong>' . htmlspecialchars($clean['name'], ENT_QUOTES, 'UTF-8') . '</strong> added.');
-            } else {
-                $fu->addErr('Failed to save category settings.');
-            }
+        if ($result['settings_ok'] === true) {
+            $clean['cat_id'] = $result['cat_id'];
+            $fu->addSuccess('Category <strong>' . htmlspecialchars($clean['name'], ENT_QUOTES, 'UTF-8') . '</strong> added.');
+        } elseif ($result['settings_ok'] === false) {
+            $fu->addErr('Failed to save category settings.');
         }
 
     } elseif ($_POST['action'] === 'update' && $clean['cat_id'] !== null) {
 
-        if (!$fu->getOpt('collective_script')) {
-            $query  = "UPDATE " . $fu->getOpt('collective_table') . "
-                SET " . $fu->getOpt('col_subj') . " = ?
-                WHERE " . $fu->getOpt('col_id') . " = ?";
-            $fu->db->Execute($query, 'Could not execute query.', [$clean['name'], $clean['cat_id']]);
-        }
-
-        $query  = "UPDATE " . $fu->getOpt('catjoin_table') . "
-            SET entry_template = ?, comment_template = ?,
-                gravatar_default = ?, gravatar_size = ?,
-                gravatar_rating = ?
-            WHERE cat_id = ?";
-
-        if ($fu->db->Execute($query, 'Could not execute query.', [
-            $clean['entry_template'],
-            $clean['comment_template'],
-            $clean['gravatar_default'],
-            $clean['gravatar_size'],
-            $clean['gravatar_rating'],
-            $clean['cat_id'],
-        ])) {
+        if ($categoryService->updateCategory($clean['cat_id'], $clean, $standalone)) {
             $fu->addSuccess('Category updated.');
         } else {
             $fu->addErr('Failed to update category.');
         }
 
-    } elseif ($_POST['action'] === 'delete' && $clean['cat_id'] !== null && !$fu->getOpt('collective_script')) {
+    } elseif ($_POST['action'] === 'delete' && $clean['cat_id'] !== null && $standalone) {
 
-        $fu->db->Execute("DELETE FROM " . $fu->getOpt('collective_table') . " WHERE " . $fu->getOpt('col_id') . " = ?", 'Could not execute query.', [$clean['cat_id']]);
-        $fu->db->Execute("DELETE FROM " . $fu->getOpt('catjoin_table') . " WHERE cat_id = ?", 'Could not execute query.', [$clean['cat_id']]);
-        $fu->addSuccess('Category deleted.');
+        // deleteCategory() deletes atomically across both tables and returns bool.
+        if ($categoryService->deleteCategory($clean['cat_id'])) {
+            $fu->addSuccess('Category deleted.');
+        } else {
+            $fu->addErr('Failed to delete category.');
+        }
     }
 }
 
@@ -106,21 +90,11 @@ if (isset($_GET['id']) && is_numeric($_GET['id'])) {
     $showform = true;
     $id       = (int) $_GET['id'];
 
-    $query = 'SELECT ' . $fu->getOpt('collective_table') . '.*,
-        ' . $fu->getOpt('col_subj') . ' AS cname,
-        ' . $fu->getOpt('col_id') . ' AS cid,
-        j.*
-        FROM ' . $fu->getOpt('collective_table') . '
-        LEFT JOIN ' . $fu->getOpt('catjoin_table') . ' j
-            ON ' . $fu->getOpt('col_id') . ' = j.cat_id
-        WHERE ' . $fu->getOpt('col_id') . ' = ?';
-
-    $fu->db->Execute($query, 'Could not execute query.', [$id]);
-    if ($row = $fu->db->ReadRecord()) {
+    $row = $categoryService->getCategoryForEdit($id);
+    if ($row !== null) {
         $clean = $row;
         $clean['cat_id'] = $id;
     }
-    $fu->db->FreeResult();
 } elseif (isset($_GET['action']) && $_GET['action'] === 'new') {
     $showform = true;
 }
@@ -150,7 +124,7 @@ if ($showform) { ?>
     <div class="col-layout-12">
 
         <div>
-            <?php if (!$fu->getOpt('collective_script')) { ?>
+            <?php if ($standalone) { ?>
             <fieldset>
                 <legend>Name</legend>
                 <?php if (isset($clean['cat_id'])) { ?>
@@ -209,7 +183,7 @@ if ($showform) { ?>
                            title="Add category, accesskey s" accesskey="s" />
                     <?php } ?>
                 </div>
-                <?php if (isset($clean['cat_id']) && !$fu->getOpt('collective_script')) { ?>
+                <?php if (isset($clean['cat_id']) && $standalone) { ?>
                 <div class="secondary">
                     <input type="submit" name="action" value="delete" class="delete"
                            title="Delete this category, accesskey x" accesskey="x" />
@@ -224,16 +198,7 @@ if ($showform) { ?>
 
 <?php } else {
 
-    $query = 'SELECT ' . $fu->getOpt('collective_table') . '.*,
-        ' . $fu->getOpt('col_subj') . ' AS cname,
-        ' . $fu->getOpt('col_id') . ' AS cid,
-        COUNT(cat_id) AS num
-        FROM ' . $fu->getOpt('collective_table') . '
-        LEFT JOIN ' . $fu->getOpt('catjoin_table') . ' ON ' . $fu->getOpt('col_id') . '=cat_id
-        GROUP BY ' . $fu->getOpt('col_id') . '
-        ORDER BY cname ASC';
-
-    $fu->db->Execute($query);
+    $categoryService->listAll();
 
     if ($fu->db->NumRows() > 0) { ?>
 
@@ -245,7 +210,7 @@ if ($showform) { ?>
                 <th scope="col">Entries</th>
                 <th scope="col">Get code</th>
                 <th scope="col">Edit</th>
-                <?php if (!$fu->getOpt('collective_script')) { ?>
+                <?php if ($standalone) { ?>
                 <th scope="col">Delete</th>
                 <?php } ?>
             </tr>
@@ -261,7 +226,7 @@ if ($showform) { ?>
                 echo '<td>' . (int) $row['num'] . '</td>';
                 echo '<td class="form"><a href="get-code.php?cat=' . (int) $row['cid'] . '" class="button">Get code</a></td>';
                 echo '<td class="form"><a href="category.php?id=' . (int) $row['cid'] . '" class="edit button">Edit</a></td>';
-                if (!$fu->getOpt('collective_script')) {
+                if ($standalone) {
                     echo '<td class="form">'
                         . '<form action="category.php" method="post" style="display:inline;">'
                         . $fu->csrfField()

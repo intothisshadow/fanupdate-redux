@@ -6,135 +6,18 @@
  * Copyright (c) 2020 by Ekaterina (contributor) http://scripts.robotess.net
  * Copyright (c) 2026 by Ariane (contributor)
  *
- * Refactored for PHP 8.2+:
- *  - All dynamic properties declared explicitly
- *  - Strict return types throughout
- *  - Removed deprecated utf8_encode/utf8_decode (replaced with mb_convert_encoding)
- *  - AddOpt/AddErr/AddSuccess aliases kept for back-compat but typed
+ * Core application class: singleton holding site options/config, the DB
+ * connection, error/success message queues, the observer pattern used to
+ * notify listeners on errors, session-backed CSRF token generation and
+ * verification, cookie-based admin authentication (HMAC token + rate
+ * limiting), smiley rendering, and printBlog() / printBlogFooter() which
+ * render the public blog listing, single-post comments, and comment form
+ * (including anti-spam honeypot/time-gate fields and lightbox init).
  *
- * Bug fix (Redux 1.1.1):
- *  - login(): wrong option keys 'admin_user'/'admin_pass' corrected to
- *    'admin_username'/'admin_password'
- *  - login(): single hash comparison corrected
- *
- * Bug fix (Redux 2.0.1):
- *  - printBlog(): window.addEventListener('load') in fanupdate-comment-submit.js
- *    never fires when scripts are injected mid-page — the load event has
- *    already fired by the time the <script> tags are parsed. Fixed by emitting
- *    an inline init script after the two <script src> tags that calls
- *    submitCmtInit() directly, bypassing the load listener entirely.
- *    submitCmtInit() extracted from the load handler in
- *    fanupdate-comment-submit.js so it can be called on demand.
- *
- * Bug fix (Redux 2.0.3):
- *  - printBlog(): comment form submit did nothing — three compounding issues:
- *    (1) Default form had id="commentform" but fanupdate-comment-submit.js
- *        looks for id="comments-form"; the submit listener was never attached
- *        so clicking the button did a plain HTML POST to process.php which
- *        renders the admin panel shell and produces a broken page.
- *    (2) The AJAX response target div id="newComment" was never output, so
- *        submitCmtCallback() could not inject the server response.
- *    (3) fanupdate.js and fanupdate-comment-submit.js were never included on
- *        the public single-post page; the submit handler simply did not exist.
- *    All three fixed: form id corrected, newComment div added, both script
- *    tags emitted once after the comments block.
- *
- * Bug fix (Redux 2.0.2):
- *  - printBlog(): comments list and comment form were never rendered on
- *    single-post pages ($single_page = true). The method counted comments
- *    for the {{comment_link}} token but stopped there. Now, when
- *    $single_page is true, printBlog() fetches and renders all approved
- *    comments via FanUpdate_Comment::printComment(), then builds and outputs
- *    the comment form from the comment_form_template option (stripping
- *    <!-- MODERATION --> and <!-- CAPTCHA --> blocks as configured), or
- *    shows a "Comments are closed" notice when allowComments() is false.
- *
- * Bug fix (Redux 2.0.5):
- *  - printBlog(): built-in default comment form was missing the remember_me
- *    checkbox. fanupdate-comment-submit.js reads f.remember_me.checked; when
- *    the field is absent f.remember_me is undefined and .checked throws a
- *    TypeError that silently kills the submit handler — the form appeared to
- *    do nothing. Fixed by adding the checkbox to the default form and applying
- *    optional chaining (f.remember_me?.checked) in the JS so custom templates
- *    that omit the field also work safely.
- *
- * Bug fix (Redux 2.0.6):
- *  - printBlog(): three further issues that prevented comment submission when
- *    a custom comment_form_template is stored in the database:
- *    (1) The stored template (original FanUpdate default) is inner-content only
- *        — no <form> tag. printBlog() assumed the template contained the
- *        <form> wrapper. Fixed: when the resolved template does not already
- *        contain a <form element, printBlog() wraps the content in
- *        <form action="{{process_url}}" method="post" id="comments-form">.
- *    (2) MODERATION / CAPTCHA strip regexes expected <!-- /MODERATION --> and
- *        <!-- /CAPTCHA --> (slash style) but the stored template and the
- *        original FanUpdate install.php default use <!-- END MODERATION --> and
- *        <!-- END CAPTCHA --> (END style). Neither block was ever stripped.
- *        Fixed: regexes now accept both <!-- END X --> and <!-- /X --> forms.
- *    (3) The stored template has no {{entry_id}} or {{returnto}} hidden inputs.
- *        Without entry_id process.php rejects the submission as spam. Fixed:
- *        when the resolved form body lacks name="entry" or name="returnto",
- *        the two hidden inputs are injected before the closing </form> tag (or
- *        appended when no </form> tag is present).
- *
- * Bug fix (Redux 1.5.2):
- *  - __construct(): collective_script=false fallback to 'n' (standalone)
- *  - Restored missing methods: printWysiwyg(), printSmileyImgDropdown(),
- *    updateConfigKey(), reissueToken()
- *
- * Bug fix (this release):
- *  - printCredits(): credits link used a relative URL ("credits.php") which
- *    produced a 404 when the admin was accessed via URL rewriting without an
- *    explicit admin/ directory path. Fixed: link now uses an absolute URL
- *    built from install_url so it resolves correctly in all routing scenarios.
- *  - admin/credits.php no longer requires login (see that file). The credits
- *    page displays read-only version/contributor information — no
- *    authentication is needed to view it.
- *  - isLoggedIn(): new non-redirecting helper to check session cookie validity
- *    without triggering the login form. Used by admin/credits.php to show
- *    the admin nav bar only when the user is authenticated.
- *
- * Spam protection (Redux 2.0.1):
- *  - printBlog(): honeypot field (name="fax", CSS display:none) injected into
- *    every comment form. Any submission with a non-empty fax value is silently
- *    discarded by process.php as bot traffic.
- *  - printBlog(): time-gate timestamp (name="fu_form_time") injected as a
- *    hidden field set to the current Unix timestamp when the page is rendered.
- *    Submissions arriving faster than FU_MIN_COMMENT_SECONDS (3 s) are
- *    silently discarded by process.php.
- *  Both fields are always appended regardless of whether the form template
- *  already contains them, so custom templates benefit automatically.
- *
- * Image upload + lightbox (added this release):
- *  - printBlog(): after all posts are rendered, emits a single
- *    <script src="…/fanupdate.js"> tag (if not already present on the page)
- *    and an inline <script>fuLightboxInit();</script> that wires click
- *    handlers on every <a class="fu-lightbox"> link in the post output.
- *    fuLightboxInit() is idempotent — safe to call multiple times on pages
- *    that embed both show-blog.php and show-cat.php, or that call printBlog()
- *    more than once.  The script tag is tracked via a static flag so it is
- *    only emitted once per page render, no matter how many printBlog() calls
- *    are made.
- *
- * Backdoor scan: no eval(), no base64_decode() payloads, no shell_exec(),
- * no system(), no passthru(), no preg_replace /e modifier, file writes
- * limited to blog-config.php via updateConfigKey() and login() MD5 upgrade.
- *
- * CSRF protection (added this release):
- *  - ensureSession(): starts a PHP session (secure/httponly/SameSite=Strict
- *    cookie) used solely to store the CSRF token. This is separate from the
- *    existing HMAC auth cookies (fu_username/fu_token), which continue to
- *    control login state exactly as before.
- *  - generateCsrfToken() / verifyCsrfToken() / csrfField(): central CSRF
- *    token API. Tokens are 32 random bytes (hex-encoded), stored in
- *    $_SESSION and compared with hash_equals() to prevent timing attacks.
- *  - verifyCsrfOrFail(): called at the top of every admin POST handler.
- *    Rejects missing/invalid tokens before any action is processed. AJAX
- *    requests (mode=ajax, used by the post/comment delete buttons) get a
- *    403 response instead of a re-rendered page, so fetch() callers can
- *    detect the failure instead of treating a 200 response as success.
- *  - login(): the login form itself is also CSRF-protected (login CSRF can
- *    be used to force a victim into an attacker's account).
+ * Security note: no eval(), base64_decode() payloads, shell_exec(),
+ * system(), passthru(), or preg_replace() /e modifier are used anywhere in
+ * this class; file writes are limited to blog-config.php via
+ * updateConfigKey() and the legacy-MD5-to-bcrypt upgrade path in login().
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -193,10 +76,9 @@ class FanUpdate
 
         $this->_cfg = array_merge($fanupdate, $this->config);
 
-        // BUG FIX (Redux 1.5.2): getOpt(..., true) returns false when
-        // collective_script is not set at all — $coltable[false] doesn't exist,
-        // leaving col_id/col_subj empty and breaking every category SQL query.
-        // Fall back to 'n' (standalone mode).
+        // getOpt(..., true) returns false when collective_script is not set at
+        // all — $coltable[false] doesn't exist, leaving col_id/col_subj empty
+        // and breaking every category SQL query. Fall back to 'n' (standalone).
         $collectiveScript = $this->getOpt('collective_script', true);
         if ($collectiveScript === false || $collectiveScript === '') {
             $collectiveScript = 'n';
@@ -481,7 +363,7 @@ class FanUpdate
             : time() + 60 * 60 * 24 * 30;
 
         $this->setAuthCookie('fu_username', $username, $expire);
-        $this->setAuthCookie('fu_token',    $token,    $expire);
+        $this->setAuthCookie('fu_token', $token, $expire);
     }
 
     // ── page rendering ──────────────────────────────────────────────────────
@@ -725,7 +607,8 @@ class FanUpdate
         $reduxUrl   = htmlspecialchars(FU_URL_REDUX, ENT_QUOTES, 'UTF-8');
         $creditsUrl = htmlspecialchars(
             rtrim((string) $this->getOpt('install_url'), '/') . '/admin/credits.php',
-            ENT_QUOTES, 'UTF-8'
+            ENT_QUOTES,
+            'UTF-8'
         );
 
         echo 'Powered by <a href="' . $reduxUrl . '" target="_blank" title="FanUpdate Redux">'
@@ -760,6 +643,29 @@ class FanUpdate
             && hash_equals($expectedToken, $cookieToken);
     }
 
+    // ── maintenance mode ────────────────────────────────────────────
+
+    /**
+     * True while InstallManager has an update install in progress.
+     *
+     * This is a read-only check against a flag file
+     * ({install_path}/.fu-maintenance) that only InstallManager itself
+     * writes/removes — see its class docblock for why this is a simple
+     * flag rather than a full public-facing maintenance page. process.php
+     * uses this to reject new comment submissions while a file swap is
+     * in progress, since that's the one write path most likely to collide
+     * badly with it.
+     */
+    public function isMaintenanceModeEnabled(): bool
+    {
+        $installPath = (string) ($this->getOpt('install_path') ?: '');
+        if ($installPath === '') {
+            $installPath = dirname(__DIR__);
+        }
+
+        return is_file(rtrim($installPath, '/') . '/.fu-maintenance');
+    }
+
     // ── cookie helper ────────────────────────────────────────────────────────
 
     /**
@@ -788,7 +694,7 @@ class FanUpdate
         // ── logout ──────────────────────────────────────────────────────────
         if (isset($_GET['action']) && $_GET['action'] === 'logout') {
             $this->setAuthCookie('fu_username', '', time() - 36000);
-            $this->setAuthCookie('fu_token',    '', time() - 36000);
+            $this->setAuthCookie('fu_token', '', time() - 36000);
             header('Location: ' . clean_input($_SERVER['PHP_SELF']));
             exit;
         }
@@ -812,7 +718,7 @@ class FanUpdate
             } else {
                 $this->addErr('Session expired or invalid. Please log in again.');
                 $this->setAuthCookie('fu_username', '', time() - 36000);
-                $this->setAuthCookie('fu_token',    '', time() - 36000);
+                $this->setAuthCookie('fu_token', '', time() - 36000);
             }
         }
 
@@ -842,7 +748,7 @@ class FanUpdate
                     if (str_starts_with($storedHash, '$2')) {
                         $passwordOk = password_verify($password, $storedHash);
 
-                    // ── MD5 legacy fallback ───────────────────────────────────
+                        // ── MD5 legacy fallback ───────────────────────────────────
                     } elseif (preg_match('/^[0-9a-f]{32}$/', $storedHash) && md5($password) === $storedHash) {
                         $passwordOk = true;
 
@@ -877,7 +783,7 @@ class FanUpdate
                     $token = hash_hmac('sha256', $username, $storedHash);
 
                     $this->setAuthCookie('fu_username', $username, $expire);
-                    $this->setAuthCookie('fu_token',    $token,    $expire);
+                    $this->setAuthCookie('fu_token', $token, $expire);
 
                     $showform = false;
                 } else {
@@ -888,14 +794,14 @@ class FanUpdate
                     // password — do not leak which one was incorrect.
                     $this->addErr('Invalid username or password. Please try again.');
                     $this->setAuthCookie('fu_username', '', time() - 36000);
-                    $this->setAuthCookie('fu_token',    '', time() - 36000);
+                    $this->setAuthCookie('fu_token', '', time() - 36000);
                 }
             } // end rate-limit else
         }
 
         if ($showform) {
             $this->getHeader('Login');
-?>
+            ?>
             <form action="<?php echo clean_input($_SERVER['REQUEST_URI']); ?>" method="post">
                 <?php echo $this->csrfField(); ?>
                 <?php $this->reportErrors(); ?>
@@ -1038,13 +944,13 @@ class FanUpdate
                         $captcha_url = htmlspecialchars($install_url . '/captcha.php', ENT_QUOTES, 'UTF-8');
                         $entry_id    = (string) $post->getID();
 
-                        $form_tpl = str_replace('{{fanuname}}',      $fanuname,    $form_tpl);
-                        $form_tpl = str_replace('{{fanuemail}}',      $fanuemail,   $form_tpl);
-                        $form_tpl = str_replace('{{fanuurl}}',        $fanuurl,     $form_tpl);
-                        $form_tpl = str_replace('{{process_url}}',    $process_url, $form_tpl);
-                        $form_tpl = str_replace('{{entry_id}}',       $entry_id,    $form_tpl);
-                        $form_tpl = str_replace('{{returnto}}',       $returnto,    $form_tpl);
-                        $form_tpl = str_replace('{{captcha_image}}',  $captcha_url, $form_tpl);
+                        $form_tpl = str_replace('{{fanuname}}', $fanuname, $form_tpl);
+                        $form_tpl = str_replace('{{fanuemail}}', $fanuemail, $form_tpl);
+                        $form_tpl = str_replace('{{fanuurl}}', $fanuurl, $form_tpl);
+                        $form_tpl = str_replace('{{process_url}}', $process_url, $form_tpl);
+                        $form_tpl = str_replace('{{entry_id}}', $entry_id, $form_tpl);
+                        $form_tpl = str_replace('{{returnto}}', $returnto, $form_tpl);
+                        $form_tpl = str_replace('{{captcha_image}}', $captcha_url, $form_tpl);
 
                         // ── Ensure the template is wrapped in a <form> ────────
                         // The original FanUpdate comment_form_template option
@@ -1116,11 +1022,13 @@ class FanUpdate
                         // the load listener in fanupdate-comment-submit.js.
                         $js_url = htmlspecialchars(
                             rtrim((string) $this->getOpt('install_url'), '/') . '/assets/js',
-                            ENT_QUOTES, 'UTF-8'
+                            ENT_QUOTES,
+                            'UTF-8'
                         );
                         $fu_url = htmlspecialchars(
                             rtrim((string) $this->getOpt('install_url'), '/'),
-                            ENT_QUOTES, 'UTF-8'
+                            ENT_QUOTES,
+                            'UTF-8'
                         );
                         echo '<script>const fu_url = \'' . $fu_url . '\';</script>' . "\n";
                         echo '<script src="' . $js_url . '/fanupdate.js"></script>' . "\n";
@@ -1167,7 +1075,8 @@ class FanUpdate
 
         $js_base = htmlspecialchars(
             rtrim((string) $this->getOpt('install_url'), '/') . '/assets/js',
-            ENT_QUOTES, 'UTF-8'
+            ENT_QUOTES,
+            'UTF-8'
         );
 
         if (!$_lb_script_emitted) {

@@ -1,4 +1,5 @@
 <?php
+
 /*****************************************************************************
  * FileHandler
  *
@@ -6,14 +7,13 @@
  * Copyright (c) 2020 by Ekaterina (contributor) http://scripts.robotess.net
  * Copyright (c) 2026 refactored for PHP 8.2+ compatibility
  *
- * Refactored for PHP 8.2+:
- *  - declare(strict_types=1) added
- *  - $_allowed_ext typed explicitly as array (PHP 8.2: no dynamic properties)
- *  - All methods now carry strict parameter types and return types
- *  - No utf8_encode() / utf8_decode() usage
- *  - No backdoors, eval(), exec(), shell_exec(), system(), passthru(),
- *    popen(), proc_open(), base64_decode() obfuscation, or variable-function
- *    calls present in this file
+ * File/filename utility helpers: extension and MIME-type lookup, filename
+ * sanitisation, image dimensions, human-readable file size, and
+ * allowed-extension checks.
+ *
+ * Security note: no eval(), exec(), shell_exec(), system(), passthru(),
+ * popen(), proc_open(), or base64_decode() obfuscation is present in this
+ * file.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by

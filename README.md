@@ -45,6 +45,18 @@ This Redux release updates the codebase to **PHP 8.2+** and includes a full admi
 - **Collective script integration** — works alongside Enthusiast 3, Flinx
   Collective, and Fan Admin, or fully standalone
 - **Keyboard accesskeys** throughout the admin panel
+- **Admin Update Manager** — **Admin → Updates** checks GitHub for newer
+  FanUpdate Redux releases (stable or prerelease channel, with optional
+  automatic checks on a configurable interval) and shows a dismissible
+  Dashboard notice when one is available. From the same page you can
+  download the release, review a confirmation summary, and install it —
+  the whole check → download → back up → install pipeline runs entirely
+  in PHP, with no SSH, Composer, Git, or cron required. A backup is taken
+  automatically before every install and restored automatically if the
+  install fails; backups can also be restored manually at any time. A
+  System Status panel reports PHP version, ZIP/cURL availability, file
+  permissions, and disk space, and an Update Logs section keeps a
+  persisted history of every check/download/install/rollback.
 
 ---
 
@@ -602,6 +614,7 @@ fanupdate/
 │   ├── smilies.php          # Admin: smilies
 │   ├── blacklist.php        # Admin: spam blacklist
 │   ├── account.php          # Admin: change email, username, and password
+│   ├── update.php           # Admin: check for FanUpdate Redux updates (GitHub)
 │   ├── credits.php          # Admin: version info and credits
 │   ├── get-code.php         # Display snippet generator
 │   ├── header.php           # Admin panel header
@@ -612,7 +625,10 @@ fanupdate/
 │   ├── FanUpdate_Comment.php# Comment model
 │   ├── CommentRateLimiter.php# Per-IP comment rate limiter
 │   ├── LoginRateLimiter.php # IP-based login rate limiter
-│   └── SqlConnection.php    # Database abstraction (singleton)
+│   ├── SqlConnection.php    # Database abstraction (singleton)
+│   ├── Repository/          # Data-access classes (one *RepositoryInterface + *Repository pair per admin domain, plus Update/Upgrade)
+│   ├── Service/              # Business-logic classes: one *Service per admin domain, plus the Admin Update Manager's UpdateManager, DownloadManager, BackupManager, InstallManager, RollbackManager, SystemStatusChecker, UpgradeRunner
+│   └── Update/               # Admin Update Manager value objects/provider: UpdateProviderInterface, GitHubUpdateProvider, ReleaseInfo, DownloadResult, BackupResult, InstallResult, RollbackResult, SystemStatusCheck, UpgradeResult
 ├── data/
 │   ├── login_attempts/      # Login rate limiter lock files (auto-created, not web-accessible)
 │   └── comment_rate/        # Comment rate limiter lock files (auto-created, not web-accessible)
@@ -641,6 +657,7 @@ fanupdate/
 │           └── *.gif / *.png
 └── docs/
     ├── CHANGELOG.md         # This project's changelog
+    ├── HISTORY.md           # Archive of completed TODO.md items, by release
     ├── TROUBLESHOOTING.md   # Common issues and fixes
     ├── DATABASE.md          # Database layer developer docs (PDO API, query patterns)
     ├── readme.txt           # Original readme

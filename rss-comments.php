@@ -6,15 +6,8 @@ declare(strict_types=1);
  * Copyright (c) Jenny Ferenc <jenny@prism-perfect.net>
  * Copyright (c) 2020 by Ekaterina (contributor) http://scripts.robotess.net
  *
- * Bug fix (Redux 2.0.1):
- *  - RSS channel pubDate and lastBuildDate were set via setPubDate() /
- *    setBuildDate() which do not exist on FeedWriter. The calls raised
- *    fatal errors, silently breaking all RSS comment feeds. Fixed: replaced
- *    both with setChannelElement('pubDate', ...) / setChannelElement('lastBuildDate', ...).
- *  - addNamespace() called with only one argument; the method requires two.
- *    Added the explicit URI for 'content'.
- *  - getOpt() returns mixed; setLink(), setAuthor(), FanUpdate_Post::__construct(),
- *    and FanUpdate_Comment::__construct() expect typed parameters. Added casts.
+ * Generates the RSS 2.0 feed of comments, either site-wide or for a single
+ * blog entry (when ?id= is supplied).
  ******************************************************************************/
 
 require_once('blog-config.php');

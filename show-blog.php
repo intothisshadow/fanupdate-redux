@@ -18,12 +18,9 @@ declare(strict_types=1);
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/gpl-3.0.html>.
  *
- * Redux 1.5.1 fix: replaced DATE_ADD(CURRENT_TIMESTAMP(), INTERVAL X HOUR)
- * with UTC_TIMESTAMP(). The old offset arithmetic was a 2008-era workaround
- * for servers not storing times in UTC. On modern PHP/MySQL stacks it causes
- * posts to be hidden when the server clock and _server_tz_offset drift.
- * UTC_TIMESTAMP() always returns the correct UTC time regardless of the
- * server's local timezone setting.
+ * Note: post visibility is compared against UTC_TIMESTAMP() (not local server
+ * time) so that scheduled/future posts are hidden correctly regardless of the
+ * server's timezone setting.
  ******************************************************************************/
 ?>
 <div id="fanupdate">

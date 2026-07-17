@@ -2,20 +2,10 @@
 /*****************************************************************************
  * FanUpdate — admin/credits.php
  *
- * Bug fix (this release):
- *  - Removed mandatory $fu->login() call. The credits page displays read-only
- *    version, contributor, and licence information — no authentication is
- *    needed to view it. Requiring login was causing the footer "credits" link
- *    to redirect unauthenticated visitors back to the login form, making the
- *    link appear broken.
- *  - Admin navigation bar is now shown only when the visitor is actually
- *    authenticated ($fu->isLoggedIn()), so unauthenticated visitors see a
- *    clean page without admin controls.
- *
- * HTML modernisation:
- *  - Inline style="" attributes replaced with .credits-section / .credits-meta classes
- *  - page-header row added
- *  - All PHP logic preserved exactly
+ * Displays version, contributor, and licence information. Publicly readable
+ * (no login required) so the footer "credits" link works for logged-out
+ * visitors; the admin nav bar is shown only when the visitor is actually
+ * authenticated.
  ******************************************************************************/
 
 declare(strict_types=1);

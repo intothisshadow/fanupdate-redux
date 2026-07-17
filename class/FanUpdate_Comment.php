@@ -1,4 +1,5 @@
 <?php
+
 /*****************************************************************************
  * FanUpdate — FanUpdate_Comment
  *
@@ -6,15 +7,9 @@
  * Copyright (c) 2020 by Ekaterina (contributor) http://scripts.robotess.net
  * Copyright (c) 2026 refactored for PHP 8.2+ compatibility
  *
- * Refactored for PHP 8.2+:
- *  - All dynamic properties declared explicitly (PHP 8.2 deprecates dynamic props)
- *  - Strict scalar type hints and return types throughout
- *  - No utf8_encode() / utf8_decode() usage
- *  - declare(strict_types=1) at file level
- *
- * Redux 1.5.1 fix:
- *  - getDateFormatted(): replaced _server_tz_offset with timezone_offset.
- *    Same reasoning as FanUpdate_Post — see that file for full explanation.
+ * Domain object wrapping a single comment row: commenter info, formatted
+ * body, date formatting (adjusted to the admin's configured timezone_offset,
+ * matching FanUpdate_Post), Gravatar URL/tag, and template-based rendering.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -185,7 +180,7 @@ class FanUpdate_Comment
         $hash    = md5($email);
         $default = urlencode((string) $this->fu->getOpt('gravatar_default'));
         $rating  = (string) $this->fu->getOpt('gravatar_rating');
-        if ($rating === '' || $rating === false) {
+        if ($rating === '') {
             $rating = 'G';
         }
 
@@ -243,11 +238,11 @@ class FanUpdate_Comment
                 . '{{body}}';
         }
 
-        $template = str_replace('{{id}}',      (string) $this->getID(), $template);
-        $template = str_replace('{{name}}',    $this->getCommenterLink(),  $template);
-        $template = str_replace('{{gravatar}}', $this->getGravatar(),      $template);
-        $template = str_replace('{{date}}',    $this->getDateFormatted(),  $template);
-        $template = str_replace('{{body}}',    $this->getBodyFormatted(),  $template);
+        $template = str_replace('{{id}}', (string) $this->getID(), $template);
+        $template = str_replace('{{name}}', $this->getCommenterLink(), $template);
+        $template = str_replace('{{gravatar}}', $this->getGravatar(), $template);
+        $template = str_replace('{{date}}', $this->getDateFormatted(), $template);
+        $template = str_replace('{{body}}', $this->getBodyFormatted(), $template);
 
         echo '<div id="comment' . $this->getID() . '" class="comment">' . "\n";
         echo $template . "\n";

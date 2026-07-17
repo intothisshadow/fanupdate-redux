@@ -1,18 +1,34 @@
 <?php
 /*****************************************************************************
  * FanUpdate — admin/blacklist.php
- * HTML modernisation: aria-label on table; subnav wrapped in .subnav-bar
- * All PHP/SQL logic preserved exactly from previous version.
+ *
+ * Manages the comment-spam blacklist (add/list/delete words). Delegates
+ * storage to BlacklistService/BlacklistRepository; this page only
+ * parses/sanitises $_POST, enforces CSRF, and renders. A failed per-word
+ * delete is a silent no-op.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * any later version.
  ******************************************************************************/
 
 declare(strict_types=1);
 
 require_once('../blog-config.php');
 require_once('../functions.php');
+require_once('../class/Repository/BlacklistRepositoryInterface.php');
+require_once('../class/Repository/BlacklistRepository.php');
+require_once('../class/Service/BlacklistService.php');
 
 $fu = FanUpdate::instance();
 $fu->addOptFromDb();
 $fu->login();
+
+$blacklistService = new BlacklistService(new BlacklistRepository(
+    $fu->db,
+    (string) $fu->getOpt('blacklist_table')
+));
 
 $showNav = true;
 $clean   = [];
@@ -29,14 +45,10 @@ if (isset($_POST['action']) && !$fu->verifyCsrfOrFail()) {
 
         $clean['badword'] = isset($_POST['badword']) ? clean_input($_POST['badword']) : '';
 
-        $query = "SELECT COUNT(*) FROM " . $fu->getOpt('blacklist_table') . " WHERE badword = ?";
-        $exists = (int) $fu->db->GetFirstCell($query, [$clean['badword']]);
-
-        if ($exists > 0) {
+        if ($blacklistService->wordExists($clean['badword'])) {
             $fu->addErr('Word <strong>' . htmlspecialchars($clean['badword'], ENT_QUOTES, 'UTF-8') . '</strong> is already blacklisted.');
         } else {
-            $query = "INSERT INTO " . $fu->getOpt('blacklist_table') . " (badword) VALUES (?)";
-            if ($fu->db->Execute($query, 'Could not execute query.', [$clean['badword']])) {
+            if ($blacklistService->addWord($clean['badword'])) {
                 $fu->addSuccess('Word <strong>' . htmlspecialchars($clean['badword'], ENT_QUOTES, 'UTF-8') . '</strong> blacklisted.');
             } else {
                 $fu->addErr('Failed to add word to blacklist.');
@@ -49,8 +61,7 @@ if (isset($_POST['action']) && !$fu->verifyCsrfOrFail()) {
         $words = isset($_POST['badword']) && is_array($_POST['badword']) ? $_POST['badword'] : [];
         foreach ($words as $word) {
             $word_clean = clean_input($word);
-            $query  = "DELETE FROM " . $fu->getOpt('blacklist_table') . " WHERE badword = ?";
-            if ($fu->db->Execute($query, 'Could not execute query.', [$word_clean])) {
+            if ($blacklistService->deleteWord($word_clean)) {
                 $fu->addSuccess('Word <strong>' . htmlspecialchars($word_clean, ENT_QUOTES, 'UTF-8') . '</strong> removed from blacklist.');
             }
         }
@@ -94,10 +105,9 @@ $fu->reportErrors();
 
 <?php
 
-$query = 'SELECT * FROM ' . $fu->getOpt('blacklist_table') . ' ORDER BY badword ASC';
-$fu->db->Execute($query);
+$words = $blacklistService->listAll();
 
-if ($fu->db->NumRows() > 0) { ?>
+if (count($words) > 0) { ?>
 
 <form action="blacklist.php" method="post">
 
@@ -111,7 +121,7 @@ if ($fu->db->NumRows() > 0) { ?>
         <tbody>
             <?php
             $class = 'odd';
-            while ($row = $fu->db->ReadRecord()) {
+            foreach ($words as $row) {
                 $class = ($class === 'even') ? 'odd' : 'even';
                 ?>
                 <tr class="<?php echo $class; ?>">
@@ -137,5 +147,4 @@ if ($fu->db->NumRows() > 0) { ?>
     echo '<p>No words are currently blacklisted.</p>';
 }
 
-$fu->db->FreeResult();
 $fu->getFooter();

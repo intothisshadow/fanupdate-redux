@@ -1,22 +1,36 @@
 <?php
 /*****************************************************************************
  * FanUpdate — admin/options.php
- * HTML modernisation:
- *  - subnav wrapped in .subnav-bar
- *  - strpos(...) != 0 → str_starts_with() for private-key detection
- *  - y/n options rendered as toggle switches instead of plain text inputs
- *  - option key underscores replaced with spaces, sentence-cased for display
- *  - All PHP/SQL logic preserved exactly
+ *
+ * General site options: lists and updates all editable option-table rows
+ * (excluding templates, credentials, and private/internal keys, which have
+ * their own pages or are never user-editable). Delegates persistence to
+ * OptionService/OptionRepository; this page parses/sanitises $_POST,
+ * enforces CSRF, and renders. y/n options render as toggle switches.
+ *
+ * Also auto-detects and corrects install_path on every page load: if the
+ * stored value no longer resolves to a real, existing directory (e.g. after
+ * a server move/migration where install_path was never manually updated),
+ * it is corrected automatically. A manually-set install_path that still
+ * points to a real directory is left alone.
  ******************************************************************************/
 
 declare(strict_types=1);
 
 require_once('../blog-config.php');
 require_once('../functions.php');
+require_once('../class/Repository/OptionRepositoryInterface.php');
+require_once('../class/Repository/OptionRepository.php');
+require_once('../class/Service/OptionService.php');
 
 $fu = FanUpdate::instance();
 $fu->addOptFromDb();
 $fu->login();
+
+$optionService = new OptionService(new OptionRepository(
+    $fu->db,
+    (string) $fu->getOpt('options_table')
+));
 
 $showNav = true;
 
@@ -40,6 +54,17 @@ function fu_option_label(string $key): string {
     return ucfirst(str_replace('_', ' ', $key));
 }
 
+// ── Helper: detect this server's actual install directory ────────────────
+// Mirrors the path normalisation install.php applies when it first writes
+// install_path: strip the DreamHost "/.username" quirk and normalise
+// backslashes to forward slashes on Windows dev environments. admin/options.php
+// lives one directory below the install root, hence dirname(__DIR__).
+function fu_detect_install_path(): string {
+    $dir = dirname(__DIR__);
+    $dir = (string) preg_replace('#/\.([a-z]+)#', '', $dir);
+    return str_replace('\\', '/', $dir);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // POST handler
 // ─────────────────────────────────────────────────────────────────────────────
@@ -61,12 +86,11 @@ if (isset($_POST['action']) && $_POST['action'] === 'update' && !$fu->verifyCsrf
 
         $value = clean_input((string) ($values[$id] ?? ''));
 
-        $query = "UPDATE " . $fu->getOpt('options_table') . "
-            SET optvalue = ? WHERE optkey = ?";
+        $affected = $optionService->updateOption($key, $value);
 
-        if (!$fu->db->Execute($query, 'Could not execute query.', [$value, $key])) {
+        if ($affected === null) {
             $fu->addErr('Failed to update <strong>' . htmlspecialchars($key, ENT_QUOTES, 'UTF-8') . '</strong>.');
-        } elseif ($fu->db->AffectedRows() > 0) {
+        } elseif ($affected > 0) {
             $fu->addSuccess(
                 'Set <strong>' . htmlspecialchars($key, ENT_QUOTES, 'UTF-8') . '</strong> = '
                 . nl2br(htmlspecialchars($value, ENT_QUOTES, 'UTF-8'))
@@ -75,18 +99,35 @@ if (isset($_POST['action']) && $_POST['action'] === 'update' && !$fu->verifyCsrf
     }
 }
 
-// ── Load options (exclude templates, admin_email, private keys) ───────────
-$query = "SELECT * FROM " . $fu->getOpt('options_table') . "
-    WHERE optkey NOT LIKE '%template%'
-      AND optkey != 'admin_email'
-    ORDER BY optkey ASC";
+// ── Auto-detect install path ───────────────────────────────────────────────
+// If the site has been moved to a different server or directory (a plain
+// file copy, unlike a real "migration" tool, never updates install_path),
+// the stored value stops pointing at a directory that actually exists on
+// this filesystem. When that happens, silently correct it to match this
+// server's real location, same as install.php auto-detects it on first
+// install. A manually-entered install_path is left alone as long as it
+// still resolves to a real, existing directory — that's the override
+// escape hatch for non-standard setups (e.g. a symlinked path).
+$detectedInstallPath = fu_detect_install_path();
+$storedInstallPath   = (string) $fu->getOpt('install_path', true);
 
-$fu->db->Execute($query);
-$rows = [];
-while ($row = $fu->db->ReadRecord()) {
-    $rows[] = $row;
+if ($storedInstallPath !== '' && $storedInstallPath !== $detectedInstallPath && !is_dir($storedInstallPath)) {
+    $affected = $optionService->updateOption('install_path', $detectedInstallPath);
+
+    if ($affected === null) {
+        $fu->addErr('Could not auto-update <strong>install_path</strong> to match this server’s actual location.');
+    } elseif ($affected > 0) {
+        $fu->addOpt('install_path', $detectedInstallPath);
+        $fu->addSuccess(
+            'Install path automatically updated to <strong>' . htmlspecialchars($detectedInstallPath, ENT_QUOTES, 'UTF-8') . '</strong> '
+            . '(the previously stored path no longer exists on this server, likely after a move or migration). '
+            . 'You can override this manually below if needed.'
+        );
+    }
 }
-$fu->db->FreeResult();
+
+// ── Load options (exclude templates, admin_email, private keys) ───────────
+$rows = $optionService->listEditableOptions();
 
 $fu->getHeader('Options');
 

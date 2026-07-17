@@ -7,33 +7,10 @@ declare(strict_types=1);
  * Copyright (c) Jenny Ferenc <jenny@prism-perfect.net>
  * Copyright (c) 2020 by Ekaterina (contributor) http://scripts.robotess.net
  *
- * Refactored for PHP 8.2+:
- *  - Error display forced ON at top (fixes blank-white page)
- *  - Full $setting array restored from original source (settings[0-28])
- *  - strpos($x, '_') == 0  →  === 0  (strict comparison)
- *  - AddSuccess / AddErr  →  addSuccess / addErr  (camelCase)
- *  - get_magic_quotes_gpc() removed (PHP 8.0+)
- *  - Inline JS $('id') replaced with document.getElementById()
- *  - htmlspecialchars() applied to all echoed values
- *  - Return types and type hints added where applicable
- *
- * Bug fix (Redux 2.0.1):
- *  - install_url auto-detection hardcoded 'http://' — on HTTPS sites this
- *    wrote an http:// install_url into the database, causing mixed-content
- *    upgrades, broken CAPTCHA sessions, and failed comment submissions.
- *    Fixed: protocol now detected from $_SERVER['HTTPS'] / X-Forwarded-Proto.
- *  - $setting[2] placeholder and $setting[4] description example updated
- *    from http:// to https://.
- *  - $setting[18] comment_form_template default gravatar.com link updated
- *    from http:// to https://.
- *
- * Blacklist update (Redux 2.0.1):
- *  - Fresh-install default blacklist refreshed: removed extinct 2000s spam
- *    terms (hoodia, ringtones, webcam) and added current high-signal terms
- *    (bitcoin, crypto, cryptocurrency, essay writing, nft, payday loan, seo).
- *  - Upgrade path: INSERT IGNORE adds the new words to existing installs
- *    without touching any words the site owner added manually; DELETE removes
- *    the three retired terms only if they are still present.
+ * Handles fresh installation and version upgrades: creates database tables
+ * on fresh install, applies incremental schema/option migrations for
+ * upgrades, seeds default blacklist words and smilies, and writes admin
+ * credentials to blog-config.php.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by

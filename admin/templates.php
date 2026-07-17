@@ -1,21 +1,30 @@
 <?php
 /*****************************************************************************
  * FanUpdate — admin/templates.php
- * HTML modernisation:
- *  - subnav wrapped in .subnav-bar
- *  - strpos(...) != 0 → str_starts_with() for private-key hide logic (PHP 8.0+)
- *  - type="text/javascript" removed from <script> tags
- *  - All PHP/SQL logic preserved exactly
+ *
+ * Lists and updates the template options (entry/comment/footer templates,
+ * etc. — the free-text half of the options table). Delegates persistence
+ * to TemplateService/TemplateRepository; this page parses/sanitises
+ * $_POST, enforces CSRF, skips private (underscore-prefixed) keys, and
+ * renders.
  ******************************************************************************/
 
 declare(strict_types=1);
 
 require_once('../blog-config.php');
 require_once('../functions.php');
+require_once('../class/Repository/TemplateRepositoryInterface.php');
+require_once('../class/Repository/TemplateRepository.php');
+require_once('../class/Service/TemplateService.php');
 
 $fu = FanUpdate::instance();
 $fu->addOptFromDb();
 $fu->login();
+
+$templateService = new TemplateService(new TemplateRepository(
+    $fu->db,
+    (string) $fu->getOpt('options_table')
+));
 
 $showNav = true;
 
@@ -38,14 +47,13 @@ if (isset($_POST['action']) && $_POST['action'] === 'update' && !$fu->verifyCsrf
             continue;
         }
 
-        $value     = clean_input((string) ($values[$id] ?? ''), true);
+        $value = clean_input((string) ($values[$id] ?? ''), true);
 
-        $query = "UPDATE " . $fu->getOpt('options_table') . "
-            SET optvalue = ? WHERE optkey = ?";
+        $affected = $templateService->updateOption($key, $value);
 
-        if (!$fu->db->Execute($query, 'Could not execute query.', [$value, $key])) {
+        if ($affected === null) {
             $fu->addErr('Failed to update <strong>' . htmlspecialchars($key, ENT_QUOTES, 'UTF-8') . '</strong>.');
-        } elseif ($fu->db->AffectedRows() > 0) {
+        } elseif ($affected > 0) {
             $fu->addSuccess('Template <strong>' . htmlspecialchars($key, ENT_QUOTES, 'UTF-8') . '</strong> updated.');
         }
     }
@@ -53,16 +61,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'update' && !$fu->verifyCsrf
 
 // ── Load template options ─────────────────────────────────────────────────
 
-$query = "SELECT * FROM " . $fu->getOpt('options_table') . "
-    WHERE optkey LIKE '%template%'
-    ORDER BY optkey ASC";
-
-$fu->db->Execute($query);
-$rows = [];
-while ($row = $fu->db->ReadRecord()) {
-    $rows[] = $row;
-}
-$fu->db->FreeResult();
+$rows = $templateService->listTemplateOptions();
 
 $fu->getHeader('Templates');
 

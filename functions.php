@@ -7,13 +7,9 @@ declare(strict_types=1);
  * Copyright (c) Jenny Ferenc <jenny@prism-perfect.net>
  * Copyright (c) 2020 by Ekaterina (contributor) http://scripts.robotess.net
  *
- * Refactored for PHP 8.2+:
- *  - Curly-brace string offsets ($str{0}) replaced with square-bracket ($str[0])
- *  - utf8_encode() / utf8_decode() removed (deprecated in 8.2);
- *    use mb_convert_encoding() where encoding conversion is needed
- *  - Strict type hints added to all functions
- *  - Return types declared throughout
- *  - PHP 8.0 removed: get_magic_quotes_gpc() — removed from clean_input
+ * Shared utility functions: input sanitization/validation, text parsing and
+ * formatting (WordPress-derived helpers), and a modified subset of PHP
+ * Markdown.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by

@@ -1,18 +1,34 @@
 <?php
 /*****************************************************************************
  * FanUpdate — admin/smilies.php
- * HTML modernisation: aria-label on table; subnav wrapped in .subnav-bar
- * All PHP/SQL logic preserved exactly from previous version.
+ *
+ * Manages the smiley set (add/update/delete, bulk update and bulk delete).
+ * Delegates persistence to SmilieService/SmilieRepository; this page only
+ * parses/sanitises $_POST, enforces CSRF, and renders. Bulk update/delete
+ * actions silently no-op on a failed individual row.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * any later version.
  ******************************************************************************/
 
 declare(strict_types=1);
 
 require_once('../blog-config.php');
 require_once('../functions.php');
+require_once('../class/Repository/SmilieRepositoryInterface.php');
+require_once('../class/Repository/SmilieRepository.php');
+require_once('../class/Service/SmilieService.php');
 
 $fu = FanUpdate::instance();
 $fu->addOptFromDb();
 $fu->login();
+
+$smilieService = new SmilieService(new SmilieRepository(
+    $fu->db,
+    (string) $fu->getOpt('smilies_table')
+));
 
 $showNav = true;
 $clean   = [];
@@ -30,10 +46,7 @@ if (isset($_POST['action']) && !$fu->verifyCsrfOrFail()) {
         $clean['smiley'] = isset($_POST['smiley']) ? clean_input($_POST['smiley']) : '';
         $clean['image']  = isset($_POST['image'])  ? clean_input($_POST['image'])  : '';
 
-        $query = "INSERT INTO " . $fu->getOpt('smilies_table') . "
-            (smiley, image) VALUES (?, ?)";
-
-        if ($fu->db->Execute($query, 'Could not execute query.', [$clean['smiley'], $clean['image']])) {
+        if ($smilieService->addSmiley($clean['smiley'], $clean['image'])) {
             $fu->addSuccess('Smiley <strong>' . htmlspecialchars($clean['smiley'], ENT_QUOTES, 'UTF-8') . '</strong> = '
                 . $fu->makeSmiley($clean['smiley'], $clean['image']) . ' added.');
         } else {
@@ -50,10 +63,7 @@ if (isset($_POST['action']) && !$fu->verifyCsrfOrFail()) {
             $smiley_clean = clean_input($smiley_val);
             $image_clean  = clean_input($images[$key] ?? '');
 
-            $query = "UPDATE " . $fu->getOpt('smilies_table') . "
-                SET image = ? WHERE smiley = ?";
-
-            if ($fu->db->Execute($query, 'Could not execute query.', [$image_clean, $smiley_clean])) {
+            if ($smilieService->updateSmiley($smiley_clean, $image_clean)) {
                 $fu->addSuccess('Smiley <strong>' . htmlspecialchars($smiley_val, ENT_QUOTES, 'UTF-8') . '</strong> = '
                     . $fu->makeSmiley($smiley_val, $images[$key] ?? '') . ' updated.');
             }
@@ -64,8 +74,7 @@ if (isset($_POST['action']) && !$fu->verifyCsrfOrFail()) {
         $deletes = isset($_POST['smiley_delete']) && is_array($_POST['smiley_delete']) ? $_POST['smiley_delete'] : [];
         foreach ($deletes as $key) {
             $key_clean = clean_input($key);
-            $query  = "DELETE FROM " . $fu->getOpt('smilies_table') . " WHERE smiley = ?";
-            if ($fu->db->Execute($query, 'Could not execute query.', [$key_clean])) {
+            if ($smilieService->deleteSmiley($key_clean)) {
                 $fu->addSuccess('Smiley <strong>' . htmlspecialchars($key_clean, ENT_QUOTES, 'UTF-8') . '</strong> deleted.');
             }
         }
@@ -110,10 +119,9 @@ $fu->reportErrors();
 
 <?php
 
-$query = 'SELECT * FROM ' . $fu->getOpt('smilies_table');
-$fu->db->Execute($query);
+$smilies = $smilieService->listAll();
 
-if ($fu->db->NumRows() > 0) { ?>
+if (count($smilies) > 0) { ?>
 
 <form action="smilies.php" method="post">
 
@@ -130,7 +138,7 @@ if ($fu->db->NumRows() > 0) { ?>
             <?php
             $i     = 0;
             $class = 'odd';
-            while ($row = $fu->db->ReadRecord()) {
+            foreach ($smilies as $row) {
                 $class = ($class === 'even') ? 'odd' : 'even';
                 ?>
                 <tr class="<?php echo $class; ?>">
@@ -168,5 +176,4 @@ if ($fu->db->NumRows() > 0) { ?>
     echo '<p>No smilies defined yet.</p>';
 }
 
-$fu->db->FreeResult();
 $fu->getFooter();

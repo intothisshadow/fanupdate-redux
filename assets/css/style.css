@@ -239,6 +239,7 @@ pre {
 #blacklist  a.options,
 #smilies    a.options,
 #templates  a.options,
+#updates    a.updates,
 #credits    a.credits {
     background: var(--fu-bg);
     color: var(--fu-accent);

@@ -1,4 +1,5 @@
 <?php
+
 /*****************************************************************************
  * FanUpdate — FanUpdate_Post
  *
@@ -6,18 +7,9 @@
  * Copyright (c) 2020 by Ekaterina (contributor) http://scripts.robotess.net
  * Copyright (c) 2026 refactored for PHP 8.2+ compatibility
  *
- * Refactored for PHP 8.2+:
- *  - All dynamic properties declared explicitly (PHP 8.2 deprecates dynamic props)
- *  - Strict scalar type hints and return types throughout
- *  - No utf8_encode() / utf8_decode() usage
- *  - declare(strict_types=1) at file level
- *
- * Redux 1.5.1 fix:
- *  - getDateFormatted(): replaced _server_tz_offset with timezone_offset.
- *    _server_tz_offset was the server's own UTC offset, used to undo MySQL's
- *    CURRENT_TIMESTAMP() localisation. That workaround is gone now that all
- *    queries use UTC_TIMESTAMP(). timezone_offset is the admin's configured
- *    local timezone (e.g. UTC+3) and is the correct value for display purposes.
+ * Domain object wrapping a single blog entry row: title/body, template-based
+ * rendering, category assignment/lookup, and date formatting adjusted to the
+ * admin's configured timezone_offset (posts are stored in UTC).
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -121,11 +113,6 @@ class FanUpdate_Post
      *
      * Posts are stored in UTC. We add timezone_offset hours so the displayed
      * date matches the admin's local time rather than the server's UTC clock.
-     *
-     * timezone_offset replaces the old _server_tz_offset here. _server_tz_offset
-     * was used to compensate for MySQL CURRENT_TIMESTAMP() returning local server
-     * time — that compensation is no longer needed since all queries now use
-     * UTC_TIMESTAMP() directly.
      */
     public function getDateFormatted(string $format = ''): string
     {
@@ -291,11 +278,11 @@ class FanUpdate_Post
                 . '{{body}}';
         }
 
-        $template = str_replace('{{id}}',       (string) $this->getID(),        $template);
-        $template = str_replace('{{title}}',    htmlspecialchars($this->getTitle()), $template);
-        $template = str_replace('{{url}}',      htmlspecialchars($this->getUrl()),   $template);
-        $template = str_replace('{{date}}',     $this->getDateFormatted(),           $template);
-        $template = str_replace('{{category}}', $this->getCategoryLinks(),           $template);
+        $template = str_replace('{{id}}', (string) $this->getID(), $template);
+        $template = str_replace('{{title}}', htmlspecialchars($this->getTitle()), $template);
+        $template = str_replace('{{url}}', htmlspecialchars($this->getUrl()), $template);
+        $template = str_replace('{{date}}', $this->getDateFormatted(), $template);
+        $template = str_replace('{{category}}', $this->getCategoryLinks(), $template);
 
         if ($this->commentsOn()) {
             $num      = (int) ($this->params['num_comments'] ?? 0);

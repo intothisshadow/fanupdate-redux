@@ -1,4 +1,5 @@
 <?php
+
 /*****************************************************************************
  * SqlConnection Class for MySQL databases
  *
@@ -7,56 +8,38 @@
  * Copyright (c) 2020 by Ekaterina (contributor) http://scripts.robotess.net
  * Copyright (c) 2026 by Ariane (contributor)
  *
- * Milestone 2 — Database Modernisation (Redux):
- *  - Backing engine migrated from ext/mysqli to PDO (pdo_mysql).
- *  - PDO configured with ATTR_ERRMODE = ERRMODE_EXCEPTION and
- *    ATTR_EMULATE_PREPARES = false, so every query — including the legacy
- *    Execute()/GetRecord()/GetFirstCell()/GetAll() call sites — now goes
- *    through a real server-side prepared statement instead of a raw
- *    mysqli_query() string.
- *  - The existing public API (Execute, GetRecord, GetFirstCell, GetAll,
- *    ReadRecord, ReadRecordPaginate, ExecutePaginate, NumRows,
- *    AffectedRows, GetLastSequence, FreeResult, PrintPaginate) is preserved
- *    exactly so call sites elsewhere in the codebase continue to work
- *    unmodified.
- *  - Every legacy method that accepts a SQL string now also accepts an
- *    optional trailing `array $params` for bound parameters — this lets
- *    call sites migrate to parameter binding without changing method names.
- *  - New convenience methods for bound-parameter queries: query(), fetch(),
- *    fetchAll(), fetchColumn() — these let PDOException propagate rather
- *    than trigger_error(), per CLAUDE.md ("Improve database error handling
- *    using PDO exceptions").
- *  - Transaction helpers added: beginTransaction(), commit(), rollBack(),
- *    inTransaction().
- *  - Escape() has been REMOVED (Milestone 2, Phase 3 complete — see
- *    "TODO security.md"). Every call site across the codebase now uses
- *    bound parameters via query()/fetch()/fetchAll()/Execute(). Do not
- *    re-add a manual-escaping helper; use bound parameters instead.
+ * PDO (pdo_mysql) database abstraction layer. Configured with
+ * ATTR_ERRMODE = ERRMODE_EXCEPTION and ATTR_EMULATE_PREPARES = false, so
+ * every query — including the legacy Execute()/GetRecord()/GetFirstCell()/
+ * GetAll() call sites — goes through a real server-side prepared statement.
  *
- * Milestone 2.5 — Database Layer Modernisation (Redux):
- *  - Query execution consolidated behind one private helper
- *    (runStatement()) used by both Execute() and query(), so the
- *    prepare/bind/execute/bookkeeping logic exists in exactly one place.
- *    Execute() wraps it in try/catch to preserve legacy trigger_error()
- *    behaviour; query() lets PDOException propagate.
- *  - Row-fetching consolidated behind two private helpers (fetchOneRow(),
- *    fetchAllRows()) shared by GetRecord()/fetch(), GetFirstCell()/
- *    fetchColumn(), and GetAll()/fetchAll() — each public method is now a
- *    thin wrapper that differs only in how it obtains the PDOStatement
- *    (existing result vs. a fresh bound-parameter query) and its
- *    error-handling contract (legacy silent-failure vs. exception).
- *  - @throws PHPDoc added to every method that can propagate a
- *    PDOException, so calling code can see the exception contract without
- *    reading the implementation.
+ * Two API families are exposed:
+ *  - Legacy (Execute, GetRecord, GetFirstCell, GetAll, ReadRecord,
+ *    ReadRecordPaginate, ExecutePaginate, NumRows, AffectedRows,
+ *    GetLastSequence, FreeResult, PrintPaginate): preserves the original
+ *    signatures/behaviour, including trigger_error() (or silent failure)
+ *    on query errors rather than throwing, so existing call sites work
+ *    unmodified. Each method accepts an optional trailing `array $params`
+ *    for bound parameters.
+ *  - New bound-parameter convenience API (query(), fetch(), fetchAll(),
+ *    fetchColumn()): lets PDOException propagate to the caller instead of
+ *    calling trigger_error(). Prefer these for newly written code; wrap in
+ *    try/catch where a graceful user-facing error is required.
  *
- * Bug fix (Redux 1.1.2):
- *  - ExecutePaginate(): replaced broken NumRows()-after-GetFirstCell() count
- *    logic with a clean subquery approach:
- *      SELECT COUNT(*) FROM (...original query without ORDER BY...) AS _sub
- *    This correctly handles both plain queries and GROUP BY queries.
- *    The old `if ($numrows > 1)` branch was unreachable for COUNT(*) (which
- *    always returns exactly 1 row) and caused total_results to be set to 1
- *    instead of the real post count, limiting the blog to a single visible post.
+ * Transaction helpers: beginTransaction(), commit(), rollBack(),
+ * inTransaction().
+ *
+ * There is no manual-escaping helper (Escape()) — every call site uses
+ * bound parameters via query()/fetch()/fetchAll()/Execute() instead; do not
+ * re-add one.
+ *
+ * Query execution is consolidated behind one private helper
+ * (runStatement()), used by both Execute() and query(). Row-fetching is
+ * consolidated behind two private helpers (fetchOneRow(), fetchAllRows())
+ * shared by the GetRecord/fetch, GetFirstCell/fetchColumn, and
+ * GetAll/fetchAll pairs — each public method differs only in how it obtains
+ * the PDOStatement and its error-handling contract (legacy silent-failure
+ * vs. exception).
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -92,7 +75,9 @@ class SqlConnection
     /** @var self */
     private static SqlConnection $instance;
 
-    private function __construct() {}
+    private function __construct()
+    {
+    }
 
     // ── singleton ───────────────────────────────────────────────────────────
 
@@ -294,10 +279,9 @@ class SqlConnection
     }
 
     /**
-     * Execute a query with pagination support.
-     *
-     * FIX (Redux 1.1.2): see class docblock — count is computed via a
-     * COUNT(*) subquery rather than relying on result-stack state.
+     * Execute a query with pagination support. Count is computed via a
+     * COUNT(*) subquery over the base query (ORDER BY stripped), which
+     * correctly handles both plain queries and GROUP BY queries.
      *
      * @param array<int|string, mixed> $params
      */

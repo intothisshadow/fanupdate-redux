@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 /*****************************************************************************
@@ -8,11 +9,9 @@ declare(strict_types=1);
  * Copyright (c) 2008 by Jenny Ferenc (contributor) <jenny@prism-perfect.net>
  * Copyright (c) 2020 by Ekaterina (contributor) http://scripts.robotess.net
  *
- * Refactored for PHP 8.2+:
- *  - All dynamic properties declared explicitly
- *  - Strict type hints and return types added
- *  - utf8_encode() / utf8_decode() removed entirely (use mb_convert_encoding
- *    via FeedItem::toUtf8() / FeedItem::fromUtf8() if needed by callers)
+ * Generates RSS 2.0 or Atom feeds: channel-level metadata, namespace
+ * declarations, item collection, and XML output (with CDATA wrapping for
+ * HTML-bearing elements such as description/content:encoded/summary).
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by

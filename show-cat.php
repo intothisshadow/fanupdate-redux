@@ -18,19 +18,16 @@ declare(strict_types=1);
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/gpl-3.0.html>.
  *
- * Redux 1.5.1 fix (applied late): replaced DATE_ADD(CURRENT_TIMESTAMP(), INTERVAL X HOUR)
- * with UTC_TIMESTAMP(). The 1.5.1 timezone fix was applied to show-blog.php but missed
- * show-cat.php. The _server_tz_offset option was removed from the database during that
- * upgrade, so getOpt('_server_tz_offset') returns '' here, causing the INTERVAL
- * arithmetic to silently hide all category posts on servers whose local clock is ahead
- * of UTC. UTC_TIMESTAMP() is always correct regardless of server timezone.
+ * Note: post visibility is compared against UTC_TIMESTAMP() (not local server
+ * time) so that scheduled/future posts are hidden correctly regardless of the
+ * server's timezone setting.
  ******************************************************************************/
 
-// Guard moved above the opening <div> so that an invalid/missing $cat_id
-// never leaves an unclosed <div id="fanupdate"> in the host page's output.
-// Changed from exit to return so the host page continues running normally.
-// $cat_id is used (not $listingid) so it cannot collide with show-blog.php
-// when both are embedded on the same page.
+// Guard sits above the opening <div> so an invalid/missing $cat_id never
+// leaves an unclosed <div id="fanupdate"> in the host page's output; return
+// (not exit) lets the host page continue running normally. $cat_id (not
+// $listingid) avoids colliding with show-blog.php when both are embedded on
+// the same page.
 if (!isset($cat_id) || !is_numeric($cat_id)) {
     return;
 }

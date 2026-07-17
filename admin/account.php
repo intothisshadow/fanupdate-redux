@@ -1,20 +1,33 @@
 <?php
 /*****************************************************************************
  * FanUpdate — admin/account.php
- * HTML modernisation:
- *  - admin_email input already type="email" — preserved
- *  - page-header row added
- *  - All PHP/SQL logic preserved exactly
+ *
+ * Admin account settings: username, email, and password changes. Delegates
+ * business logic to AccountService/AccountRepository; this page only
+ * parses/sanitises $_POST, enforces CSRF, validates input, and renders.
+ *
+ * Note: a successful validation always shows its success message regardless
+ * of whether the underlying config-file write or SQL update succeeded —
+ * neither AccountService nor this page currently checks those return values.
  ******************************************************************************/
 
 declare(strict_types=1);
 
 require_once('../blog-config.php');
 require_once('../functions.php');
+require_once('../class/Repository/AccountRepositoryInterface.php');
+require_once('../class/Repository/AccountRepository.php');
+require_once('../class/Service/AccountService.php');
 
 $fu = FanUpdate::instance();
 $fu->addOptFromDb();
 $fu->login();
+
+$accountService = new AccountService(new AccountRepository(
+    $fu,
+    $fu->db,
+    (string) $fu->getOpt('options_table')
+));
 
 $showNav = true;
 
@@ -35,8 +48,7 @@ if (isset($_POST['action']) && !$fu->verifyCsrfOrFail()) {
         } elseif ($new_username === '') {
             $fu->addErr('Username cannot be empty.');
         } else {
-            $fu->updateConfigKey('admin_username', $new_username);
-            $fu->reissueToken($new_username);
+            $accountService->updateUsername($new_username);
             $fu->addSuccess('Username updated to <strong>' . htmlspecialchars($new_username, ENT_QUOTES, 'UTF-8') . '</strong>.');
         }
 
@@ -47,39 +59,31 @@ if (isset($_POST['action']) && !$fu->verifyCsrfOrFail()) {
         if (!filter_var($new_email, FILTER_VALIDATE_EMAIL)) {
             $fu->addErr('Please enter a valid email address.');
         } else {
-            $fu->db->Execute(
-                "UPDATE " . $fu->getOpt('options_table') . "
-                 SET optvalue = ? WHERE optkey = 'admin_email'",
-                'Could not update email.',
-                [$new_email]
-            );
+            $accountService->updateEmail($new_email);
             $fu->addSuccess('Email updated to <strong>' . htmlspecialchars($new_email, ENT_QUOTES, 'UTF-8') . '</strong>.');
         }
 
     } elseif ($_POST['action'] === 'update_password') {
 
-        $current_pw  = isset($_POST['current_password'])  ? $_POST['current_password']  : '';
-        $new_pw      = isset($_POST['new_password'])      ? $_POST['new_password']      : '';
-        $confirm_pw  = isset($_POST['confirm_password'])  ? $_POST['confirm_password']  : '';
-        $stored_hash = (string) $fu->getOpt('admin_password', true);
+        $current_pw = isset($_POST['current_password']) ? $_POST['current_password'] : '';
+        $new_pw     = isset($_POST['new_password'])      ? $_POST['new_password']      : '';
+        $confirm_pw = isset($_POST['confirm_password'])  ? $_POST['confirm_password']  : '';
 
-        if (!password_verify($current_pw, $stored_hash)) {
+        if (!$accountService->verifyCurrentPassword($current_pw)) {
             $fu->addErr('Current password is incorrect.');
         } elseif ($new_pw !== $confirm_pw) {
             $fu->addErr('New passwords do not match.');
         } elseif (mb_strlen($new_pw) < 8) {
             $fu->addErr('New password must be at least 8 characters.');
         } else {
-            $new_hash = password_hash($new_pw, PASSWORD_BCRYPT);
-            $fu->updateConfigKey('admin_password', $new_hash);
-            $fu->reissueToken((string) $fu->getOpt('admin_username', true));
+            $accountService->updatePassword($new_pw);
             $fu->addSuccess('Password updated.');
         }
     }
 }
 
-$current_email    = htmlspecialchars((string) $fu->getOpt('admin_email'), ENT_QUOTES, 'UTF-8');
-$current_username = htmlspecialchars((string) $fu->getOpt('admin_username', true), ENT_QUOTES, 'UTF-8');
+$current_email    = htmlspecialchars($accountService->getCurrentEmail(), ENT_QUOTES, 'UTF-8');
+$current_username = htmlspecialchars($accountService->getCurrentUsername(), ENT_QUOTES, 'UTF-8');
 
 $fu->getHeader('Account');
 

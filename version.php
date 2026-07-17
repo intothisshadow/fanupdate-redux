@@ -23,13 +23,13 @@ declare(strict_types=1);
 // ── release identity ─────────────────────────────────────────────────────────
 
 /** Human-readable version string displayed in the UI, footer, and RSS feeds. */
-const FU_VERSION      = 'Redux 2.1.0';
+const FU_VERSION      = 'Redux 2.2.0';
 
 /** Database schema version — update only when install.php adds/alters tables. */
 const FU_DB_VERSION   = '2.2.1b2';
 
 /** ISO 8601 release date. */
-const FU_RELEASE_DATE = '2026-07-01';
+const FU_RELEASE_DATE = '2026-07-17';
 
 /** Short release codename (shown on the Dashboard and Credits page). */
 const FU_RELEASE_NAME = '';
@@ -52,6 +52,14 @@ const FU_URL_REDUX = 'https://www.unloved-heart.net';
 
 const FU_LICENCE     = 'GNU General Public License v3 or later';
 const FU_LICENCE_URL = 'https://www.gnu.org/licenses/gpl-3.0.html';
+
+// ── update provider (Admin Update Manager) ──────────────────────────────────
+// Fixed, not user-editable — only the release channel and an optional
+// GitHub token are configurable from admin/update.php. See
+// class/Update/GitHubUpdateProvider.php.
+
+const FU_UPDATE_PROVIDER_OWNER = 'intothisshadow';
+const FU_UPDATE_PROVIDER_REPO  = 'fanupdate-redux';
 
 // ── contributor roster ───────────────────────────────────────────────────────
 // Used by credits.php. Add entries here when a new contributor is credited.

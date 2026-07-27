@@ -209,6 +209,7 @@ class UpdateManager
                 'latestPrerelease'  => $release->prerelease,
                 'downloadUrl'       => $release->downloadUrl,
                 'downloadSize'      => $release->downloadSize,
+                'expectedSha256'    => $release->expectedSha256,
             ];
 
             // A freshly detected version invalidates any previous dismissal
@@ -236,6 +237,7 @@ class UpdateManager
                     $existing['downloadedPath'],
                     $existing['downloadedSize'],
                     $existing['downloadedSha256'],
+                    $existing['downloadedChecksumVerified'],
                     $existing['downloadedAt'],
                 );
             }
@@ -337,10 +339,19 @@ class UpdateManager
             'latestPrerelease'  => (bool) ($state['latestPrerelease'] ?? false),
             'downloadUrl'       => $state['downloadUrl'] ?? null,
             'downloadSize'      => isset($state['downloadSize']) ? (int) $state['downloadSize'] : null,
+            // FP-17: whether this release published a checksum at all — shown
+            // regardless of whether a download has happened yet.
+            'checksumAvailable' => isset($state['expectedSha256']),
             'noticeDismissed'   => $dismissedVersion !== null && $dismissedVersion === $latestVersion,
             'downloadedVersion' => $state['downloadedVersion'] ?? null,
             'downloadedSize'    => isset($state['downloadedSize']) ? (int) $state['downloadedSize'] : null,
             'downloadedSha256'  => $state['downloadedSha256'] ?? null,
+            // FP-17: true once a download has actually been checksum-verified
+            // against the release's published checksum. False both when no
+            // download has happened yet and when one happened but no
+            // checksum was published — 'checksumAvailable' above and
+            // 'downloadedVersion' distinguish those cases for the UI.
+            'downloadedChecksumVerified' => (bool) ($state['downloadedChecksumVerified'] ?? false),
             'downloadedAt'      => $state['downloadedAt'] ?? null,
             // True once the currently-known latest version has been
             // downloaded and validated — i.e. ready for the (not yet built)
@@ -411,6 +422,7 @@ class UpdateManager
                 $state['downloadedPath'],
                 $state['downloadedSize'],
                 $state['downloadedSha256'],
+                $state['downloadedChecksumVerified'],
                 $state['downloadedAt'],
             );
             $state['lastInstall'] = [
@@ -514,12 +526,63 @@ class UpdateManager
     }
 
     /**
+     * Run any pending database upgrades (schema migration + option/version
+     * housekeeping) via $upgradeRunner (TODO.md item "10. Admin-Panel
+     * Database Update Runner"), reporting progress through the same
+     * cached-state mechanism installLatestRelease()/restoreBackup() use
+     * (so admin/update.php's existing progress-bar polling works
+     * unmodified for this too), and logging the outcome. Never throws —
+     * same error-capturing pattern as the other public methods here.
+     *
+     * Used two ways: automatically right after a GitHub-release install
+     * (admin/update.php's `?action=run-upgrades` redirect step, unchanged
+     * from before this method existed except for now going through
+     * UpdateManager instead of calling $upgradeRunner directly, so it gets
+     * progress/logging too), and from the new "Database Updates" section's
+     * own button — for an installation updated by manual file upload,
+     * which never goes through that redirect at all.
+     *
+     * @return array{ok: bool, error?: string, messages?: array<int, string>, fromVersion?: string, toVersion?: string}
+     */
+    public function runPendingUpgrades(UpgradeRunner $upgradeRunner, string $targetVersion): array
+    {
+        try {
+            $onProgress = function (string $message, int $step, int $total): void {
+                $this->reportProgress($message, $step, $total);
+            };
+
+            $result = $upgradeRunner->runPendingUpgrades($targetVersion, $onProgress);
+
+            if (empty($result->messages)) {
+                $this->logEvent('upgrade', 'ok', 'Database already up to date — no migrations were needed.');
+            } else {
+                $this->logEvent(
+                    'upgrade',
+                    'ok',
+                    'Ran ' . count($result->messages) . ' pending database migration(s): ' . implode(' ', $result->messages)
+                );
+            }
+
+            return [
+                'ok'          => true,
+                'messages'    => $result->messages,
+                'fromVersion' => $result->fromVersion,
+                'toVersion'   => $result->toVersion,
+            ];
+        } catch (\Throwable $e) {
+            $this->logEvent('upgrade', 'error', 'Database upgrade failed: ' . $e->getMessage());
+
+            return ['ok' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    /**
      * Download the currently-known latest release's ZIP asset (from cached
      * check state — no live provider call) and persist the outcome. Never
      * throws — failures are captured into the returned array as an error,
      * the same pattern as checkForUpdates().
      *
-     * @return array{ok: bool, error?: string, path?: string, size?: int, sha256?: string}
+     * @return array{ok: bool, error?: string, path?: string, size?: int, sha256?: string, checksumVerified?: bool}
      */
     public function downloadLatestRelease(): array
     {
@@ -537,21 +600,28 @@ class UpdateManager
         try {
             $result = $this->downloadManager->download($release, $this->provider->getAllowedDownloadHosts());
 
-            $state['downloadedVersion'] = $release->version;
-            $state['downloadedPath']    = $result->filePath;
-            $state['downloadedSize']    = $result->size;
-            $state['downloadedSha256']  = $result->sha256;
-            $state['downloadedAt']      = gmdate('c');
+            $state['downloadedVersion']          = $release->version;
+            $state['downloadedPath']             = $result->filePath;
+            $state['downloadedSize']             = $result->size;
+            $state['downloadedSha256']           = $result->sha256;
+            $state['downloadedChecksumVerified'] = $result->checksumVerified;
+            $state['downloadedAt']               = gmdate('c');
 
             $this->repository->saveState($state);
 
-            $this->logEvent('download', 'ok', 'Downloaded release ' . $release->version . ' (' . $result->size . ' bytes).');
+            $this->logEvent(
+                'download',
+                'ok',
+                'Downloaded release ' . $release->version . ' (' . $result->size . ' bytes).'
+                . ($result->checksumVerified ? ' Checksum verified against the published release.' : ' No published checksum was available to verify against.')
+            );
 
             return [
-                'ok'     => true,
-                'path'   => $result->filePath,
-                'size'   => $result->size,
-                'sha256' => $result->sha256,
+                'ok'                => true,
+                'path'              => $result->filePath,
+                'size'              => $result->size,
+                'sha256'            => $result->sha256,
+                'checksumVerified'  => $result->checksumVerified,
             ];
         } catch (\Throwable $e) {
             $this->logEvent('download', 'error', 'Download of release ' . $release->version . ' failed: ' . $e->getMessage());
@@ -583,6 +653,7 @@ class UpdateManager
             prerelease: (bool) ($state['latestPrerelease'] ?? false),
             downloadUrl: isset($state['downloadUrl']) ? (string) $state['downloadUrl'] : null,
             downloadSize: isset($state['downloadSize']) ? (int) $state['downloadSize'] : null,
+            expectedSha256: isset($state['expectedSha256']) ? (string) $state['expectedSha256'] : null,
         );
     }
 

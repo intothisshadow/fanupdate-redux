@@ -16,8 +16,8 @@
  *
  * Security note: no eval(), base64_decode() payloads, shell_exec(),
  * system(), passthru(), or preg_replace() /e modifier are used anywhere in
- * this class; file writes are limited to blog-config.php via
- * updateConfigKey() and the legacy-MD5-to-bcrypt upgrade path in login().
+ * this class. admin_username/admin_password are plain options-table rows
+ * (see AccountRepository) — this class never writes to blog-config.php.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -29,6 +29,16 @@ declare(strict_types=1);
 
 // DON'T CHANGE THESE!
 $fanupdate           = $fanupdate ?? [];
+// $coltable is optional in blog-config.php as of the "clean up blog-config.
+// sample.php" change — collective_script/col_id/col_subj/collective_table
+// all now live in the database (see resolveCollectiveScriptConfig() below),
+// so $coltable only still matters as a legacy migration-seed fallback for
+// an installation whose blog-config.php predates that move. Guarded here so
+// every read of $coltable[...] elsewhere in this class/install.php/
+// admin/index.php/admin/update.php (all always null-coalesced to a sane
+// default already) doesn't throw an "Undefined variable" warning on a
+// config file that simply never declared it.
+$coltable            = $coltable ?? [];
 $fanupdate['tables'] = [
     $fanupdate['blog_table'],
     $fanupdate['collective_table'],
@@ -38,6 +48,14 @@ $fanupdate['tables'] = [
     $fanupdate['blacklist_table'],
     $fanupdate['catoptions_table'],
     $fanupdate['smilies_table'],
+    // Categories Support (hybrid): FanUpdate's own always-present
+    // standalone categories table, only actually created/used when a
+    // collective_script is configured (see install.php). '?? ''' guards
+    // configs from before this option existed.
+    $fanupdate['standalone_category_table'] ?? '',
+    // Media gallery (Admin -> Media) — '?? ''' guards configs from before
+    // this option existed, same as standalone_category_table above.
+    $fanupdate['media_table'] ?? '',
 ];
 
 // requires SqlConnection class, clean_input
@@ -72,19 +90,20 @@ class FanUpdate
 
     private function __construct()
     {
-        global $fanupdate, $coltable;
+        global $fanupdate;
 
         $this->_cfg = array_merge($fanupdate, $this->config);
 
-        // getOpt(..., true) returns false when collective_script is not set at
-        // all — $coltable[false] doesn't exist, leaving col_id/col_subj empty
-        // and breaking every category SQL query. Fall back to 'n' (standalone).
-        $collectiveScript = $this->getOpt('collective_script', true);
-        if ($collectiveScript === false || $collectiveScript === '') {
-            $collectiveScript = 'n';
-        }
-        $this->_cfg['col_id']   = $coltable[$collectiveScript]['id']      ?? '';
-        $this->_cfg['col_subj'] = $coltable[$collectiveScript]['subject'] ?? '';
+        // collective_script/col_id/col_subj used to be derived here directly
+        // from blog-config.php's $coltable global. They now live in the
+        // options table instead (TODO.md's Database Architecture item —
+        // "Move collective-script configuration from blog-config.php into the
+        // database"), so resolution happens in resolveCollectiveScriptConfig(),
+        // called from addOptFromDb() once DB-stored options (or, for a
+        // not-yet-migrated installation, blog-config.php's legacy values as a
+        // fallback) are available. Nothing between construction and
+        // addOptFromDb() — called immediately after FanUpdate::instance() on
+        // every page — reads these, so leaving them unset here is safe.
 
         // Populate smiley_imgs from the smilies directory so printSmileyImgDropdown
         // works even before addOptFromDb() is called.
@@ -289,6 +308,8 @@ class FanUpdate
             $this->db->FreeResult();
         }
 
+        $this->resolveCollectiveScriptConfig();
+
         return false;
     }
 
@@ -318,31 +339,84 @@ class FanUpdate
     }
 
     /**
-     * Write a key=value pair into blog-config.php.
-     * Only updates keys that already exist in the file — never injects new lines.
-     * Uses addcslashes($value, '\\$\'') so bcrypt hashes and single-quotes
-     * cannot escape the string literal or introduce new PHP code.
+     * Resolve collective_script/col_id/col_subj after DB-backed options are
+     * loaded (see addOptFromDb()). Prefers the options-table-backed value —
+     * written by UpgradeRunner's one-time migration for an existing
+     * installation, or seeded directly by install.php on a fresh one (see
+     * TODO.md's Database Architecture item, "Move collective-script
+     * configuration from blog-config.php into the database"). Falls back to
+     * blog-config.php's legacy $fanupdate['collective_script']/$coltable
+     * globals — read-only here, never written back — only for an
+     * installation that hasn't gone through that migration yet, so deploying
+     * this code doesn't silently break an integrated (Enthusiast/etc.) site
+     * before the migration has actually run.
      */
-    public function updateConfigKey(string $key, string $value): bool
+    private function resolveCollectiveScriptConfig(): void
     {
-        $configFile = __DIR__ . '/../blog-config.php';
-        if (!is_readable($configFile) || !is_writable($configFile)) {
-            return false;
+        global $fanupdate, $coltable;
+
+        $storedScript = $this->getOpt('collective_script', true);
+
+        if ($storedScript !== false && $storedScript !== '') {
+            $this->_cfg['collective_script'] = (string) $storedScript;
+
+            $colId   = $this->getOpt('col_id', true);
+            $colSubj = $this->getOpt('col_subj', true);
+
+            $this->_cfg['col_id']   = ($colId !== false)   ? (string) $colId   : '';
+            $this->_cfg['col_subj'] = ($colSubj !== false) ? (string) $colSubj : '';
+
+            return;
         }
 
-        $content      = (string) file_get_contents($configFile);
-        $escapedValue = addcslashes($value, '\\$\'');
-        $pattern      = "/(\\\$fanupdate\['" . preg_quote($key, '/') . "'\]\s*=\s*)'[^']*'/";
-        $replacement  = "\$1'" . $escapedValue . "'";
-
-        $newContent = preg_replace($pattern, $replacement, $content);
-        if ($newContent === null || $newContent === $content) {
-            return false;
+        $legacyShorthand = (string) ($fanupdate['collective_script'] ?? 'n');
+        if ($legacyShorthand === '') {
+            $legacyShorthand = 'n';
         }
 
-        $this->_cfg[$key] = $value;
+        $this->_cfg['collective_script'] = self::normalizeCollectiveScriptIdentifier($legacyShorthand);
+        $this->_cfg['col_id']            = (string) ($coltable[$legacyShorthand]['id']      ?? '');
+        $this->_cfg['col_subj']          = (string) ($coltable[$legacyShorthand]['subject'] ?? '');
+    }
 
-        return file_put_contents($configFile, $newContent) !== false;
+    /**
+     * Whether a collective/fanlisting script (Enthusiast, Fanatically,
+     * Listing Admin, or a custom integration) is configured for this
+     * installation, as opposed to running FanUpdate standalone.
+     * collective_script is stored as a descriptive identifier ("none",
+     * "enthusiast", etc. — see TODO.md's Database Architecture item) rather
+     * than the legacy single-letter shorthand, so this is the single place
+     * that decides what counts as "standalone" instead of relying on
+     * getOpt()'s generic y/n-string truthy mapping, which only special-cases
+     * 'n'/'no'/'y'/'yes'/0/1 and would not treat "none" as falsy.
+     */
+    public function hasCollectiveScript(): bool
+    {
+        $value = (string) $this->getOpt('collective_script', true);
+
+        return $value !== '' && $value !== 'none';
+    }
+
+    /**
+     * Normalise a collective_script identifier from the legacy single-letter
+     * shorthand ('n', 'e') to the descriptive string this codebase now
+     * stores and displays ('none', 'enthusiast') — TODO.md's Database
+     * Architecture item. An already-descriptive value, or a custom
+     * identifier for a script this codebase doesn't have a shorthand mapping
+     * for, passes through unchanged (lower-cased/trimmed). Public and static
+     * (a pure string transform, no singleton state) so UpgradeRunner and
+     * install.php can reuse it without taking on a FanUpdate instance
+     * dependency — same precedent as UpdateManager::normalizeVersion().
+     */
+    public static function normalizeCollectiveScriptIdentifier(string $raw): string
+    {
+        return match (strtolower(trim($raw))) {
+            '', 'n', 'no', 'none' => 'none',
+            'e', 'enthusiast'     => 'enthusiast',
+            'f', 'fanatically'    => 'fanatically',
+            'l', 'listingadmin'   => 'listingadmin',
+            default               => strtolower(trim($raw)),
+        };
     }
 
     /**
@@ -579,18 +653,6 @@ class FanUpdate
         echo '</select>' . "\n";
     }
 
-    // ── WYSIWYG toolbar ──────────────────────────────────────────────────────
-
-    /**
-     * No-op placeholder — the WYSIWYG toolbar is built entirely in JavaScript
-     * by fanupdate-admin.js (makeWysiwyg targets textarea.wysiwyg).
-     * This method exists so admin/blog.php compiles without a fatal error.
-     */
-    public function printWysiwyg(string $field_id): void
-    {
-        // Intentionally empty. JS handles toolbar insertion.
-    }
-
     // ── credits ─────────────────────────────────────────────────────────────
 
     /**
@@ -744,33 +806,7 @@ class FanUpdate
                 $passwordOk = false;
 
                 if ($usernameOk) {
-                    // ── bcrypt path (normal) ──────────────────────────────────
-                    if (str_starts_with($storedHash, '$2')) {
-                        $passwordOk = password_verify($password, $storedHash);
-
-                        // ── MD5 legacy fallback ───────────────────────────────────
-                    } elseif (preg_match('/^[0-9a-f]{32}$/', $storedHash) && md5($password) === $storedHash) {
-                        $passwordOk = true;
-
-                        $newHash    = password_hash($password, PASSWORD_BCRYPT);
-                        $configFile = __DIR__ . '/../blog-config.php';
-
-                        if (is_writable($configFile)) {
-                            $configContent = (string) file_get_contents($configFile);
-
-                            $newContent = preg_replace(
-                                "/(\\\$fanupdate\['admin_password'\]\s*=\s*)(?:md5\('[^']*'\)|'[0-9a-f]{32}')/",
-                                "\$1'" . addcslashes($newHash, '\\$') . "'",
-                                $configContent
-                            );
-
-                            if ($newContent !== null) {
-                                file_put_contents($configFile, $newContent);
-                                $this->addOpt('admin_password', $newHash);
-                                $storedHash = $newHash;
-                            }
-                        }
-                    }
+                    $passwordOk = password_verify($password, $storedHash);
                 }
 
                 if ($usernameOk && $passwordOk) {
@@ -1092,9 +1128,56 @@ class FanUpdate
         // ── end lightbox init ─────────────────────────────────────────────────
     }
 
+    /**
+     * Renders the footer_template option (Admin -> Templates -> Footer),
+     * substituting its {{main_url}}/{{archive_url}}/{{rss_url}}/
+     * {{fanupdate_url}}/{{fanupdate_version}} variables — see README's
+     * "Footer template variables" table. Previously a no-op stub: the
+     * option was fully editable from the admin panel but never actually
+     * rendered anywhere, discovered while auditing admin/get-code.php's
+     * CSS starter snippet against what the public templates really emit.
+     * $cat_id (passed by show-cat.php, null from show-blog.php) scopes
+     * {{rss_url}} to that category's feed via rss.php's own ?c= parameter,
+     * same convention as FanUpdate_Post::getCategoryLinks().
+     */
     public function printBlogFooter(?int $cat_id = null): void
     {
-        // Hook for theme customisation; no-op in the default implementation.
+        $template = (string) $this->getOpt('footer_template');
+
+        if ($template === '') {
+            $template =
+                '<div class="archivelink">' . "\n"
+                . '<form action="{{main_url}}" method="get">' . "\n"
+                . '<p>' . "\n"
+                . '<a href="{{main_url}}">main</a> &middot;' . "\n"
+                . '<a href="{{archive_url}}">archive</a> &middot;' . "\n"
+                . '<a class="rss" href="{{rss_url}}">feed</a> &middot;' . "\n"
+                . '<input type="text" name="q" value="" />' . "\n"
+                . '<input type="submit" value="Search" class="button" />' . "\n"
+                . '</p>' . "\n"
+                . '</form>' . "\n"
+                . '</div><!-- END .archivelink -->' . "\n\n"
+                . '<div class="credit">' . "\n"
+                . '<p>Powered by <a href="{{fanupdate_url}}" target="_blank" class="ext">FanUpdate {{fanupdate_version}}</a></p>' . "\n"
+                . '</div><!-- END .credit -->';
+        }
+
+        $mainUrl    = (string) ($this->getOpt('blog_page') ?: '');
+        $archiveUrl = $mainUrl !== '' ? $mainUrl . '?view=archive' : '';
+        $rssUrl     = rtrim((string) $this->getOpt('install_url'), '/') . '/rss.php'
+            . ($cat_id !== null ? '?c=' . $cat_id : '');
+
+        $template = str_replace('{{main_url}}', htmlspecialchars($mainUrl, ENT_QUOTES, 'UTF-8'), $template);
+        $template = str_replace('{{archive_url}}', htmlspecialchars($archiveUrl, ENT_QUOTES, 'UTF-8'), $template);
+        $template = str_replace('{{rss_url}}', htmlspecialchars($rssUrl, ENT_QUOTES, 'UTF-8'), $template);
+        $template = str_replace('{{fanupdate_url}}', htmlspecialchars(FU_URL_REDUX, ENT_QUOTES, 'UTF-8'), $template);
+        $template = str_replace(
+            '{{fanupdate_version}}',
+            htmlspecialchars((string) $this->getOpt('version'), ENT_QUOTES, 'UTF-8'),
+            $template
+        );
+
+        echo $template . "\n";
     }
 
 }

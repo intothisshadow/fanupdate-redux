@@ -8,7 +8,7 @@
  * Copyright (c) 2026 refactored for PHP 8.2+ compatibility
  *
  * Domain object wrapping a single comment row: commenter info, formatted
- * body, date formatting (adjusted to the admin's configured timezone_offset,
+ * body, date formatting (adjusted to the admin's configured timezone,
  * matching FanUpdate_Post), Gravatar URL/tag, and template-based rendering.
  *
  * This program is free software: you can redistribute it and/or modify
@@ -123,11 +123,9 @@ class FanUpdate_Comment
     }
 
     /**
-     * Return the date formatted for display, adjusted to the admin's configured
-     * local timezone (timezone_offset = hours difference from UTC).
-     *
-     * Uses timezone_offset instead of the old _server_tz_offset — see
-     * FanUpdate_Post::getDateFormatted() for full explanation.
+     * Return the date formatted for display, adjusted to the admin's
+     * configured IANA timezone — see FanUpdate_Post::getDateFormatted() for
+     * full explanation (FP-19).
      */
     public function getDateFormatted(string $format = ''): string
     {
@@ -135,16 +133,19 @@ class FanUpdate_Comment
             $format = (string) $this->fu->getOpt('date_format');
         }
 
-        $ts = strtotime($this->getDate() . ' UTC');
-        if ($ts === false) {
+        try {
+            $dt = new DateTime($this->getDate(), new DateTimeZone('UTC'));
+        } catch (Exception) {
             return '';
         }
 
-        $raw    = $this->fu->getOpt('timezone_offset');
-        $offset = ($raw === false) ? 0 : (int) $raw;
-        $ts    += $offset * 3600;
+        $tz = (string) $this->fu->getOpt(FU_TIMEZONE_OPTION_KEY);
+        if (!fu_is_valid_timezone($tz)) {
+            $tz = FU_DEFAULT_TIMEZONE;
+        }
+        $dt->setTimezone(new DateTimeZone($tz));
 
-        return date($format, $ts);
+        return $dt->format($format);
     }
 
     // ── status ────────────────────────────────────────────────────────────────

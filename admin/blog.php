@@ -6,9 +6,10 @@
  * Blog entry CRUD (add/edit/preview/delete, single and bulk) and the entry
  * list with category filter and search. Delegates persistence to
  * BlogService/BlogRepository; this page parses/sanitises $_POST and $_GET,
- * enforces CSRF, and renders. The category-dropdown queries read
- * collective/category data (not blog-entry data) and still query $fu->db
- * directly.
+ * enforces CSRF, and renders. The category dropdown/filter delegate to
+ * CategoryService::listForDropdown() (Categories Support/hybrid), which
+ * shows both standalone and collective-sourced categories together — see
+ * CategoryService's class docblock.
  *
  * Destructive actions (single and bulk delete) go through a dedicated
  * server-side confirmation view with its own <form>, so they work with
@@ -18,8 +19,9 @@
  *
  * Notes on non-obvious behaviour:
  *  - The body is cleaned with clean_input(..., allowtags: true) since it is
- *    HTML (images, links, formatting from the WYSIWYG editor) and must not
- *    be stripped.
+ *    HTML (images, links, formatting from the TinyMCE editor — TODO.md item
+ *    "FP-18. Implement TinyMCE Editor" — see assets/js/fanupdate-tinymce.js)
+ *    and must not be stripped.
  *  - New-entry dates default to gmdate(...) (UTC) to match the
  *    UTC_TIMESTAMP() comparator used in show-blog.php; a local-time default
  *    would hide new entries on servers whose PHP timezone is ahead of UTC.
@@ -32,6 +34,9 @@ require_once('../functions.php');
 require_once('../class/Repository/BlogRepositoryInterface.php');
 require_once('../class/Repository/BlogRepository.php');
 require_once('../class/Service/BlogService.php');
+require_once('../class/Repository/CategoryRepositoryInterface.php');
+require_once('../class/Repository/CategoryRepository.php');
+require_once('../class/Service/CategoryService.php');
 
 $fu = FanUpdate::instance();
 $fu->addOptFromDb();
@@ -42,6 +47,25 @@ $blogService = new BlogService(new BlogRepository(
     (string) $fu->getOpt('blog_table'),
     (string) $fu->getOpt('catjoin_table'),
     (string) $fu->getOpt('comments_table')
+));
+
+// Categories Support (hybrid): the category dropdown/filter below must
+// show both standalone and collective-sourced categories together — see
+// CategoryService's class docblock. Mirrors admin/category.php's
+// construction exactly. hasCollectiveScript() checks the descriptive
+// collective_script identifier ("none"/"enthusiast"/etc. — see TODO.md's
+// Database Architecture item) rather than getOpt()'s generic y/n truthy
+// mapping.
+$standaloneTable = $fu->hasCollectiveScript() ? ((string) $fu->getOpt('standalone_category_table') ?: null) : null;
+
+$categoryService = new CategoryService(new CategoryRepository(
+    $fu->db,
+    (string) $fu->getOpt('collective_table'),
+    (string) $fu->getOpt('catjoin_table'),
+    (string) $fu->getOpt('catoptions_table'),
+    (string) $fu->getOpt('col_id'),
+    (string) $fu->getOpt('col_subj'),
+    $standaloneTable
 ));
 
 $showNav  = true;
@@ -228,8 +252,7 @@ if ($showform) {
                     </p>
 
                     <p><label for="body">Body</label>
-                        <?php $fu->printWysiwyg('body'); ?>
-                        <textarea id="body" name="body" rows="16" class="wysiwyg"><?php
+                        <textarea id="body" name="body" rows="16"><?php
                             echo htmlspecialchars((string) ($clean['body'] ?? ''), ENT_QUOTES, 'UTF-8');
                         ?></textarea>
                     </p>
@@ -243,23 +266,24 @@ if ($showform) {
                     <p><label for="cat">Category</label>
                         <select name="cat" id="cat">
                             <?php
-                            $fu->db->Execute(
-                                'SELECT ' . $fu->getOpt('col_id') . ' AS cat_id, '
-                                . $fu->getOpt('col_subj') . ' AS cat_name FROM '
-                                . $fu->getOpt('collective_table') . ' ORDER BY cat_name ASC'
-                            );
                             // Determine the currently selected category:
                             // - On POST (preview/retry): $clean['cat'] is set
                             // - On edit (GET ?id=N): $clean['cat_id'] is the DB column
                             // - On new (GET ?action=new): neither is set → 0
                             $selected_cat = (int) ($clean['cat'] ?? $clean['cat_id'] ?? 0);
-                            while ($cat_row = $fu->db->ReadRecord()) {
-                                $sel = ($selected_cat === (int) $cat_row['cat_id']) ? ' selected' : '';
-                                echo '<option value="' . (int) $cat_row['cat_id'] . '"' . $sel . '>'
-                                    . htmlspecialchars((string) $cat_row['cat_name'], ENT_QUOTES, 'UTF-8')
+                            foreach ($categoryService->listForDropdown() as $cat_row) {
+                                $sel = ($selected_cat === $cat_row['cid']) ? ' selected' : '';
+                                $label = $cat_row['cname'];
+                                if ($standaloneTable !== null) {
+                                    // Hybrid mode: distinguish source in the label.
+                                    $label .= $categoryService->isStandaloneCategory($cat_row['cid'])
+                                        ? ' (Standalone)'
+                                        : ' (Collective)';
+                                }
+                                echo '<option value="' . $cat_row['cid'] . '"' . $sel . '>'
+                                    . htmlspecialchars($label, ENT_QUOTES, 'UTF-8')
                                     . '</option>';
                             }
-                            $fu->db->FreeResult();
                             ?>
                         </select>
                     </p>
@@ -322,6 +346,25 @@ if ($showform) {
         </div>
 
     </form>
+
+    <?php
+    // Advanced, rarely-tuned settings not exposed in Admin -> Options (same
+    // precedent as upload_max_filesize/upload_thumb_width/upload_thumb_height
+    // in admin/upload.php) — override by adding an editor_min_height/
+    // editor_max_height row directly to the options table if the defaults
+    // below don't suit. TODO.md item "FP-18. Implement TinyMCE Editor" —
+    // "Make editor height configurable".
+    $editor_min_height_opt = $fu->getOpt('editor_min_height');
+    $editor_max_height_opt = $fu->getOpt('editor_max_height');
+    $editor_min_height     = ($editor_min_height_opt !== false && (int) $editor_min_height_opt > 0) ? (int) $editor_min_height_opt : 300;
+    $editor_max_height     = ($editor_max_height_opt !== false && (int) $editor_max_height_opt > 0) ? (int) $editor_max_height_opt : 800;
+    ?>
+    <script>
+        const fuEditorMinHeight = <?php echo json_encode($editor_min_height, JSON_THROW_ON_ERROR); ?>;
+        const fuEditorMaxHeight = <?php echo json_encode($editor_max_height, JSON_THROW_ON_ERROR); ?>;
+    </script>
+    <script src="../assets/vendor/tinymce/tinymce.min.js"></script>
+    <script src="../assets/js/fanupdate-tinymce.js"></script>
 
 <?php } elseif ($confirmDeleteId > 0) {
 
@@ -395,17 +438,17 @@ if ($showform) {
                 <select name="cat" id="cat_filter">
                     <option value="">All categories</option>
                     <?php
-                    $fu->db->Execute(
-                        'SELECT ' . $fu->getOpt('col_id') . ' AS cat_id, '
-                        . $fu->getOpt('col_subj') . ' AS cat_name FROM '
-                        . $fu->getOpt('collective_table') . ' ORDER BY cat_name ASC'
-                    );
-                    while ($cat_row = $fu->db->ReadRecord()) {
-                        $selected = ($filter_cat === (int) $cat_row['cat_id']) ? ' selected' : '';
-                        echo '<option value="' . (int) $cat_row['cat_id'] . '"'
-                            . $selected . '>' . htmlspecialchars((string) $cat_row['cat_name'], ENT_QUOTES, 'UTF-8') . '</option>';
+                    foreach ($categoryService->listForDropdown() as $cat_row) {
+                        $selected = ($filter_cat === $cat_row['cid']) ? ' selected' : '';
+                        $label    = $cat_row['cname'];
+                        if ($standaloneTable !== null) {
+                            $label .= $categoryService->isStandaloneCategory($cat_row['cid'])
+                                ? ' (Standalone)'
+                                : ' (Collective)';
+                        }
+                        echo '<option value="' . $cat_row['cid'] . '"'
+                            . $selected . '>' . htmlspecialchars($label, ENT_QUOTES, 'UTF-8') . '</option>';
                     }
-                    $fu->db->FreeResult();
                     ?>
                 </select>
             </div>

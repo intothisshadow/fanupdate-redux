@@ -27,11 +27,24 @@ This Redux release updates the codebase to **PHP 8.2+** and includes a full admi
 
 - **Posts & categories** — write entries, assign them to one or more categories,
   schedule future posts
-- **Image uploads** — upload JPEG, PNG, GIF, or WebP images directly from the
-  post editor toolbar. Thumbnails are generated automatically (GD); clicking a
-  thumbnail on the public blog opens the full-size image in a built-in lightbox.
-  Uploads live in `uploads/images/YYYY/MM/` with PHP execution blocked via
-  `.htaccess`.
+- **Timezone-aware dates** — pick your real IANA timezone (e.g.
+  `Europe/Helsinki`) from a searchable, region-grouped dropdown in
+  **Admin → Options**, instead of a fixed UTC-hour offset. Post, comment,
+  and admin-dashboard dates automatically account for daylight saving
+  time; upgrading from an older version migrates any existing offset to
+  the closest matching timezone automatically.
+- **TinyMCE post editor** — a full self-hosted TinyMCE 7 editor (no CDN, no
+  account) for the post body: headings, lists, tables, links, blockquotes,
+  a Visual/HTML source toggle, fullscreen, special characters, and more.
+  See [Post editor](#post-editor) below.
+- **Image uploads & Media gallery** — upload JPEG, PNG, GIF, or WebP images
+  directly from the post editor toolbar, or pick a previously uploaded one from
+  the built-in **Choose Existing** picker. Thumbnails are generated
+  automatically (GD); clicking a thumbnail on the public blog opens the
+  full-size image in a built-in lightbox. Uploads live in
+  `uploads/images/YYYY/MM/` with PHP execution blocked via `.htaccess`.
+  **Admin → Media** lists every upload in a paginated gallery and lets you
+  delete one.
 - **Comments** — threaded display, moderation queue, spam blacklist, optional CAPTCHA
 - **Spam protection** — four automatic layers stop bots before any database work;
   points-based scoring handles borderline human submissions
@@ -42,8 +55,8 @@ This Redux release updates the codebase to **PHP 8.2+** and includes a full admi
   editable from the admin panel without touching code
 - **Archive pages** — browse posts by month or by category
 - **Full-text search**
-- **Collective script integration** — works alongside Enthusiast 3, Flinx
-  Collective, and Fan Admin, or fully standalone
+- **Collective script integration** — works alongside Enthusiast 3, Fanatically or
+  fully standalone
 - **Keyboard accesskeys** throughout the admin panel
 - **Admin Update Manager** — **Admin → Updates** checks GitHub for newer
   FanUpdate Redux releases (stable or prerelease channel, with optional
@@ -51,12 +64,25 @@ This Redux release updates the codebase to **PHP 8.2+** and includes a full admi
   Dashboard notice when one is available. From the same page you can
   download the release, review a confirmation summary, and install it —
   the whole check → download → back up → install pipeline runs entirely
-  in PHP, with no SSH, Composer, Git, or cron required. A backup is taken
-  automatically before every install and restored automatically if the
-  install fails; backups can also be restored manually at any time. A
-  System Status panel reports PHP version, ZIP/cURL availability, file
-  permissions, and disk space, and an Update Logs section keeps a
-  persisted history of every check/download/install/rollback.
+  in PHP, with no SSH, Composer, Git, or cron required. Every download is
+  validated for size and ZIP integrity, and — when the release publishes a
+  SHA-256 checksum — verified against it before installation is allowed to
+  proceed; a release with no published checksum still downloads normally,
+  with the Updates page noting that only size/integrity were verified. A
+  backup is taken automatically before every install and restored
+  automatically if the install fails; backups can also be restored manually
+  at any time. A System Status panel reports PHP version, ZIP/cURL
+  availability, file permissions, and disk space, and an Update Logs
+  section keeps a persisted history of every check/download/install/rollback.
+- **Opt-in anonymous install statistics** — **off by default.** Enabled from
+  **Admin → Options → Privacy**, this sends a small, anonymous ping (a
+  randomly generated installation ID, the FanUpdate Redux version, and the
+  PHP version — nothing else) roughly once every 30 days, so the maintainer
+  can see a rough install count and which PHP versions are actually in use.
+  Completely independent of the Admin Update Manager above — works the same
+  whether or not update checks are enabled. See
+  [Privacy: Anonymous Install Statistics](#privacy-anonymous-install-statistics)
+  for exactly what is and isn't sent.
 
 ---
 
@@ -67,10 +93,6 @@ This Redux release updates the codebase to **PHP 8.2+** and includes a full admi
 Copy `blog-config.sample.php` to `blog-config.php` and open it in a text editor.
 
 ```php
-// Admin credentials — can also be set via the installer (see step 3)
-$fanupdate['admin_username'] = 'admin';
-$fanupdate['admin_password'] = password_hash('changeme', PASSWORD_BCRYPT);
-
 // Database
 $fanupdate['dbhost'] = 'localhost';
 $fanupdate['dbuser'] = 'db_user';
@@ -78,21 +100,14 @@ $fanupdate['dbpass'] = 'db_pass';
 $fanupdate['dbname'] = 'db_name';
 ```
 
-You **must** set the database variables before running the installer.  
-Admin credentials can be set here manually **or** entered through the install
-form in step 3 — the installer will write them into `blog-config.php` for you.  
-The table name variables only need changing if you are integrating with a
+You **must** set the database variables before running the installer. The
+table name variables only need changing if you are integrating with a
 collective management script (see [Collective integration](#collective-integration)).
 
-> **Tip:** If you want the installer to write your credentials automatically,
-> make `blog-config.php` writable before running it (`chmod 666 blog-config.php`
-> on most shared hosts), then tighten permissions afterward (`chmod 644`).
-
-> **Password format:** Since Redux 1.2.0 passwords are stored as bcrypt hashes.
-> Do **not** use `md5()` here. To generate a hash manually:
-> `php -r "echo password_hash('yourpassword', PASSWORD_BCRYPT);"`
-> If you have an existing MD5 hash in `blog-config.php`, simply log in once
-> and it will be upgraded to bcrypt automatically.
+Admin credentials (username/password) are **not** configured here at all —
+you'll set them interactively on the installer form in step 3, and they're
+stored as plain options-table rows (bcrypt hash for the password) from then
+on. Change them later from **Admin → Account**, never by editing this file.
 
 ### 2. Upload files
 
@@ -112,7 +127,7 @@ https://yoursite.com/fanupdate/install.php
 
 Fill in the site options (site name, blog URL, install path, etc.). On a fresh
 install, **admin username and password fields** appear at the bottom of the form
-— fill these in and they will be saved to `blog-config.php` automatically as a
+— fill these in and they will be saved to the database automatically as a
 bcrypt hash. Click the install button and the script will create the required
 database tables.
 
@@ -162,6 +177,17 @@ To show only "Whole Collective" entries, set `$cat_id = 0`.
 
 ## Upgrading
 
+### Timezone setting migration (any version with a `timezone_offset` option)
+
+The old **Options → `timezone_offset`** setting (a fixed hour offset from GMT
+that never accounted for daylight saving time) has been replaced by a proper
+**Timezone** dropdown backed by PHP's IANA timezone database. Upgrading
+migrates it automatically — no action needed — but the mapping from a bare
+hour offset to a real timezone is necessarily a best guess (many timezones
+share the same offset, and most observe DST that the old option never did),
+so a success message will ask you to check **Admin → Options → Timezone**
+and correct it if needed.
+
 ### From any Redux 1.5–1.9 build
 
 1. Back up your files.
@@ -187,9 +213,11 @@ To show only "Whole Collective" entries, set `$cat_id = 0`.
 3. Run `install.php` to apply any database changes (creates `blog_category`
    table if missing; removes obsolete options on upgrade).
    `install.php` will delete itself on success.
-4. If your `admin_password` in `blog-config.php` is still an MD5 hash (32 hex
-   characters), log in once — the hash upgrades to bcrypt automatically as long
-   as `blog-config.php` is writable.
+4. Admin credentials now live in the database, not `blog-config.php` — this
+   old file-based MD5 hash isn't read at all anymore. Generate a fresh bcrypt
+   hash and insert it directly into the `options` table as `admin_password`
+   (and `admin_username`), or simply re-run `install.php` on a fresh database
+   to set new credentials through the normal installer flow.
 
 ### From Robotess Fork 1.0 (PHP 7 port)
 
@@ -198,7 +226,9 @@ To show only "Whole Collective" entries, set `$cat_id = 0`.
    which you can keep.
 3. Run `install.php` again to apply any database changes.
 4. Delete `install.php`.
-5. Log in once to trigger the automatic MD5 → bcrypt password upgrade.
+5. Admin credentials now live in the database — see the note in "From any
+   Redux 1.1–1.4 build" above for how to set new ones without the old
+   automatic MD5 → bcrypt upgrade path, which no longer exists.
 
 ### From original FanUpdate 2.1 or higher
 
@@ -283,12 +313,50 @@ panel, where you can map each image to a text shortcut (e.g. `:)` → `smile.gif
 
 ---
 
+## Post editor
+
+**Admin → Entries**' post body is a self-hosted [TinyMCE](https://www.tiny.cloud/)
+7 editor — vendored directly into `assets/vendor/tinymce/`, no CDN and no Tiny
+Cloud account required.
+
+Toolbar: Undo/Redo, a Format/Heading dropdown (H2–H6), Bold, Italic, Underline,
+Strikethrough, text alignment, bullet/numbered lists, blockquote, horizontal
+rule, Link/Unlink, Remove formatting, an "Insert image" button (see
+[Image uploads](#image-uploads) below), a Visual/HTML **Code** source toggle,
+Fullscreen, table insertion, and special characters.
+
+The editor grows automatically to fit its content (between a configurable
+minimum and maximum height — see below), and follows the admin panel's
+day/night theme at the time the page loads (switching the theme while already
+on the edit-entry page updates everything else instantly, but the editor's own
+chrome needs a page reload to match — a TinyMCE limitation, not a bug).
+
+If JavaScript is disabled, the page falls back automatically to a plain
+`<textarea>` — there is nothing extra to configure for this; TinyMCE simply
+never initialises and the underlying field posts as plain text like any other
+form field.
+
+**Advanced configuration** (not exposed in **Admin → Options** — set directly
+in the options table if you need to change them):
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `editor_min_height` | `300` | Minimum editor height in pixels |
+| `editor_max_height` | `800` | Maximum editor height in pixels (before it scrolls internally) |
+
+---
+
 ## Image uploads
 
-The post editor toolbar contains an image icon button. Click it to pick a local
-JPEG, PNG, GIF, or WebP file. The file is uploaded immediately to
-`uploads/images/YYYY/MM/` and a constrained-fit thumbnail is generated into the
-`thumbs/` subdirectory at the same path. The snippet
+The post editor's "Insert image" toolbar button opens a modal with two tabs:
+**Upload New** and **Choose Existing**.
+
+Upload New picks a local JPEG, PNG, GIF, or WebP file. The file is uploaded
+immediately to `uploads/images/YYYY/MM/` and a constrained-fit thumbnail is
+generated into the `thumbs/` subdirectory at the same path, and the upload is
+recorded in the **Admin → Media** gallery (see below). Choose Existing browses
+that gallery directly and inserts a previously uploaded image with no new
+upload. Either way, the snippet
 
 ```html
 <a href="FULL_URL" class="fu-lightbox"><img src="THUMB_URL" alt="" /></a>
@@ -326,6 +394,14 @@ PHP execution, so uploaded files cannot be executed as scripts even if a
 malformed file slips through validation. The MIME type of every upload is
 verified from the file bytes (not the browser-supplied Content-Type header) using
 PHP's `finfo` extension.
+
+### Managing uploaded images
+
+**Admin → Media** lists every uploaded image in a paginated thumbnail grid
+(newest first), and lets you delete one — this removes the original file, its
+thumbnail, and the gallery's record of it. Deleting an image does not check
+whether a post still embeds it; a post that does simply shows a broken image
+afterwards, the same as if the file had been deleted manually.
 
 ---
 
@@ -397,27 +473,83 @@ Enable any of these from **Admin → Options**:
 
 ## Collective integration
 
-FanUpdate can use your existing collective management script's table as its
-category source. Supported scripts:
+FanUpdate can use your existing collective management script's table as a
+category source — synced read-only from that script and shown alongside
+your own admin-created categories (see "Hybrid categories" below), rather
+than replacing them. Supported scripts:
 
 | Script | Config value |
 |--------|-------------|
-| Enthusiast 3 | `'e'` |
-| Fanatically       |              |
-| Standalone / none | `'n'` |
+| Enthusiast 3 | `enthusiast` |
+| Fanatically | `fanatically` |
+| Standalone / none | `none` |
 
-Set `$fanupdate['collective_script']` in `blog-config.php` to the appropriate
-value. FanUpdate must be installed in the **same database** as the collective
-script.
+Configured entirely from **Admin → Options → Collective Source**, *after*
+installing — pick a known script from the dropdown (its collective table
+name and column names are filled in automatically) or choose **Custom…** to
+integrate with an unlisted script by entering its identifier, table name,
+and column names directly. FanUpdate must be installed in the **same
+database** as the collective script by default — see
+"Separate-database support" below if that database is different from
+FanUpdate's own. `blog-config.sample.php` no longer pre-declares
+`collective_script` at all — a fresh install simply starts standalone, and
+you configure the real script from this page afterward.
 
-To use a different collective script, add a `$coltable` entry in
-`blog-config.php`:
+> **`collective_table` is the one exception** that's still worth setting in
+> `blog-config.php` *before* installing if you already know which script
+> you're integrating with: unlike `collective_script`/`col_id`/`col_subj`
+> (which have safe defaults everywhere and are purely a database-migration
+> concern), a fresh **standalone** install needs a real `collective_table`
+> value to actually create its own categories table with, before the
+> database exists to source one from any other way.
+>
+> **Legacy config file values:** `blog-config.php`'s
+> `$fanupdate['collective_script']`, `$coltable`, and
+> `$fanupdate['collective_table']` are only read once — by `install.php` on
+> a fresh install, or by the Admin Update Manager's one-time migration on
+> an existing installation — to seed the database. After that, only the
+> values in **Admin → Options → Collective Source** are used; editing
+> `blog-config.php` again has no further effect. (If you're on an
+> installation that migrated `collective_script` before `collective_table`
+> got its own admin field, the one-time migration for `collective_table`
+> runs independently the next time any admin page loads, so it's picked up
+> automatically without needing to redo anything.)
 
-```php
-$coltable['x']['id']      = 'primary_key_column';
-$coltable['x']['subject'] = 'name_column';
-$fanupdate['collective_script'] = 'x';
-```
+### Separate-database support
+
+If your collective script's database is separate from the one you want
+FanUpdate installed in — common on shared hosting, which usually gives you
+one MySQL server but a small quota of separate databases — you can
+schema-qualify the **Collective/categories table name** field on
+**Admin → Options → Collective Source** instead of moving everything into
+one database, e.g. `enthusiast_db.owned`.
+
+This works as long as both databases are on the **same MySQL server**, and
+the `dbuser` FanUpdate connects with has been **GRANTed privileges on that
+other database too** (ask your host, or set it up yourself if you manage the
+server). FanUpdate still makes only one database connection, using the
+`dbhost`/`dbuser`/`dbpass`/`dbname` credentials above — those always describe
+FanUpdate's own database; only `collective_table` can point at a different
+one. A genuinely separate MySQL *server* (a different host entirely) is not
+supported — several places join the collective table directly against
+FanUpdate's own tables in one query, which isn't possible across servers.
+
+### Hybrid categories (standalone + collective, side by side)
+
+When `collective_script` is set to anything other than `'n'`, FanUpdate
+keeps a second, always-its-own categories table
+(`$fanupdate['standalone_category_table']`, default
+`blog_category_standalone` — created automatically by `install.php`) so you
+can still create and manage your own categories from **Admin → Categories**
+at the same time as the ones synced from your collective script. The two
+kinds coexist in every category list and the post editor's category picker,
+labelled by source. Categories synced from the collective script are
+read-only in FanUpdate — you can't rename or delete them here — but their
+per-category settings (entry/comment templates, Gravatar options) are fully
+editable regardless of source, same as always.
+
+In standalone mode (`collective_script = 'n'`) there is only ever one
+category source, exactly as before — the table above isn't created or used.
 
 ---
 
@@ -518,6 +650,62 @@ listing every affected title before you confirm.
 
 ---
 
+## Privacy: Anonymous Install Statistics
+
+**Off by default.** From **Admin → Options → Privacy** you can opt in to
+sending a small, anonymous ping that helps the maintainer gauge roughly how
+many installations exist and which PHP versions are actually in use — the
+latter is what makes it possible to decide when it's safe to drop support for
+an old PHP version, instead of guessing.
+
+### What is sent
+
+Only these three fields, ever:
+
+| Field | Example | What it is |
+|-------|---------|------------|
+| `install_uuid` | `a1b2c3d4-...` | A random UUIDv4, generated once the first time you enable this and stored in this installation's own database. Its only purpose is letting the server tell two pings from the same installation apart from two pings from different installations, so a long-running site isn't miscounted as a new install every time it pings. |
+| `version` | `2.2.0` | This installation's FanUpdate Redux version. |
+| `php_version` | `8.4.2` | This server's PHP version. |
+
+### What is never sent
+
+Domain name, site URL or hostname, site title, admin username or email,
+database information, blog content, theme, plugins, or your IP address
+(beyond whatever your own webserver's normal access logs already record for
+any request, the same as they do for every other page on your site).
+
+### How often
+
+Approximately once every 30 days while enabled — not on every page load.
+There's no cron involved: like the Admin Update Manager's automatic update
+checks, this happens opportunistically the next time an admin page loads
+after 30 days have passed since the last *successful* ping. A failed ping
+(the server was briefly unreachable, for example) doesn't push the schedule
+out further — it's simply retried on the next admin page load.
+
+The ping request itself uses a short (3 second) timeout and never delays or
+blocks a page load for your site's visitors — it only ever happens on an
+authenticated admin page view, and any failure is silent (no warnings or
+errors shown, nothing is logged as broken).
+
+### How to disable
+
+Uncheck **Enable anonymous install statistics** on **Admin → Options →
+Privacy** at any time. No further pings are sent. Your installation ID is
+kept (not deleted) so that re-enabling later doesn't register as a brand new
+installation — it is never regenerated unless you reset it yourself by
+editing the stored value directly.
+
+### Independence from update checking
+
+This feature is completely separate from the Admin Update Manager described
+above — its own settings, its own request code, and its own endpoint. It
+works identically whether or not automatic update checks are enabled, and
+disabling one has no effect on the other.
+
+---
+
 ## Theming
 
 The admin panel ships with two stylesheets in `assets/css/`:
@@ -527,20 +715,17 @@ The admin panel ships with two stylesheets in `assets/css/`:
 | `style.css` | Default — Dusty Rose palette (light base, mauve accent) |
 | `style-night.css` | Night variant — Midnight palette (dark navy base, indigo accent) |
 
-To switch themes, change the `<link>` tag in `admin/header.php`:
-
-```php
-// Default (Dusty Rose)
-<link rel="stylesheet" href="<?= FU_ASSETS ?>css/style.css">
-
-// Night (Midnight)
-<link rel="stylesheet" href="<?= FU_ASSETS ?>css/style-night.css">
-```
+Click the moon icon in the top-right of the admin nav bar (next to
+Account/Credits/Logout) to toggle between them — no file editing needed.
+The choice is saved in the browser's `localStorage` (key `fu_theme`) and
+applied instantly on every subsequent admin page load, before first paint,
+so there's no flash of the wrong theme. This is a per-browser preference,
+not a site-wide setting — each admin who logs in picks their own.
 
 `style.css` also responds to the browser's `prefers-color-scheme: dark` media
-query with a softer dark variant of the Dusty Rose palette. `style-night.css`
-is always dark and ignores the media query — use it when you want a
-consistently dark interface regardless of the visitor's OS setting.
+query with a softer dark variant of the Dusty Rose palette when no explicit
+choice has been saved yet. `style-night.css` is always dark and ignores the
+media query — that's what the toggle switches to.
 
 ---
 
@@ -603,16 +788,21 @@ fanupdate/
 ├── rss.php                  # RSS feed
 ├── rss-comments.php         # RSS comments feed
 ├── captcha.php              # CAPTCHA image generator
+├── favicon.ico
+├── LICENSE.md                # GPLv3 licence text
 ├── admin/
 │   ├── index.php            # Admin dashboard
 │   ├── blog.php             # Admin: entries list
 │   ├── upload.php           # Admin: image upload endpoint (AJAX)
+│   ├── media.php            # Admin: paginated media gallery (browse/delete uploads)
 │   ├── category.php         # Admin: categories
 │   ├── comment.php          # Admin: comments
 │   ├── options.php          # Admin: main options
 │   ├── templates.php        # Admin: template editor
 │   ├── smilies.php          # Admin: smilies
 │   ├── blacklist.php        # Admin: spam blacklist
+│   ├── collective-source.php# Admin: collective/fanlisting script pairing
+│   ├── privacy.php          # Admin: opt-in anonymous install statistics
 │   ├── account.php          # Admin: change email, username, and password
 │   ├── update.php           # Admin: check for FanUpdate Redux updates (GitHub)
 │   ├── credits.php          # Admin: version info and credits
@@ -626,8 +816,8 @@ fanupdate/
 │   ├── CommentRateLimiter.php# Per-IP comment rate limiter
 │   ├── LoginRateLimiter.php # IP-based login rate limiter
 │   ├── SqlConnection.php    # Database abstraction (singleton)
-│   ├── Repository/          # Data-access classes (one *RepositoryInterface + *Repository pair per admin domain, plus Update/Upgrade)
-│   ├── Service/              # Business-logic classes: one *Service per admin domain, plus the Admin Update Manager's UpdateManager, DownloadManager, BackupManager, InstallManager, RollbackManager, SystemStatusChecker, UpgradeRunner
+│   ├── Repository/          # Data-access classes (one *RepositoryInterface + *Repository pair per admin domain, plus Update/Upgrade/Privacy)
+│   ├── Service/              # Business-logic classes: one *Service per admin domain, plus the Admin Update Manager's UpdateManager, DownloadManager, BackupManager, InstallManager, RollbackManager, SystemStatusChecker, UpgradeRunner, and the anonymous install ping's InstallPingService
 │   └── Update/               # Admin Update Manager value objects/provider: UpdateProviderInterface, GitHubUpdateProvider, ReleaseInfo, DownloadResult, BackupResult, InstallResult, RollbackResult, SystemStatusCheck, UpgradeResult
 ├── data/
 │   ├── login_attempts/      # Login rate limiter lock files (auto-created, not web-accessible)
@@ -643,11 +833,14 @@ fanupdate/
 │   │   └── style-night.css  # Admin panel styles — Midnight Night variant
 │   ├── js/
 │   │   ├── fanupdate.js              # Core utilities + table sorting + lightbox
-│   │   ├── fanupdate-admin.js        # Admin panel init (confirm-delete, WYSIWYG, image upload)
+│   │   ├── fanupdate-admin.js        # Admin panel init (confirm-delete, theme toggle, copy buttons)
+│   │   ├── fanupdate-tinymce.js      # TinyMCE init + image upload/Choose Existing (admin/blog.php only)
 │   │   ├── fanupdate-comment-admin.js# Comment approve AJAX
 │   │   ├── fanupdate-post-admin.js   # Entry list "select all" checkbox wiring
 │   │   ├── fanupdate-comment-submit.js# Front-end comment submission AJAX
 │   │   └── select-all.js             # Checkbox select-all, dynamic categories, timestamp
+│   ├── vendor/
+│   │   └── tinymce/         # Self-hosted TinyMCE (vendored, trimmed — see docs/THIRD-PARTY-LICENSES.md)
 │   ├── fonts/
 │   │   └── VeraSe.ttf       # CAPTCHA font (Bitstream Vera Serif)
 │   └── images/
@@ -655,13 +848,16 @@ fanupdate/
 │       ├── gravatar.png     # Default Gravatar placeholder
 │       └── smilies/         # Smiley images (upload your own here)
 │           └── *.gif / *.png
-└── docs/
-    ├── CHANGELOG.md         # This project's changelog
-    ├── HISTORY.md           # Archive of completed TODO.md items, by release
-    ├── TROUBLESHOOTING.md   # Common issues and fixes
-    ├── DATABASE.md          # Database layer developer docs (PDO API, query patterns)
-    ├── readme.txt           # Original readme
-    └── changelog.txt        # Original changelog
+├── docs/
+│   ├── CHANGELOG.md         # This project's changelog
+│   ├── HISTORY.md           # Archive of completed TODO.md items, by release
+│   ├── TROUBLESHOOTING.md   # Common issues and fixes
+│   ├── DATABASE.md          # Database layer developer docs (PDO API, query patterns)
+│   └── THIRD-PARTY-LICENSES.md# Vendored library licences (TinyMCE, DOMPurify, Parsedown, etc.)
+└── old-docs/
+    ├── README.md            # Original-author attribution notes
+    ├── readme.txt           # Original readme (2008)
+    └── changelog.txt        # Original changelog (2008)
 ```
 
 ---

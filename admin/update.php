@@ -12,10 +12,12 @@
  * installation, install a downloaded release over the live site (with an
  * automatic rollback attempt if the install itself fails, and a
  * non-interactive post-install database migration step), can restore any
- * listed backup manually, and shows a System Status panel (PHP version,
- * ZIP/cURL availability, file permissions, disk space, temp directory
- * writability). No SSH/Composer/Git/shell commands are used or assumed;
- * every step runs entirely in PHP.
+ * listed backup manually, run any pending database updates on demand (for
+ * installations updated by manual file upload rather than a GitHub
+ * release — TODO.md item "10. Admin-Panel Database Update Runner"), and
+ * shows a System Status panel (PHP version, ZIP/cURL availability, file
+ * permissions, disk space, temp directory writability). No SSH/Composer/
+ * Git/shell commands are used or assumed; every step runs entirely in PHP.
  ******************************************************************************/
 
 declare(strict_types=1);
@@ -34,15 +36,14 @@ require_once('../class/Update/UpdateProviderInterface.php');
 require_once('../class/Update/GitHubUpdateProvider.php');
 require_once('../class/Repository/UpdateRepositoryInterface.php');
 require_once('../class/Repository/UpdateRepository.php');
-require_once('../class/Repository/UpgradeRepositoryInterface.php');
-require_once('../class/Repository/UpgradeRepository.php');
 require_once('../class/Service/DownloadManager.php');
 require_once('../class/Service/BackupManager.php');
 require_once('../class/Service/InstallManager.php');
 require_once('../class/Service/RollbackManager.php');
 require_once('../class/Service/SystemStatusChecker.php');
-require_once('../class/Service/UpgradeRunner.php');
 require_once('../class/Service/UpdateManager.php');
+require_once('../class/Parsedown.php');
+require_once('../class/Service/ReleaseNotesRenderer.php');
 
 $fu = FanUpdate::instance();
 $fu->addOptFromDb();
@@ -65,6 +66,10 @@ $install_path_opt = $fu->getOpt('install_path');
 $install_path      = ($install_path_opt !== false && (string) $install_path_opt !== '')
     ? rtrim((string) $install_path_opt, '/')
     : dirname(__DIR__);
+// TODO.md item "13. Dashboard" — install.php normally self-deletes after a
+// successful run, but that can fail silently (e.g. a non-writable
+// directory) — see fu_install_script_exists()'s docblock in functions.php.
+$installScriptStillHere = fu_install_script_exists($install_path);
 $update_tmp_dir = $install_path . '/fu-update-tmp';
 
 if (!is_dir($update_tmp_dir)) {
@@ -121,7 +126,12 @@ $rollbackManager = new RollbackManager(
 
 $systemStatusChecker = new SystemStatusChecker($install_path, $update_tmp_dir);
 
-$upgradeRunner = new UpgradeRunner(new UpgradeRepository($fu->db, (string) $fu->getOpt('options_table')));
+// Categories Support (hybrid) + Database Engine & Charset Migration (TODO.md
+// items 6/9), plus the legacy collective_script/col_id/col_subj/
+// collective_table one-time migrations — see fu_build_upgrade_runner()
+// (functions.php) for the full construction, shared with admin/header.php's
+// global pending-upgrades banner so both build the exact same UpgradeRunner.
+$upgradeRunner = fu_build_upgrade_runner($fu);
 
 $updateManager = new UpdateManager($provider, $updateRepository, FU_VERSION, $downloadManager, $backupManager, $installManager, $rollbackManager);
 
@@ -144,12 +154,14 @@ if (($_GET['action'] ?? '') === 'run-upgrades') {
         );
     }
 
-    $upgradeResult = $upgradeRunner->runPendingUpgrades(FU_VERSION);
+    $upgradeOutcome = $updateManager->runPendingUpgrades($upgradeRunner, FU_VERSION);
 
-    if (empty($upgradeResult->messages)) {
+    if (!$upgradeOutcome['ok']) {
+        $fu->addErr('Database upgrade failed: ' . htmlspecialchars((string) $upgradeOutcome['error'], ENT_QUOTES, 'UTF-8'));
+    } elseif (empty($upgradeOutcome['messages'])) {
         $fu->addSuccess('Database is already up to date — no post-install migrations were needed.');
     } else {
-        foreach ($upgradeResult->messages as $upgradeMessage) {
+        foreach ($upgradeOutcome['messages'] as $upgradeMessage) {
             $fu->addSuccess(htmlspecialchars($upgradeMessage, ENT_QUOTES, 'UTF-8'));
         }
     }
@@ -210,6 +222,9 @@ if ($action === 'check') {
         if ($result['ok']) {
             $fu->addSuccess(
                 'Release downloaded and verified (' . fu_update_format_bytes((int) $result['size']) . ').'
+                . (($result['checksumVerified'] ?? false)
+                    ? ' Checksum verified against the published release.'
+                    : ' No checksum was published for this release to verify against.')
             );
         } else {
             $fu->addErr('Download failed: ' . htmlspecialchars((string) $result['error'], ENT_QUOTES, 'UTF-8'));
@@ -261,6 +276,27 @@ if ($action === 'check') {
     } else {
         $installManager->disableMaintenanceMode();
         $fu->addSuccess('Maintenance mode disabled.');
+    }
+} elseif ($action === 'run_db_upgrade') {
+    // TODO.md item "10. Admin-Panel Database Update Runner" — for an
+    // installation updated by manual file upload rather than through the
+    // GitHub-release Install flow above (which already runs this
+    // automatically via the run-upgrades redirect), this is the only
+    // other place pending schema/option changes ever get applied.
+    if (!$fu->verifyCsrfOrFail()) {
+        // Invalid/missing CSRF token — error already queued.
+    } else {
+        $upgradeOutcome = $updateManager->runPendingUpgrades($upgradeRunner, FU_VERSION);
+
+        if (!$upgradeOutcome['ok']) {
+            $fu->addErr('Database upgrade failed: ' . htmlspecialchars((string) $upgradeOutcome['error'], ENT_QUOTES, 'UTF-8'));
+        } elseif (empty($upgradeOutcome['messages'])) {
+            $fu->addSuccess('Database is already up to date — no pending migrations were needed.');
+        } else {
+            foreach ($upgradeOutcome['messages'] as $upgradeMessage) {
+                $fu->addSuccess(htmlspecialchars($upgradeMessage, ENT_QUOTES, 'UTF-8'));
+            }
+        }
     }
 } elseif ($action === 'rollback') {
     if (!$fu->verifyCsrfOrFail()) {
@@ -396,6 +432,7 @@ if (($_GET['action'] ?? '') === 'confirm-install') {
             <li>Target version: <strong><?php echo htmlspecialchars((string) $summary['latestVersion'], ENT_QUOTES, 'UTF-8'); ?></strong></li>
             <li>Release date: <?php echo fu_update_format_date($summary['latestPublishedAt']); ?></li>
             <li>Update size: <?php echo fu_update_format_bytes($summary['downloadedSize']); ?></li>
+            <li>Checksum: <?php echo $summary['downloadedChecksumVerified'] ? 'verified against the published release' : 'not published for this release (size and ZIP integrity were still verified)'; ?></li>
         </ul>
 
         <p class="error" style="margin-top:1rem;">
@@ -559,9 +596,23 @@ $fu->getHeader('Updates');
 <?php
 $fu->reportSuccess();
 $fu->reportErrors();
+?>
 
-if ($summary['maintenanceModeOn']) {
-    ?>
+<?php if ($installScriptStillHere) { ?>
+<fieldset id="install-php-notice" style="margin-bottom:1.5rem;">
+    <legend>Security notice</legend>
+    <p class="error" style="margin-bottom:0;">
+        <strong><code>install.php</code> is still present on your server</strong> at
+        <code><?php echo htmlspecialchars($install_path, ENT_QUOTES, 'UTF-8'); ?>/install.php</code>.
+        It normally deletes itself automatically after a successful install or upgrade, but that
+        can fail silently (e.g. if the directory isn't writable). Left in place, anyone who finds
+        the URL can attempt to run it against this site. Please delete it from your server as soon
+        as possible — it isn't needed for normal operation.
+    </p>
+</fieldset>
+<?php } ?>
+
+<?php if ($summary['maintenanceModeOn']) { ?>
     <p class="error">
         Maintenance mode is currently enabled — comment submissions are being rejected. This is
         normally cleared automatically at the end of an install; if it's still on and no install is
@@ -572,6 +623,72 @@ if ($summary['maintenanceModeOn']) {
         <input type="hidden" name="action" value="disable_maintenance" />
         <input type="submit" class="delete" value="Disable maintenance mode" data-skip-confirm />
     </form>
+    <?php
+}
+
+// ── Database Updates (TODO.md item "10. Admin-Panel Database Update Runner") ──
+// Hidden entirely when nothing's pending. Covers installations updated by
+// manual file upload (no GitHub release involved) that would otherwise
+// have no way to run pending schema/option migrations from the admin
+// panel at all — install.php is the only other place this logic runs,
+// and it deletes itself after a successful run.
+if ($upgradeRunner->hasPendingUpgrades(FU_VERSION)) {
+    ?>
+    <div class="page-header" id="database-updates">
+        <h2>Database updates</h2>
+    </div>
+
+    <fieldset style="margin-bottom:2rem;">
+        <legend>Pending database changes</legend>
+        <p class="error" style="margin-bottom:1rem;">
+            This installation's database needs updates that haven't run yet — for example if you
+            updated files manually (a zip upload) instead of through the Install flow below, which
+            runs this automatically. Nothing else about your site changes until you run this.
+        </p>
+
+        <form action="update.php" method="post" id="fu-db-upgrade-form">
+            <?php echo $fu->csrfField(); ?>
+            <input type="hidden" name="action" value="run_db_upgrade" />
+            <input type="submit" class="update" value="Run pending database updates" data-skip-confirm />
+        </form>
+
+        <div id="fu-db-progress-panel" style="display:none; margin-top:1.5rem;">
+            <p id="fu-db-progress-message" class="hint small">Starting…</p>
+            <div style="background:var(--fu-border); border-radius:var(--fu-radius); overflow:hidden; height:0.75rem;">
+                <div id="fu-db-progress-bar" style="background:var(--fu-accent, #4a90d9); height:100%; width:0%; transition:width 0.4s ease;"></div>
+            </div>
+            <p class="hint small" style="margin-top:0.5rem;">This page will refresh automatically once it finishes.</p>
+        </div>
+        <script>
+        (function () {
+            var form = document.getElementById('fu-db-upgrade-form');
+            if (!form) return;
+            form.addEventListener('submit', function () {
+                var panel = document.getElementById('fu-db-progress-panel');
+                var msg   = document.getElementById('fu-db-progress-message');
+                var bar   = document.getElementById('fu-db-progress-bar');
+                var btn   = form.querySelector('input[type="submit"]');
+                if (btn) { btn.disabled = true; btn.value = 'Running…'; }
+                if (panel) { panel.style.display = 'block'; }
+                // Same polling endpoint the install/rollback confirmation pages
+                // use — UpdateManager::runPendingUpgrades() reports progress
+                // through the same cached-state mechanism.
+                setInterval(function () {
+                    fetch('update.php?action=install-progress', { cache: 'no-store' })
+                        .then(function (r) { return r.json(); })
+                        .then(function (data) {
+                            if (!data || !data.message) return;
+                            if (msg) { msg.textContent = data.message + '…'; }
+                            if (bar && data.total) {
+                                bar.style.width = Math.round((data.step / data.total) * 100) + '%';
+                            }
+                        })
+                        .catch(function () { /* ignore transient poll failures */ });
+                }, 800);
+            });
+        })();
+        </script>
+    </fieldset>
     <?php
 }
 ?>
@@ -654,6 +771,7 @@ if ($summary['maintenanceModeOn']) {
     <p class="hint small">
         Published <?php echo fu_update_format_date($summary['latestPublishedAt']); ?>
         <?php if ($summary['downloadSize']) { ?>&middot; download size <?php echo fu_update_format_bytes($summary['downloadSize']); ?><?php } ?>
+        &middot; <?php echo $summary['checksumAvailable'] ? 'checksum published' : 'no checksum published for this release'; ?>
     </p>
     <p>
         <?php if (!empty($summary['latestUrl'])) { ?>
@@ -672,6 +790,17 @@ if ($summary['maintenanceModeOn']) {
                 <?php if ($summary['downloadedSize']) { ?>(<?php echo fu_update_format_bytes($summary['downloadedSize']); ?>)<?php } ?>
                 at <?php echo fu_update_format_date($summary['downloadedAt']); ?>.
             </p>
+            <?php if ($summary['downloadedChecksumVerified']) { ?>
+                <p class="hint small">
+                    <span class="badge badge-accent">Checksum verified</span>
+                    against the checksum published for this release.
+                </p>
+            <?php } else { ?>
+                <p class="hint small">
+                    <span class="badge badge-warning">No checksum published</span>
+                    for this release — only file size and ZIP archive integrity were verified.
+                </p>
+            <?php } ?>
             <p class="hint small">SHA-256: <code><?php echo htmlspecialchars((string) $summary['downloadedSha256'], ENT_QUOTES, 'UTF-8'); ?></code></p>
         <?php } ?>
         <form action="update.php" method="post">
@@ -697,14 +826,17 @@ if ($summary['maintenanceModeOn']) {
     <?php
     $notes = trim((string) ($summary['latestNotes'] ?? ''));
     if ($notes !== '') {
-        // Escape first (this text comes from GitHub, not from us), then run
-        // it through the existing WordPress-derived formatter (headers,
-        // lists, paragraphs, auto-linking) for basic Markdown-like display
-        // without needing a full Markdown parser dependency.
-        $safeNotes = htmlspecialchars($notes, ENT_QUOTES, 'UTF-8');
+        // TODO.md item "8. Implement Full Markdown Rendering for GitHub
+        // Release Notes" — full GitHub Flavored Markdown rendering via
+        // ReleaseNotesRenderer (Parsedown, safe mode), replacing the old
+        // htmlspecialchars() + wpautop()/doHeaders()/doLists() pipeline,
+        // which only ever produced paragraphs/headers/lists/auto-linking.
+        // ReleaseNotesRenderer does its own escaping internally (Parsedown's
+        // safe mode) — the raw, un-escaped notes are passed in directly.
+        $releaseNotesRenderer = new ReleaseNotesRenderer();
         ?>
-        <div style="max-height:360px; overflow-y:auto; padding:1rem; background:var(--fu-surface); border:0.5px solid var(--fu-border-med); border-radius:var(--fu-radius); margin-top:0.75rem;">
-            <?php echo wpautop($safeNotes, true, true); ?>
+        <div class="fu-release-notes" style="max-height:360px; overflow-y:auto; padding:1rem; background:var(--fu-surface); border:0.5px solid var(--fu-border-med); border-radius:var(--fu-radius); margin-top:0.75rem;">
+            <?php echo $releaseNotesRenderer->renderToHtml($notes); ?>
         </div>
     <?php } ?>
 </fieldset>

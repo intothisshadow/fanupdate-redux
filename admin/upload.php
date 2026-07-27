@@ -29,6 +29,12 @@
  *  - getimagesize() used as a second-pass image validity check
  *  - Max filesize enforced in PHP (independent of php.ini upload_max_filesize)
  *
+ * Also records the upload in the Media gallery (Admin -> Media, TODO.md
+ * item "4. UI - Create an Image/File Manager") via MediaService, so it
+ * appears in the "choose existing image" picker without a filesystem scan.
+ * Skipped (not fatal) if media_table isn't configured — installations that
+ * predate this feature.
+ *
  * Copyright (c) 2026 FanUpdate Redux
  * GNU General Public License v3 or later.
  ******************************************************************************/
@@ -37,6 +43,9 @@ declare(strict_types=1);
 
 require_once('../blog-config.php');
 require_once('../functions.php');
+require_once('../class/Repository/MediaRepositoryInterface.php');
+require_once('../class/Repository/MediaRepository.php');
+require_once('../class/Service/MediaService.php');
 
 $fu = FanUpdate::instance();
 $fu->addOptFromDb();
@@ -276,5 +285,29 @@ if (!$thumb_ok || !file_exists($thumb_path)) {
 
 $url   = $install_url . '/uploads/images/' . $year . '/' . $month . '/'         . $final_name;
 $thumb = $install_url . '/uploads/images/' . $year . '/' . $month . '/thumbs/' . $final_name;
+
+// ── record in the Media gallery (Admin -> Media) ──────────────────────────────
+// Non-fatal if this fails: the file is already saved and the upload itself
+// succeeded (the JS still gets a usable URL to insert) — it just won't show
+// up in the gallery. Paths stored are relative to uploads/, matching
+// MediaService's docblock.
+
+$mediaTableOpt = (string) $fu->getOpt('media_table');
+if ($mediaTableOpt !== '') {
+    $mediaService = new MediaService(
+        new MediaRepository($fu->db, $mediaTableOpt),
+        $install_path,
+        $install_url
+    );
+    $mediaService->recordUpload(
+        'images/' . $year . '/' . $month . '/' . $final_name,
+        'images/' . $year . '/' . $month . '/thumbs/' . $final_name,
+        $final_name,
+        $src_w,
+        $src_h,
+        (int) $_FILES['image']['size'],
+        $mime_type
+    );
+}
 
 upload_json_ok($url, $thumb, $final_name);

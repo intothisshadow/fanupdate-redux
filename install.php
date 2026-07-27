@@ -28,6 +28,18 @@ error_reporting(E_ALL);
 
 require_once('blog-config.php');
 require_once('functions.php');
+// Categories Support (hybrid): needed by SchemaMigrator below for
+// CategoryRepository::STANDALONE_ID_OFFSET when creating the standalone
+// categories table.
+require_once('class/Repository/CategoryRepositoryInterface.php');
+require_once('class/Repository/CategoryRepository.php');
+// Database schema migrations (Categories Support's standalone_category_table
+// creation + the InnoDB/utf8mb4 engine/charset migration) live in
+// SchemaMigrator, shared with the admin panel (TODO.md item "10.
+// Admin-Panel Database Update Runner") so an installation updated by
+// manual file upload can also run this again later without needing
+// install.php re-uploaded — see that class's docblock for the full design.
+require_once('class/Service/SchemaMigrator.php');
 
 $fu = FanUpdate::instance();
 
@@ -81,7 +93,7 @@ try {
 $fu->getHeader('Install');
 ?>
 
-<h2>Install v<?php echo htmlspecialchars((string) $fu->getOpt('version')); ?></h2>
+<h2>Install FanUpdate <?php echo htmlspecialchars((string) $fu->getOpt('version')); ?></h2>
 
 <?php
 
@@ -113,10 +125,20 @@ if (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') {
 // The URL where FanUpdate is installed — NO TRAILING SLASH
 $row_opt['install_url'] = $detected_proto . '://' . $_SERVER['SERVER_NAME'] . $dir;
 
-// ── admin credentials (stored in blog-config.php, not the database) ─────────
+// The public blog page URL — same auto-detection as install_url above,
+// since show-blog.php (the public blog listing) always lives at the
+// project root, right next to install.php. Only used as a suggested
+// default; always editable below, and a pre-existing v1.6 installation's
+// real collective_updates_page value (read earlier during version
+// detection) still takes priority so an upgrade never overwrites an
+// already-customized blog page URL with this guess.
+$row_opt['blog_page'] = $row_opt['install_url'] . '/show-blog.php';
 
-// Read current values from blog-config.php if they exist
-$current_admin_username = isset($fanupdate['admin_username']) ? $fanupdate['admin_username'] : 'admin';
+// ── admin credentials (stored in the database, not blog-config.php) ─────────
+// admin_username/admin_password are plain options-table rows, same as every
+// other setting — never written to blog-config.php.
+
+$current_admin_username = 'admin';
 
 // ── full settings array ──────────────────────────────────────────────────────
 
@@ -131,7 +153,7 @@ $setting[1]['optdesc']  = 'The name of your site or blog.';
 $setting[1]['version']  = 2.0;
 
 $setting[2]['optkey']   = 'blog_page';
-$setting[2]['optvalue'] = (!empty($row_opt['collective_updates_page'])) ? $row_opt['collective_updates_page'] : 'https://example.com/updates.php';
+$setting[2]['optvalue'] = (!empty($row_opt['collective_updates_page'])) ? $row_opt['collective_updates_page'] : $row_opt['blog_page'];
 $setting[2]['optdesc']  = 'The URL of your blog page (needed for RSS feeds).';
 $setting[2]['version']  = 2.0;
 
@@ -147,7 +169,7 @@ $setting[4]['version']  = 2.0;
 
 $setting[5]['optkey']   = 'comments_on';
 $setting[5]['optvalue'] = (!empty($row_opt['comments_on'])) ? $row_opt['comments_on'] : 'y';
-$setting[5]['optdesc']  = 'Allow comments? y or n';
+$setting[5]['optdesc']  = 'Allow comments?';
 $setting[5]['version']  = 2.0;
 
 $setting[6]['optkey']   = 'date_format';
@@ -157,22 +179,22 @@ $setting[6]['version']  = 2.0;
 
 $setting[7]['optkey']   = 'email_new_comments';
 $setting[7]['optvalue'] = 'y';
-$setting[7]['optdesc']  = 'Email you about new comments? y or n';
+$setting[7]['optdesc']  = 'Email you about new comments?';
 $setting[7]['version']  = 2.0;
 
 $setting[8]['optkey']   = 'comment_moderation';
 $setting[8]['optvalue'] = 'n';
-$setting[8]['optdesc']  = 'Hold new comments for moderation? y or n';
+$setting[8]['optdesc']  = 'Hold new comments for moderation?';
 $setting[8]['version']  = 2.0;
 
 $setting[9]['optkey']   = 'captcha_on';
 $setting[9]['optvalue'] = 'n';
-$setting[9]['optdesc']  = 'Protect comments with captcha? y or n';
+$setting[9]['optdesc']  = 'Protect comments with captcha?';
 $setting[9]['version']  = 2.0;
 
 $setting[10]['optkey']   = 'gravatar_on';
 $setting[10]['optvalue'] = 'y';
-$setting[10]['optdesc']  = 'Use Gravatars? y or n';
+$setting[10]['optdesc']  = 'Use Gravatars?';
 $setting[10]['version']  = 2.0;
 
 $setting[11]['optkey']   = 'gravatar_default';
@@ -246,7 +268,7 @@ $setting[18]['optvalue'] = '<h3 id="postcomment">Post A Comment</h3>
 
 <p><input type="submit" id="submit" name="submit_comment" value="Post Comment" class="submit" /></p>
 
-<p id="cmt-rules">Your email is only for accessing <a href="https://www.gravatar.com/">gravatar.com</a>. No <abbr title="HyperText Markup Language">HTML</abbr> allowed; some formatting can be applied via the buttons above the textarea.</p>';
+<p id="cmt-rules">Your email is only for accessing <a href="https://www.gravatar.com/">gravatar.com</a>. No <abbr title="HyperText Markup Language">HTML</abbr> allowed.</p>';
 $setting[18]['optdesc']  = 'Customize your comment form. Don\'t change the names of the inputs or the CAPTCHA and MODERATION comments. See readme.txt for template variables.';
 $setting[18]['version']  = 2.1;
 
@@ -271,7 +293,7 @@ $setting[19]['version']  = 2.1;
 
 $setting[22]['optkey']   = 'points_scoring';
 $setting[22]['optvalue'] = 'y';
-$setting[22]['optdesc']  = 'Use point scoring system to block spam. y or n';
+$setting[22]['optdesc']  = 'Use point scoring system to block spam.';
 $setting[22]['version']  = '2.2b';
 
 $setting[23]['optkey']   = 'points_approval_threshold';
@@ -289,15 +311,65 @@ $setting[25]['optvalue'] = $fu->getOpt('version');
 $setting[25]['optdesc']  = 'Version of current database schema.';
 $setting[25]['version']  = '2.2b';
 
-$setting[26]['optkey']   = 'timezone_offset';
-$setting[26]['optvalue'] = 0;
-$setting[26]['optdesc']  = 'Hours difference between your location and GMT. Default: 0';
+// FP-19: replaces the legacy fixed-hour 'timezone_offset' with a real IANA
+// timezone identifier, so displayed dates account for daylight saving time
+// automatically. Rendered below as a searchable <select> grouped by region
+// (see the 'timezone' special-case in the $setting render loop), not a
+// plain text field. An existing installation upgrading past this version has
+// its old timezone_offset value migrated automatically — see UpgradeRunner.
+$setting[26]['optkey']   = FU_TIMEZONE_OPTION_KEY;
+$setting[26]['optvalue'] = FU_DEFAULT_TIMEZONE;
+$setting[26]['optdesc']  = 'Your local IANA timezone (e.g. Europe/Helsinki). Used to display dates in your local time. Default: UTC';
 $setting[26]['version']  = '2.2b3';
 
 $setting[28]['optkey']   = 'ajax_comments';
 $setting[28]['optvalue'] = 'y';
-$setting[28]['optdesc']  = 'Use ajax commenting? Turn off if you have problems. y or n';
+$setting[28]['optdesc']  = 'Use ajax commenting? Turn off if you have problems.';
 $setting[28]['version']  = '2.2.1b2';
+
+// TODO.md's Database Architecture item — "Move collective-script
+// configuration from blog-config.php into the database". Seeded here from
+// blog-config.php's legacy $fanupdate['collective_script']/$coltable
+// globals so a fresh install (and any install.php-driven upgrade) writes
+// them into the options table like every other setting, instead of only
+// ever living in the config file. An existing installation that never
+// re-runs install.php gets the equivalent one-time migration via
+// UpgradeRunner instead — see admin/update.php.
+$legacy_collective_script = (string) ($fanupdate['collective_script'] ?? 'n');
+if ($legacy_collective_script === '') {
+    $legacy_collective_script = 'n';
+}
+
+$setting[29]['optkey']   = 'collective_script';
+$setting[29]['optvalue'] = FanUpdate::normalizeCollectiveScriptIdentifier($legacy_collective_script);
+$setting[29]['optdesc']  = 'Which collective/fanlisting script this installation is paired with. Supported: "enthusiast" (Enthusiast), "fanatically" (Fanatically). Use "none" for standalone mode, where FanUpdate manages its own categories table entirely with no external script involved. ("listingadmin" is reserved for future Listing Admin support and is not yet functional.) Editable in Admin -> Options -> Collective Source.';
+$setting[29]['version']  = '2.2.1b2';
+
+$setting[30]['optkey']   = 'col_id';
+$setting[30]['optvalue'] = (string) ($coltable[$legacy_collective_script]['id'] ?? 'fl_id');
+$setting[30]['optdesc']  = 'Collective table primary key column name. Only relevant when collective_script is not "none". Expected values: Enthusiast = listingid, Fanatically = id.';
+$setting[30]['version']  = '2.2.1b2';
+
+$setting[31]['optkey']   = 'col_subj';
+$setting[31]['optvalue'] = (string) ($coltable[$legacy_collective_script]['subject'] ?? 'fl_subject');
+$setting[31]['optdesc']  = 'Collective table subject/name column name. Only relevant when collective_script is not "none". Expected values: Enthusiast = subject, Fanatically = subject.';
+$setting[31]['version']  = '2.2.1b2';
+
+// Bug fix: collective_table (the actual table name matching col_id/col_subj
+// above) was never migrated into the options table at all — unlike
+// collective_script/col_id/col_subj, which admin/collective-source.php lets
+// you change, collective_table had no admin UI anywhere. An installation
+// that switched collective_script from "none" to e.g. "fanatically" via
+// that page got col_id/col_subj updated correctly but kept whatever
+// collective_table it started with, silently pointing Categories/Entries at
+// the wrong table. Seeded here (fresh install / install.php-driven upgrade)
+// from blog-config.php's legacy $fanupdate['collective_table']; an existing
+// installation that never re-runs install.php gets the equivalent one-time
+// migration via UpgradeRunner instead — see admin/update.php.
+$setting[32]['optkey']   = 'collective_table';
+$setting[32]['optvalue'] = (string) ($fanupdate['collective_table'] ?? 'blog_category');
+$setting[32]['optdesc']  = 'The name of your collective/categories table. Must match the collective_script currently selected — e.g. Fanatically\'s default is "fanatic_listings" (the fanlistings this collective actually owns — NOT "fanatic_categories", which is Fanatically\'s own site-wide list of every category across the whole directory), Enthusiast\'s is "owned". For a standalone installation (collective_script = "none") this is FanUpdate\'s own categories table. Editable in Admin -> Options -> Collective Source.';
+$setting[32]['version']  = '2.2.1b2';
 
 // ── check tables don't already exist (fresh install only) ───────────────────
 
@@ -306,7 +378,7 @@ if ($version_installed == 0) {
     $fu->db->Execute($query);
     while ($row = $fu->db->ReadRecord()) {
         $table = array_shift($row);
-        if (!$fu->getOpt('collective_script') || $table != $fu->getOpt('collective_table')) {
+        if (!$fu->hasCollectiveScript() || $table != $fu->getOpt('collective_table')) {
             // Cast to array: getOpt('tables') returns mixed; in_array() requires array.
             if (in_array($table, (array)$fu->getOpt('tables'), true)) {
                 $fu->addErr('Table <strong>' . htmlspecialchars($table) . '</strong> already exists. Please choose a different name in your FanUpdate blog-config.php');
@@ -317,11 +389,20 @@ if ($version_installed == 0) {
 
 // ── check collective_table is configured correctly ───────────────────────────
 
-if ($fu->getOpt('collective_script')) {
-    // Using an external collective script — table must already exist
-    $query = "SHOW TABLES LIKE '" . $fu->getOpt('collective_table') . "'";
-    if (!$fu->db->GetFirstCell($query)) {
-        $fu->addErr('Could not find collective_table <strong>' . $fu->getOpt('collective_table') . '</strong>. Please check your settings in blog-config.php');
+if ($fu->hasCollectiveScript()) {
+    // Using an external collective script — table must already exist.
+    // fu_table_exists() supports collective_table optionally being
+    // schema-qualified ("other_db.table_name") for a separate database on
+    // the same MySQL server (TODO.md's Database Architecture item) — a
+    // plain SHOW TABLES LIKE only ever checks the current database.
+    if (!fu_table_exists($fu->db, (string) $fu->getOpt('collective_table'))) {
+        $fu->addErr(
+            'Could not find collective_table <strong>' . $fu->getOpt('collective_table') . '</strong>. '
+            . 'Please check your settings in blog-config.php'
+            . (str_contains((string) $fu->getOpt('collective_table'), '.')
+                ? ' and that your database user has been granted access to that other database.'
+                : '.')
+        );
     }
 }
 // Standalone mode: table will be created below on fresh install;
@@ -375,7 +456,7 @@ if (!$fu->noErr()) {
       `comments_on` tinyint(1) unsigned NOT NULL DEFAULT '1',
       PRIMARY KEY (`entry_id`),
       FULLTEXT (title,body)
-    ) ENGINE=MyISAM";
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci";
 
         if ($fu->db->Execute($query)) {
             $fu->addSuccess('Table <strong>' . $fu->getOpt('blog_table') . '</strong> created.');
@@ -398,7 +479,7 @@ if (!$fu->noErr()) {
       KEY `entry` (`entry_id`),
       KEY `approved` (`approved`),
       FULLTEXT (name,comment)
-    ) ENGINE=MyISAM";
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci";
 
         if ($fu->db->Execute($query)) {
             $fu->addSuccess('Table <strong>' . $fu->getOpt('comments_table') . '</strong> created.');
@@ -407,14 +488,19 @@ if (!$fu->noErr()) {
         }
         // collective/category table — only created in standalone mode ('n')
         // When using an external collective script, that table already exists.
-        if (!$fu->getOpt('collective_script')) {
-            $col_id   = $coltable['n']['id'];
-            $col_subj = $coltable['n']['subject'];
+        if (!$fu->hasCollectiveScript()) {
+            // Standalone mode's column names are FanUpdate's own fixed
+            // schema, not sourced from any external collective script, so
+            // they're hardcoded here rather than read from $coltable['n']
+            // (which blog-config.sample.php no longer declares at all —
+            // see the "clean up blog-config.sample.php" change).
+            $col_id   = 'fl_id';
+            $col_subj = 'fl_subject';
             $query = 'CREATE TABLE ' . $fu->getOpt('collective_table') . " (
       `$col_id` int(6) unsigned NOT NULL AUTO_INCREMENT,
       `$col_subj` varchar(50) NOT NULL DEFAULT '',
       PRIMARY KEY (`$col_id`)
-    ) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4";
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci";
 
             if ($fu->db->Execute($query)) {
                 $fu->addSuccess('Table <strong>' . $fu->getOpt('collective_table') . '</strong> created.');
@@ -428,7 +514,7 @@ if (!$fu->noErr()) {
       `cat_id` int(6) unsigned NOT NULL DEFAULT '0',
       `collective_id` int(6) unsigned NOT NULL DEFAULT '0',
       PRIMARY KEY (`entry_id`,`cat_id`)
-    ) ENGINE=MyISAM";
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci";
 
         if ($fu->db->Execute($query)) {
             $fu->addSuccess('Table <strong>' . $fu->getOpt('catjoin_table') . '</strong> created.');
@@ -442,7 +528,7 @@ if (!$fu->noErr()) {
       `optvalue` TEXT NOT NULL,
       `optdesc` TEXT NOT NULL,
       PRIMARY KEY (`optkey`)
-    ) ENGINE=MyISAM";
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci";
 
         if ($fu->db->Execute($query)) {
             $fu->addSuccess('Table <strong>' . $fu->getOpt('options_table') . '</strong> created.');
@@ -454,7 +540,7 @@ if (!$fu->noErr()) {
         $query = 'CREATE TABLE ' . $fu->getOpt('blacklist_table') . " (
       `badword` varchar(50) NOT NULL,
       PRIMARY KEY (`badword`)
-    ) ENGINE=MyISAM";
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci";
 
         if ($fu->db->Execute($query)) {
             $fu->addSuccess('Table <strong>' . $fu->getOpt('blacklist_table') . '</strong> created.');
@@ -507,7 +593,7 @@ if (!$fu->noErr()) {
       `entry_template` TEXT NULL,
       `comment_template` TEXT NULL,
       PRIMARY KEY (`cat_id`)
-    ) ENGINE=MyISAM";
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci";
 
         if ($fu->db->Execute($query)) {
             $fu->addSuccess('Table <strong>' . $fu->getOpt('catoptions_table') . '</strong> created.');
@@ -521,7 +607,7 @@ if (!$fu->noErr()) {
       `smiley` varchar(10) NOT NULL DEFAULT '',
       `image` varchar(100) NOT NULL DEFAULT '',
       PRIMARY KEY (`smiley_id`)
-    ) ENGINE=MyISAM";
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci";
 
         if ($fu->db->Execute($query)) {
             $fu->addSuccess('Table <strong>' . $fu->getOpt('smilies_table') . '</strong> created.');
@@ -543,7 +629,72 @@ if (!$fu->noErr()) {
         } else {
             $fu->addErr('Default smilies not added!');
         }
+
+        // media table (Admin -> Media) — one row per image uploaded through
+        // the WYSIWYG editor's "insert image" button. file_path/thumb_path
+        // are stored relative to the uploads/ directory (e.g.
+        // "images/2026/07/abc_photo.jpg"), not as absolute filesystem paths,
+        // so the table stays valid if install_path ever changes.
+        $query = 'CREATE TABLE ' . $fu->getOpt('media_table') . " (
+      `media_id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+      `filename` varchar(191) NOT NULL DEFAULT '',
+      `file_path` varchar(255) NOT NULL DEFAULT '',
+      `thumb_path` varchar(255) NOT NULL DEFAULT '',
+      `width` int(10) unsigned NOT NULL DEFAULT 0,
+      `height` int(10) unsigned NOT NULL DEFAULT 0,
+      `size` int(10) unsigned NOT NULL DEFAULT 0,
+      `mime_type` varchar(50) NOT NULL DEFAULT '',
+      `uploaded_at` datetime NOT NULL,
+      PRIMARY KEY (`media_id`),
+      KEY `uploaded_at` (`uploaded_at`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci";
+
+        if ($fu->db->Execute($query)) {
+            $fu->addSuccess('Table <strong>' . $fu->getOpt('media_table') . '</strong> created.');
+        } else {
+            $fu->addErr('Table <strong>' . $fu->getOpt('media_table') . '</strong> not created!');
+        }
     } // end fresh install
+
+    // _______________________________________________ DATABASE SCHEMA MIGRATION (Categories Support + Engine/Charset)
+    // Delegates to SchemaMigrator (class/Service/SchemaMigrator.php) for
+    // both the Categories Support standalone_category_table creation and
+    // the InnoDB/utf8mb4 conversion (TODO.md items "6. Categories
+    // Support" and "9. Database Engine & Charset Migration") — see
+    // SchemaMigrator's class docblock for why this now lives in a shared
+    // class instead of being duplicated inline here: the same logic is
+    // also reachable from Admin → Updates for installations updated by
+    // manual file upload rather than through the Admin Update Manager's
+    // GitHub-release flow (TODO.md item "10. Admin-Panel Database Update
+    // Runner"). Runs on every fresh install AND every upgrade submission
+    // — each table is checked against information_schema first, so this
+    // is a safe no-op once everything is already converted (including
+    // immediately after the fresh-install CREATE TABLE statements above,
+    // which already create everything as InnoDB/utf8mb4 directly).
+
+    $schemaMigrator = new SchemaMigrator(
+        $fu->db,
+        (string) $fu->getOpt('blog_table'),
+        (string) $fu->getOpt('comments_table'),
+        (string) $fu->getOpt('collective_table'),
+        (string) $fu->getOpt('catjoin_table'),
+        (string) $fu->getOpt('options_table'),
+        (string) $fu->getOpt('blacklist_table'),
+        (string) $fu->getOpt('catoptions_table'),
+        (string) $fu->getOpt('smilies_table'),
+        (string) $fu->getOpt('col_subj'),
+        $fu->hasCollectiveScript(),
+        ((string) $fu->getOpt('standalone_category_table')) !== '' ? (string) $fu->getOpt('standalone_category_table') : null,
+        ((string) $fu->getOpt('media_table')) !== '' ? (string) $fu->getOpt('media_table') : null
+    );
+
+    foreach ($schemaMigrator->runPendingSchemaChanges() as $migrationResult) {
+        if ($migrationResult['ok']) {
+            $fu->addSuccess(htmlspecialchars($migrationResult['message'], ENT_QUOTES, 'UTF-8'));
+        } else {
+            $fu->addErr(htmlspecialchars($migrationResult['message'], ENT_QUOTES, 'UTF-8'));
+        }
+    }
 
     // _______________________________________________ UPGRADE FROM < 2.2b
 
@@ -663,6 +814,46 @@ if (!$fu->noErr()) {
             }
         }
         unset($_dead_key);
+
+        // ── FP-19: migrate legacy timezone_offset -> timezone ──────────────────
+        // Only runs once: gated on 'timezone' not already existing, same
+        // pattern as every other one-time option migration on this page.
+        // The interactive $setting[]-driven form above can't be relied on for
+        // this — its 'timezone' field is version-gated to 2.2b3, so it's
+        // skipped entirely for any installation already past that version,
+        // which describes every real upgrade this "any version" block runs
+        // for. See UpgradeRunner::migrateLegacyTimezoneOffset() for the
+        // equivalent non-interactive path used by the Admin Update Manager.
+        $existingTimezone = $fu->db->GetFirstCell(
+            'SELECT optvalue FROM ' . $fu->getOpt('options_table') . " WHERE optkey='" . FU_TIMEZONE_OPTION_KEY . "' LIMIT 1"
+        );
+
+        if ($existingTimezone === false) {
+            $legacyOffsetRaw = $fu->db->GetFirstCell(
+                'SELECT optvalue FROM ' . $fu->getOpt('options_table') . " WHERE optkey='timezone_offset' LIMIT 1"
+            );
+
+            $migratedTimezone = ($legacyOffsetRaw === false)
+                ? FU_DEFAULT_TIMEZONE
+                : fu_migrate_legacy_timezone_offset((float) $legacyOffsetRaw);
+
+            $fu->db->Execute(
+                'INSERT INTO ' . $fu->getOpt('options_table') . ' (optkey, optvalue, optdesc)
+                    VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE optvalue = VALUES(optvalue)',
+                'Could not migrate timezone_offset to timezone.',
+                [FU_TIMEZONE_OPTION_KEY, $migratedTimezone, 'Your local IANA timezone (e.g. Europe/Helsinki). Used to display dates in your local time. Default: UTC']
+            );
+
+            $fu->db->Execute(
+                'DELETE FROM ' . $fu->getOpt('options_table') . " WHERE optkey='timezone_offset'",
+                null
+            );
+
+            $fu->addSuccess(
+                'Migrated legacy <strong>timezone_offset</strong> to timezone <strong>' . htmlspecialchars($migratedTimezone, ENT_QUOTES, 'UTF-8') . '</strong>. '
+                . 'Please review Admin -> Options and adjust it if this guess isn’t exactly right for your location.'
+            );
+        }
 
         // ── Blacklist update ──────────────────────────────────────────────────
         // INSERT IGNORE: adds new words only if they are not already present —
@@ -795,56 +986,34 @@ if (!$fu->noErr()) {
         $fu->addErr('Failed to set current db version.');
     }
 
-    // ── write admin credentials into blog-config.php ─────────────────────────
-    // Passwords are stored as bcrypt hashes (password_hash PASSWORD_BCRYPT).
-    // The admin_password line in blog-config.php is written as a plain quoted
-    // string containing the hash, e.g.:
-    //   $fanupdate['admin_password'] = '$2y$12$...';
-    // No md5() wrapper — password_verify() handles the comparison at login.
+    // ── write admin credentials into the database ────────────────────────────
+    // Plain options-table rows, same as every other setting — no
+    // blog-config.php involvement at all. Passwords are stored as bcrypt
+    // hashes (password_hash PASSWORD_BCRYPT); password_verify() handles the
+    // comparison at login (see FanUpdate::login()).
 
     if (!empty($clean['admin_username']) && !empty($clean['admin_password'])) {
 
-        $config_file = __DIR__ . '/blog-config.php';
+        $bcrypt = password_hash($clean['admin_password'], PASSWORD_BCRYPT);
 
-        if (is_writable($config_file)) {
-            $config_content = (string) file_get_contents($config_file);
+        $credentialQuery = 'INSERT INTO ' . $fu->getOpt('options_table') . ' SET optkey = ?, optvalue = ?, optdesc = ?';
 
-            $safe_user  = addslashes($clean['admin_username']);
-            $bcrypt     = password_hash($clean['admin_password'], PASSWORD_BCRYPT);
+        $usernameSaved = $fu->db->Execute($credentialQuery, 'Could not execute query.', [
+            'admin_username',
+            $clean['admin_username'],
+            'Your admin login username. Editable from Admin -> Account.',
+        ]);
 
-            // Update username — matches:  $fanupdate['admin_username'] = '...';
-            $new_content = preg_replace(
-                "/(\\\$fanupdate\['admin_username'\]\s*=\s*)'[^']*'/",
-                "\$1'" . $safe_user . "'",
-                $config_content
-            );
+        $passwordSaved = $fu->db->Execute($credentialQuery, 'Could not execute query.', [
+            'admin_password',
+            $bcrypt,
+            'Your admin login password (bcrypt hash). Editable from Admin -> Account.',
+        ]);
 
-            // Update password — matches any of the three possible existing formats:
-            //   $fanupdate['admin_password'] = md5('...');        ← original
-            //   $fanupdate['admin_password'] = '[0-9a-f]{32}';   ← bare MD5
-            //   $fanupdate['admin_password'] = '$2y$...';         ← already bcrypt
-            //
-            // addcslashes(..., '\\$') is required: bcrypt hashes contain literal
-            // '$' signs which preg_replace() treats as backreference markers.
-            $new_content = preg_replace(
-                "/(\\\$fanupdate\['admin_password'\]\s*=\s*)(?:md5\('[^']*'\)|'[^']*')/",
-                "\$1'" . addcslashes($bcrypt, '\\$') . "'",
-                (string) $new_content
-            );
-
-            if ($new_content !== null && file_put_contents($config_file, $new_content) !== false) {
-                $fu->addSuccess('Admin credentials saved to <strong>blog-config.php</strong> (bcrypt hash).');
-            } else {
-                $fu->addErr('Could not write to <strong>blog-config.php</strong>. Please set your credentials manually.');
-            }
+        if ($usernameSaved && $passwordSaved) {
+            $fu->addSuccess('Admin credentials saved.');
         } else {
-            // Provide a ready-to-paste bcrypt hash so the user can set it manually
-            $bcrypt_manual = password_hash($clean['admin_password'], PASSWORD_BCRYPT);
-            $fu->addErr(
-                '<strong>blog-config.php</strong> is not writable. Set your credentials manually:<br>'
-                    . '<code>$fanupdate[\'admin_username\'] = \'' . htmlspecialchars($clean['admin_username']) . '\';</code><br>'
-                    . '<code>$fanupdate[\'admin_password\'] = \'' . htmlspecialchars($bcrypt_manual) . '\';</code>'
-            );
+            $fu->addErr('Failed to save admin credentials.');
         }
     }
 
@@ -876,18 +1045,108 @@ if (!$fu->noErr()) {
     <form id="options" action="install.php" method="post">
         <?php
 
+        // Collective-source settings (collective_script/col_id/col_subj/
+        // collective_table) are seeded here with sane defaults (standalone/
+        // 'none') but deliberately not shown as editable fields — they're
+        // meant to be configured AFTER installing, from Admin -> Options ->
+        // Collective Source, which has a proper dropdown with auto-fill for
+        // known scripts. Exposing them as raw text fields here too (with no
+        // such guidance) only invited mistakes, e.g. picking a script here
+        // without knowing col_id/col_subj/collective_table have to actually
+        // match its real schema. Rendered as hidden inputs (not renamed to
+        // the underscore-prefixed "private var" convention below, since
+        // their real optkey must stay exactly collective_script/col_id/
+        // col_subj/collective_table for getOpt() to read them) so they're
+        // still seeded on fresh install without being user-editable here.
+        $fuHiddenCollectiveSourceKeys = ['collective_script', 'col_id', 'col_subj', 'collective_table'];
+
         foreach ($setting as $id => $row) {
 
             if (version_compare((string) $version_installed, (string) $row['version'], '<')) {
 
                 // PHP 8.2: use === 0 (strict) — == 0 was a bug that hid too many fields
-                if (strpos($row['optkey'], '_') === 0) { // hide private vars
+                if (strpos($row['optkey'], '_') === 0 || in_array($row['optkey'], $fuHiddenCollectiveSourceKeys, true)) { // hide private vars + collective-source settings
 
         ?>
                     <input type="hidden" id="<?php echo $row['optkey']; ?>" name="value[]"
                         value="<?php echo htmlspecialchars((string) $row['optvalue']); ?>" />
                     <input type="hidden" name="key[]" value="<?php echo $id; ?>" />
                 <?php
+
+                } elseif ($row['optkey'] === FU_TIMEZONE_OPTION_KEY) {
+
+                    // FP-19: searchable dropdown grouped by region, built
+                    // from PHP's own timezone database rather than a
+                    // hand-maintained list. The <script> at the bottom of
+                    // this page pre-selects the browser's detected zone
+                    // when it's a valid, recognised identifier.
+                    $class = (isset($class) && $class === 'even') ? 'odd' : 'even';
+                ?>
+                    <div class="option <?php echo $class; ?>">
+                        <p><label for="<?php echo $row['optkey']; ?>">timezone:
+                                <span class="help"><?php echo htmlspecialchars($row['optdesc']); ?></span></label>
+                            <select id="timezone" name="value[]">
+                                <?php foreach (fu_timezone_identifiers_grouped() as $region => $zones) { ?>
+                                <optgroup label="<?php echo htmlspecialchars($region, ENT_QUOTES, 'UTF-8'); ?>">
+                                    <?php foreach ($zones as $tz) { ?>
+                                    <option value="<?php echo htmlspecialchars($tz, ENT_QUOTES, 'UTF-8'); ?>"
+                                            <?php echo ($tz === (string) $row['optvalue']) ? 'selected' : ''; ?>>
+                                        <?php echo htmlspecialchars(fu_timezone_label($tz), ENT_QUOTES, 'UTF-8'); ?>
+                                    </option>
+                                    <?php } ?>
+                                </optgroup>
+                                <?php } ?>
+                            </select>
+                            <input type="hidden" name="key[]" value="<?php echo $id; ?>" />
+                        </p>
+                    </div><!-- END .option -->
+        <?php
+
+                } elseif (fu_is_yn_option($row['optkey'], $row['optdesc'])) {
+
+                    // Same .fu-toggle switch markup as admin/options.php's Main
+                    // list — see FU_YN_OPTION_KEYS (functions.php). Can't reuse
+                    // that page's "hidden 'n' + checkbox 'y' sharing one array
+                    // key" trick directly: this form's key[]/value[] are plain
+                    // unindexed arrays, paired up purely by POSITION (see the
+                    // parsing loop below, `$clean['value'][$key]`), so a
+                    // checkbox that only submits when checked would silently
+                    // shift every later field's value[] out of alignment with
+                    // its key[] entry. Instead the checkbox has no name at all
+                    // (purely visual) and a separate always-present hidden
+                    // field carries the real value[], kept in sync by the
+                    // small script at the bottom of this page.
+                    $class  = (isset($class) && $class === 'even') ? 'odd' : 'even';
+                    $is_on  = (strtolower(trim((string) $row['optvalue'])) === 'y');
+                ?>
+                    <div class="option <?php echo $class; ?>">
+                        <div class="option-yn-row">
+                            <label class="option-yn-label" for="<?php echo $row['optkey']; ?>">
+                                <?php echo htmlspecialchars($row['optkey']); ?>
+                            </label>
+                            <label class="fu-toggle" title="<?php echo htmlspecialchars($row['optdesc']); ?>">
+                                <input type="hidden" id="yn_hidden_<?php echo $id; ?>" name="value[]"
+                                    value="<?php echo $is_on ? 'y' : 'n'; ?>" />
+                                <?php /* Checkbox must immediately precede .fu-toggle__track — the CSS's
+                                        ":checked + .fu-toggle__track" selector requires adjacent siblings. */ ?>
+                                <input type="checkbox" id="<?php echo $row['optkey']; ?>"
+                                    class="fu-toggle__input"
+                                    data-yn-hidden="yn_hidden_<?php echo $id; ?>"
+                                    <?php echo $is_on ? 'checked' : ''; ?> />
+                                <span class="fu-toggle__track" aria-hidden="true">
+                                    <span class="fu-toggle__thumb"></span>
+                                </span>
+                                <span class="fu-toggle__state-label">
+                                    <?php echo $is_on ? 'Yes' : 'No'; ?>
+                                </span>
+                            </label>
+                            <?php if ($row['optdesc'] !== '') { ?>
+                            <p class="hint small option-yn-hint"><?php echo htmlspecialchars($row['optdesc']); ?></p>
+                            <?php } ?>
+                        </div>
+                        <input type="hidden" name="key[]" value="<?php echo $id; ?>" />
+                    </div><!-- END .option -->
+        <?php
 
                 } else {
 
@@ -953,11 +1212,21 @@ if (!$fu->noErr()) {
     </form>
 
     <script type="text/javascript">
-        // PHP 8.2 safe: replaced $('timezone_offset') with getElementById
-        const tzEl = document.getElementById('timezone_offset');
-        if (tzEl) {
-            const d = new Date();
-            tzEl.value = 0 - (d.getTimezoneOffset() / 60);
+        // FP-19: pre-select the browser's own detected IANA timezone, when
+        // Intl reports one that's actually present in the rendered <select>
+        // (every modern browser supports this; older ones simply leave the
+        // default UTC option selected — no error either way).
+        const tzSelect = document.getElementById('timezone');
+        if (tzSelect) {
+            try {
+                const detected = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                const option = tzSelect.querySelector('option[value="' + detected + '"]');
+                if (option) {
+                    tzSelect.value = detected;
+                }
+            } catch (e) {
+                // Intl unsupported or timezone lookup failed — leave default selected.
+            }
         }
     </script>
 

@@ -90,7 +90,7 @@ class BackupManager
 
         if ($fileCount === 0) {
             $this->deleteFile($filePath);
-            throw new \RuntimeException('Backup produced an empty archive — nothing was backed up.');
+            throw new \RuntimeException($this->describeEmptyBackupFailure());
         }
 
         if (!$this->isValidZip($filePath)) {
@@ -156,6 +156,62 @@ class BackupManager
         usort($backups, static fn (BackupResult $a, BackupResult $b): int => strcmp($b->createdAt, $a->createdAt));
 
         return $backups;
+    }
+
+    /**
+     * Diagnose why writeArchive() returned 0 files, for createBackup()'s
+     * exception message. Distinguishes three genuinely different causes
+     * that all previously collapsed into the same generic "empty archive"
+     * message, each needing a different fix:
+     *  - $sourceDir doesn't exist/isn't a directory at all (bad
+     *    `install_path` option).
+     *  - $sourceDir exists but has literally nothing in it (install_path
+     *    resolved to a real but wrong/empty directory).
+     *  - $sourceDir has entries, but every one of them is an excluded
+     *    directory name (uploads/fu-update-tmp/fu-backups/.git) — i.e.
+     *    there's nothing left to back up after exclusions, which would be
+     *    a very unusual real installation.
+     * Also serves as a live marker that this fixed code is actually the
+     * code executing — the wording differs per case, so a report of the
+     * exact old generic sentence coming back again means this method
+     * itself never ran (stale OPcache / an old file still being served),
+     * not a fourth, undiagnosed cause.
+     */
+    private function describeEmptyBackupFailure(): string
+    {
+        $sourceBase = $this->normalizedSourceDir();
+
+        if ($sourceBase === null) {
+            return sprintf(
+                'Backup produced an empty archive: the configured source directory "%s" does not exist or is not readable as a directory. Check the install_path option.',
+                $this->sourceDir
+            );
+        }
+
+        $entries = @scandir($sourceBase);
+        if ($entries === false) {
+            return sprintf(
+                'Backup produced an empty archive: could not list the contents of "%s" (scandir failed) — check file permissions.',
+                $sourceBase
+            );
+        }
+
+        $topLevel = array_values(array_diff($entries, ['.', '..']));
+
+        if ($topLevel === []) {
+            return sprintf(
+                'Backup produced an empty archive: the source directory "%s" exists but is completely empty. install_path is likely pointing at the wrong directory — check it against where this application\'s files actually live on this server.',
+                $sourceBase
+            );
+        }
+
+        return sprintf(
+            'Backup produced an empty archive: found %d top-level item(s) under "%s" (%s), but every one is an excluded directory (%s) or otherwise contains no files.',
+            count($topLevel),
+            $sourceBase,
+            implode(', ', $topLevel),
+            implode(', ', $this->excludeDirs)
+        );
     }
 
     /** Delete a single backup file. Silently no-ops if it doesn't exist or isn't under $backupDir. */
@@ -228,11 +284,13 @@ class BackupManager
             throw new \RuntimeException('Could not create the backup archive file.');
         }
 
-        $fileCount = 0;
-        $sourceReal = rtrim((string) realpath($this->sourceDir), '/');
+        $fileCount   = 0;
+        $walkedCount = 0;
+        $sourceBase  = $this->normalizedSourceDir() ?? '';
 
         foreach ($this->walkSourceFiles() as $absolutePath) {
-            $relative = ltrim(substr($absolutePath, strlen($sourceReal)), '/');
+            $walkedCount++;
+            $relative = ltrim(substr($absolutePath, strlen($sourceBase)), '/');
             if ($relative === '') {
                 continue;
             }
@@ -244,7 +302,40 @@ class BackupManager
 
         $zip->close();
 
+        if ($fileCount === 0 && $walkedCount > 0) {
+            // Files were found under $sourceDir but ZipArchive::addFile()
+            // rejected every single one — this is not "nothing to back up"
+            // (createBackup()'s generic empty-archive message below covers
+            // that case), it's the zip extension refusing to read files it
+            // was handed. In practice this almost always means an
+            // open_basedir restriction is blocking access — most commonly
+            // triggered by resolving a symlinked install path with
+            // realpath() into a target outside the configured
+            // open_basedir, which is why $sourceDir is used here exactly
+            // as configured rather than realpath()'d — or a file-permission
+            // problem introduced by a prior file operation.
+            throw new \RuntimeException(sprintf(
+                'Found %d file(s) under %s but the zip extension could not read any of them '
+                . '— check open_basedir and file permissions on this server.',
+                $walkedCount,
+                $sourceBase
+            ));
+        }
+
         return $fileCount;
+    }
+
+    /**
+     * $sourceDir as configured, trailing slash normalised — deliberately
+     * NOT realpath()'d. Resolving a symlinked install path with realpath()
+     * can point outside a host's open_basedir restriction even though the
+     * symlink path itself is inside it, which silently breaks every
+     * ZipArchive::addFile() call in writeArchive().
+     */
+    private function normalizedSourceDir(): ?string
+    {
+        $dir = rtrim($this->sourceDir, '/');
+        return ($dir !== '' && is_dir($dir)) ? $dir : null;
     }
 
     /**
@@ -256,17 +347,17 @@ class BackupManager
      */
     private function walkSourceFiles(): \Generator
     {
-        $sourceReal = realpath($this->sourceDir);
-        if ($sourceReal === false || !is_dir($sourceReal)) {
+        $sourceBase = $this->normalizedSourceDir();
+        if ($sourceBase === null) {
             return;
         }
 
         $excluded = array_map(
-            static fn (string $name): string => $sourceReal . DIRECTORY_SEPARATOR . $name,
+            static fn (string $name): string => $sourceBase . DIRECTORY_SEPARATOR . $name,
             $this->excludeDirs
         );
 
-        $directory = new \RecursiveDirectoryIterator($sourceReal, \FilesystemIterator::SKIP_DOTS);
+        $directory = new \RecursiveDirectoryIterator($sourceBase, \FilesystemIterator::SKIP_DOTS);
 
         $filter = new \RecursiveCallbackFilterIterator(
             $directory,

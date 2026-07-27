@@ -1,0 +1,10 @@
+# Runtime-generated site configuration — contains real DB credentials
+# once installed. blog-config.sample.php stays tracked as the template.
+/blog-config.php
+
+# OS and editor cruft
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

@@ -1,0 +1,52 @@
+<?php
+
+/*****************************************************************************
+ * FanUpdate — MediaRepositoryInterface
+ *
+ * Data-access contract for the Media gallery (TODO.md item "4. UI - Create
+ * an Image/File Manager"): one row per image uploaded through the WYSIWYG
+ * editor's "insert image" button (see admin/upload.php). MediaService (see
+ * class/Service/MediaService.php) depends on this interface rather than the
+ * concrete MediaRepository, so unit tests can substitute a test double
+ * without touching SqlConnection or a real database connection. No business
+ * rules, URL building, or filesystem access belong here — this is pure data
+ * access; stored paths are relative to the uploads/ directory, not absolute
+ * filesystem paths or URLs (see MediaService for why).
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * any later version.
+ ******************************************************************************/
+
+declare(strict_types=1);
+
+interface MediaRepositoryInterface
+{
+    /**
+     * Insert one row and return its new media_id, or 0 on failure.
+     *
+     * @param array{filename: string, filePath: string, thumbPath: string,
+     *              width: int, height: int, size: int, mimeType: string,
+     *              uploadedAt: string} $data
+     */
+    public function insert(array $data): int;
+
+    /**
+     * @return array{media_id: int, filename: string, file_path: string,
+     *               thumb_path: string, width: int, height: int, size: int,
+     *               mime_type: string, uploaded_at: string}|null
+     */
+    public function findById(int $id): ?array;
+
+    public function deleteById(int $id): bool;
+
+    /**
+     * Execute a paginated "every image, newest first" query via
+     * SqlConnection::ExecutePaginate() — same pagination convention as
+     * BlogRepository::search() (reads $_GET['p'], populates
+     * SqlConnection::$total_results/PrintPaginate()). Callers read rows
+     * back via SqlConnection::ReadRecordPaginate(), not a return value.
+     */
+    public function listPage(int $perPage): void;
+}

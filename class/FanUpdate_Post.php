@@ -9,7 +9,7 @@
  *
  * Domain object wrapping a single blog entry row: title/body, template-based
  * rendering, category assignment/lookup, and date formatting adjusted to the
- * admin's configured timezone_offset (posts are stored in UTC).
+ * admin's configured timezone (posts are stored in UTC).
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -108,11 +108,13 @@ class FanUpdate_Post
     }
 
     /**
-     * Return the date formatted for display, adjusted to the admin's configured
-     * local timezone (timezone_offset = hours difference from UTC, e.g. 3 for UTC+3).
+     * Return the date formatted for display, adjusted to the admin's
+     * configured IANA timezone (FP-19 — replaces the legacy fixed-hour
+     * timezone_offset, so daylight saving time is handled automatically).
      *
-     * Posts are stored in UTC. We add timezone_offset hours so the displayed
-     * date matches the admin's local time rather than the server's UTC clock.
+     * Posts are stored in UTC. We convert to the configured timezone so the
+     * displayed date matches the admin's local time rather than the
+     * server's UTC clock.
      */
     public function getDateFormatted(string $format = ''): string
     {
@@ -120,19 +122,21 @@ class FanUpdate_Post
             $format = (string) $this->fu->getOpt('date_format');
         }
 
-        $ts = strtotime($this->getDate() . ' UTC');
-        if ($ts === false) {
+        try {
+            $dt = new DateTime($this->getDate(), new DateTimeZone('UTC'));
+        } catch (Exception) {
             return '';
         }
 
-        // Apply the admin's local timezone offset for display.
-        // timezone_offset is hours ahead of UTC (e.g. 3 for UTC+3, -5 for UTC-5).
-        // getOpt returns false for 0/'n'/'no', so default to 0 in that case.
-        $raw    = $this->fu->getOpt('timezone_offset');
-        $offset = ($raw === false) ? 0 : (int) $raw;
-        $ts    += $offset * 3600;
+        // getOpt returns false when the option is missing entirely, so fall
+        // back to UTC in that case as well as for an invalid stored value.
+        $tz = (string) $this->fu->getOpt(FU_TIMEZONE_OPTION_KEY);
+        if (!fu_is_valid_timezone($tz)) {
+            $tz = FU_DEFAULT_TIMEZONE;
+        }
+        $dt->setTimezone(new DateTimeZone($tz));
 
-        return date($format, $ts);
+        return $dt->format($format);
     }
 
     public function getYear(): string

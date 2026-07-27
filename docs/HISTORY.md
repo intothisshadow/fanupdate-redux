@@ -6,6 +6,219 @@ each change, and `PHP Test Suite/TEST_LOG.md` for verified test runs.
 
 ---
 
+## [Redux 2.3.0] — July 27, 2026
+
+### 1. Admin Update Manager
+
+- [x] Update System Assumptions — confirmed the full pipeline (check,
+      download, backup, install, rollback) runs entirely in pure PHP, no
+      SSH/Composer/Git/cron/shell dependency anywhere; GitHub Releases API
+      as the update source, behind an `UpdateProviderInterface` so GitHub
+      is one implementation, not hardcoded.
+- [x] Preserve uploads — confirmed always true by design
+      (`BackupManager::DEFAULT_EXCLUDE_DIRS` excludes `uploads/` from
+      every backup; `InstallManager` never writes into it).
+- [x] "GitHub" future provider — already real via `GitHubUpdateProvider`.
+- [x] Documentation — refreshed the `README.md` file structure table
+      (added `admin/media.php`, `favicon.ico`, `LICENSE.md`, fixed the
+      `docs/`/`old-docs/` split which had drifted out of sync with the
+      real filesystem) and replaced the Theming section's stale
+      manual-`<link>`-tag instructions with the actual live in-admin
+      night-theme toggle button. No screenshots exist in `README.md` to
+      go stale in the first place.
+
+### 3. UI / UX
+
+- [x] Copy button on `admin/get-code.php`'s Display Code and CSS Rules
+      output — generic `.fu-copy-btn`/`fuCopyButtonInit()` in
+      `assets/js/fanupdate-admin.js`, reusable for any future
+      textarea-output page.
+
+### 4. UI — Image/File Manager
+
+- [x] New **Admin → Media** gallery (`admin/media.php`), backed by a
+      DB-indexed `media_table` (`MediaRepository`/`MediaService`,
+      `SchemaMigrator::ensureMediaTable()`). Paginated browse, per-image
+      delete, and a "Choose Existing" picker wired into both the TinyMCE
+      image button and the legacy upload flow.
+
+### 5. Code Cleanup
+
+- [x] Fixed `admin/options.php`'s `install_path` auto-detect to also catch
+      a stale-but-still-existing path (e.g. after a domain move), not just
+      a missing one — root cause of a live `BackupManager` "empty archive"
+      failure (2026-07-18).
+
+### 6. Categories Support
+
+- [x] Hybrid categories: a category can be standalone (FanUpdate-owned) or
+      collective-sourced, coexisting in one installation
+      (`standalone_category_table`, ID-offset scheme, source badges in
+      `admin/category.php`/`admin/blog.php`).
+- [x] Integrated Mode: Fanatically — live category listing (no sync
+      step), orphaned-category detection with an admin confirm-delete
+      flow when a category is deleted upstream.
+- [x] Requirements: standalone and Fanatically installations both
+      supported, alongside each other, on the same modular
+      `CategoryRepositoryInterface`.
+- Still open (left in `TODO.md`): per-installation toggle to hide
+  collective categories; Enthusiast and Listing Admin Integrated Mode
+  adapters.
+
+### 7. Cleanup / Technical Debt
+
+- [x] Removed every remaining reference to the obsolete Flinx Collective
+      and Fan Admin collective scripts (code, config, docs, UI, upgrade
+      paths) — confirmed nothing remained beyond the Redux 2.1.0 removal.
+
+### 8. Full Markdown Rendering for GitHub Release Notes
+
+- [x] Replaced the legacy `wpautop()`/`doHeaders()`/`doLists()` formatter
+      with Parsedown 1.8.0 (vendored, zero dependencies) for GitHub
+      release notes in `admin/update.php` — safe mode on, scheme
+      allow-list on links/images, task lists, tables, fenced code, and
+      every other GFM feature the legacy formatter couldn't render.
+      `ReleaseNotesRendererTest.php` covers headers through XSS payloads
+      and a ~200KB large-document performance case. Blog post/comment
+      rendering (`functions.php`'s formatter) is untouched — out of scope.
+
+### 9. Database Engine & Charset Migration (MyISAM → InnoDB, latin1 → utf8mb4)
+
+- [x] Every FanUpdate-owned table (fresh install and upgrade path) now
+      migrates to `ENGINE=InnoDB`/`utf8mb4_general_ci` in one combined
+      `ALTER TABLE` pass per table, idempotent and resumable if a
+      shared-hosting execution-time limit interrupts a run partway
+      through. Automatic mis-encoded-UTF8-as-latin1 detection picks the
+      correct conversion method (plain `CONVERT` vs. binary-intermediate
+      reinterpretation) per table rather than assuming either way.
+      Verified live on production: all 8 tables converted with zero
+      errors, front end and admin panel confirmed still working
+      afterward.
+- Still open (left in `TODO.md`): FULLTEXT index behavior re-verification
+  under InnoDB, transaction-rollback re-verification against a real
+  (not mocked) InnoDB database, and non-ASCII/multi-byte content
+  round-trip testing post-conversion.
+
+### 10. Admin-Panel Database Update Runner
+
+- [x] Extracted the schema-migration logic (mis-encoding detection,
+      InnoDB/utf8mb4 conversion, `standalone_category_table`/
+      `media_table` creation) out of `install.php` into a standalone
+      `SchemaMigrator` class. `UpgradeRunner` now reports/runs pending
+      schema changes alongside its existing option housekeeping, so a
+      manual zip-upload deployment (no GitHub release involved) can catch
+      its database up entirely from **Admin → Updates**, without ever
+      re-uploading `install.php`. New Dashboard notice when anything is
+      pending; logged through the existing update log.
+
+### 11. Database Architecture
+
+- [x] Reviewed and confirmed same-server/different-schema installations
+      are supported: `collective_table` can be schema-qualified (e.g.
+      `enthusiast_db.owned`) for a collective script living in a
+      different database on the same MySQL server. Genuinely separate
+      MySQL servers remain unsupported (would require replacing the
+      single-PDO-connection architecture). Documented in
+      `blog-config.sample.php`/`README.md`.
+
+### 12. Move collective-script configuration from blog-config.php into the database
+
+- [x] `collective_script`/`col_id`/`col_subj` moved from
+      `blog-config.php`'s hardcoded array into the options table
+      (descriptive identifiers — `enthusiast`/`fanatically`/`none` —
+      instead of single-letter shorthand), with a one-time migration for
+      existing installs (`UpgradeRunner`) and a dedicated **Admin →
+      Options → Collective Source** subpage (`<select>` with
+      known-script auto-fill + a Custom… escape hatch for unlisted
+      scripts). Live-verified: subpage saves correctly, Main Options no
+      longer lists these three keys, existing installations keep working
+      unchanged.
+- Still open (left in `TODO.md`): `FanUpdate`'s own resolution methods
+  have no PHPUnit coverage (no admin-page/singleton coverage in this
+  project generally), and the fresh-install path for these three
+  settings hasn't been exercised against a real install.
+
+### 13. Dashboard
+
+- [x] Added a Dashboard + Updates-page notice when `install.php` is still
+      present on the server, prompting deletion for security.
+
+### FP-14. Refactor Legacy RSS Component for PHP 8.2+
+
+- [x] Audited `rss.php`/`rss-comments.php`/`FeedWriter`/`FeedItem` — the
+      PHP 8.2+ refactor itself (strict types, explicit properties,
+      `utf8_encode()`/`utf8_decode()` removal) had already shipped in an
+      earlier session; closed the two remaining gaps: removed dead
+      `FeedItem::toUtf8()`/`fromUtf8()`, and added the first PHPUnit
+      coverage either class had (`FeedWriterTest.php`/`FeedItemTest.php`).
+
+### FP-15. Opt-In Anonymous Install Ping
+
+- [x] New disabled-by-default, fully independent install ping
+      (`InstallPingService`, own transport, no code shared with the
+      update checker) — sends only `install_uuid`/`version`/
+      `php_version`, roughly once every 30 days, fails silently on any
+      network error. New **Admin → Options → Privacy** subpage with a
+      "Send a test ping now" button; documented in `README.md`.
+
+### FP-16. Curated Release ZIP for GitHub Updates
+
+- [x] `build-release.sh` builds a clean, curated
+      `FanUpdateRedux-v{version}.zip` (+ `.sha256`) excluding `.git*`, a
+      real `blog-config.php`, and OS/editor cruft, keeping `old-docs/`
+      for attribution; writes to `Releases/`, refusing to overwrite an
+      already-built version. No `GitHubUpdateProvider` code change
+      needed — it already prefers the first `.zip` release asset over
+      the raw tag archive. Wired into `CLAUDE.md`'s Release process as
+      step 10.
+- Still open (left in `TODO.md`): confirming the live Updates page picks
+  up an actual uploaded GitHub release asset — needs a real release,
+  which this version bump provides the first opportunity for.
+
+### FP-17. Verify Downloaded Release ZIP Against a Published Checksum
+
+- [x] `DownloadManager` now verifies a downloaded release ZIP's SHA-256
+      against a published `.sha256`/`sha256sums.txt` release asset when
+      one exists (via new `GitHubUpdateProvider::findChecksum()`/
+      `ReleaseInfo::$expectedSha256`), refusing to install on a mismatch
+      and cleaning up the temp file. An absent checksum (every
+      pre-FP-16 release) is allowed with a visible "not published"
+      notice, not blocked. Verification status surfaced throughout the
+      admin Updates UI.
+
+### FP-18. Implement TinyMCE Editor
+
+- [x] Replaced the hand-rolled admin WYSIWYG toolbar with self-hosted
+      TinyMCE 7.9.3 (`assets/vendor/tinymce/`, no CDN/Tiny Cloud account)
+      on `admin/blog.php`'s post editor — Undo/Redo, headings, standard
+      formatting, tables, fullscreen, a custom Upload New/Choose Existing
+      image dialog (reusing item 4's Media Manager), autoresize, and
+      night-theme-aware skin/content CSS. Graceful automatic fallback to
+      a plain textarea with JavaScript disabled. Dead code removed:
+      `myWysiwyg`/`fuImageButtonClick()`/etc. and
+      `FanUpdate::printWysiwyg()`.
+- Still open (left in `TODO.md`): default alignment buttons emit inline
+  `style="text-align: …"` rather than a CSS class — accepted as
+  TinyMCE's standard default rather than a scope-creeping redesign.
+
+### FP-19. Replace Timezone Offset with Timezone Selection
+
+- [x] Replaced the legacy fixed-hour `timezone_offset` option with a real
+      IANA `timezone` identifier, so displayed dates account for
+      daylight saving time automatically. Region-grouped searchable
+      `<select>` in both `install.php` and **Admin → Options** (with
+      human-friendly UTC-offset labels and save-time validation);
+      one-time migration of an existing `timezone_offset` to the closest
+      matching zone (best-effort lookup table, defaulting to UTC with an
+      admin notice when no reliable mapping exists), via both
+      `install.php`'s interactive upgrade path and `UpgradeRunner` for
+      the Admin Update Manager.
+- Still open (left in `TODO.md`): the entry-scheduling date field is
+  still UTC-only (no local-time input/conversion), and there's no
+  logging system yet for a configured timezone to apply to.
+
+---
+
 ## [Redux 2.2.0] — July 17, 2026
 
 ### 1. Admin Update Manager

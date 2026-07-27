@@ -110,28 +110,30 @@ didn't exist yet. Fixed in Redux 1.1.1 — `addOptFromDb()` now passes
 
 ### I can't log in after installing — no credentials were set
 
-The admin username and password live in `blog-config.php`, not the database.
-The install form in Redux 1.1.1+ collects them and writes them for you. If you
-installed with an older version, open `blog-config.php` and set:
+The admin username and password live in the database (plain `options` table
+rows — `admin_username`/`admin_password`), not `blog-config.php`. The
+install form collects them on a fresh install and writes them for you. If
+that didn't happen for some reason, insert them directly:
 
-```php
-$fanupdate['admin_username'] = 'your-username';
-$fanupdate['admin_password'] = password_hash('your-password', PASSWORD_BCRYPT);
+```sql
+INSERT INTO blog_options (optkey, optvalue, optdesc) VALUES
+  ('admin_username', 'your-username', 'Your admin login username.'),
+  ('admin_password', '$2y$...', 'Your admin login password (bcrypt hash).');
 ```
 
-### I upgraded from Redux 1.1.x and can't log in
+Generate the bcrypt hash with:
+`php -r "echo password_hash('your-password', PASSWORD_BCRYPT);"`
 
-Your `admin_password` in `blog-config.php` may still be an MD5 hash. Redux 1.2.0+
-handles this automatically — as long as `blog-config.php` is writable, the hash
-is upgraded to bcrypt on your first successful login. If `blog-config.php` is
-read-only, update it manually:
+### After a fresh install, I get logged out the instant I click anything
 
-```php
-$fanupdate['admin_password'] = password_hash('your-password', PASSWORD_BCRYPT);
-```
-
-Or run: `php -r "echo password_hash('your-password', PASSWORD_BCRYPT);"` and
-paste the result.
+Fixed — this was caused by `install.php`'s credential-writing regex never
+matching `blog-config.sample.php`'s own default `admin_password` line (a live
+`password_hash('changeme', PASSWORD_BCRYPT)` expression, re-evaluated with a
+new random salt on every request), so the login cookie's HMAC token never
+matched between requests. No longer possible at all now that admin
+credentials are database rows rather than a `blog-config.php` expression —
+see the CHANGELOG's "Change password to database stored" entry for the full
+history of this bug and the fix.
 
 ### I am locked out of the admin panel
 

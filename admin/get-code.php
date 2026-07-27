@@ -63,7 +63,7 @@ if ($is_category) {
     <p>Edit the variables in this snippet according to the instructions below, then copy an paste it into the
         PHP-enabled page where you'd like to display the blog for <strong><?php echo htmlspecialchars((string)$subject, ENT_QUOTES, 'UTF-8'); ?></strong>.</p>
 
-    <p><textarea cols="90" rows="<?php echo $is_category ? 8 : 7; ?>">&lt;?php
+    <p><textarea id="fu-code-snippet" cols="90" rows="<?php echo $is_category ? 8 : 7; ?>">&lt;?php
 // FanUpdate Redux
 // subject: <?php echo htmlspecialchars((string) $subject, ENT_QUOTES, 'UTF-8'); ?>
 
@@ -77,6 +77,8 @@ require_once('<?php echo htmlspecialchars((string) $fu->getOpt('install_path'), 
 require_once('<?php echo htmlspecialchars((string) $fu->getOpt('install_path'), ENT_QUOTES, 'UTF-8'); ?>/show-blog.php');
 <?php } ?>
 ?&gt;</textarea></p>
+
+    <p><button type="button" class="button fu-copy-btn" data-copy-target="fu-code-snippet"><i class="ti ti-copy" aria-hidden="true"></i> Copy</button></p>
 
     <h3>Explanation of Variables</h3>
 
@@ -97,7 +99,7 @@ require_once('<?php echo htmlspecialchars((string) $fu->getOpt('install_path'), 
         you are using the default templates. You can of course <a href="templates.php">change the
             templates</a> and/or modify this styling however you see fit.</p>
 
-    <p><textarea cols="90" rows="16">
+    <p><textarea id="fu-css-rules" cols="90" rows="16">
 /*	====	FanUpdate	====	*/
 
 div#fanupdate {}
@@ -108,9 +110,59 @@ p {}
 
 /*	====	Entries	====	*/
 
-div.post {}
-
 p.catfile {padding: 0 0 0 3em;}
+
+/* Entry date in the category archive listing (show-cat.php). */
+span.date {}
+
+/*	====	Images	====	*/
+
+/* Wraps every image inserted via the post editor's "Insert image" button.
+   Rounds the corners, adds a subtle border, and shows a "zoom" cursor on
+   hover to hint that it opens in a lightbox. */
+a.fu-lightbox {
+	display: inline-block;
+	border-radius: 6px;
+	overflow: hidden;
+	border: 1px solid #ddd;
+}
+
+/* Border/shadow brighten slightly on hover or keyboard focus. */
+a.fu-lightbox:hover,
+a.fu-lightbox:focus {
+	border-color: #999;
+	box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+}
+
+a.fu-lightbox img {
+	display: block;
+	max-width: 100%;
+	height: auto;
+	cursor: zoom-in;
+	transition: opacity 0.15s;
+}
+
+/* Slight fade on hover/focus to reinforce that the image is clickable. */
+a.fu-lightbox:hover img,
+a.fu-lightbox:focus img {
+	opacity: 0.88;
+}
+
+/* Optional: add one of these classes to the <a class="fu-lightbox">
+   element in a post body to position the image relative to surrounding
+   text (see the README's "Image uploads" section for examples). */
+a.fu-lightbox.fu-img-left {
+	float: left;
+	margin: 0 1.25em 0.75em 0;
+}
+a.fu-lightbox.fu-img-right {
+	float: right;
+	margin: 0 0 0.75em 1.25em;
+}
+a.fu-lightbox.fu-img-center {
+	display: block;
+	margin: 0.75em auto;
+}
 
 /*	====	Comments	====	*/
 
@@ -125,10 +177,6 @@ div.comment p {padding: 0 0 0 3em;}
 
 div.comment p.commenter {padding: 0;}
 
-div.odd {background: #f3f3f3;}
-
-div.author {}
-
 div#newComment {}
 
 img.gravatar {
@@ -136,14 +184,36 @@ img.gravatar {
 	margin: 0 1em 1em 0;
 }
 
-/*	====	Comment Form	====	*/
+/* Shown in place of the comment list/form when an entry has comments
+   turned off. */
+p.comments-closed {}
 
-div.comments-form {}
+/* Comment validation/spam-guard error messages (e.g. blank comment,
+   blacklisted word, failed CAPTCHA). */
+p.error, ul.error {
+	color: #a00;
+}
+
+/*	====	Comment Form	====	*/
 
 form#comments-form {}
 
+h3#postcomment {}
+
 p#cmt-rules {}
 p#cmt-moderation {}
+
+/* Moderation notice in the built-in fallback comment form template (used
+   only if the comment_form_template option is ever empty). */
+p.hint {}
+
+/* "Remember me" checkbox label. */
+label.checkbox {}
+
+/* Comment form submit button. */
+.submit {}
+
+#captcha-img {}
 
 label {
 	display: block;
@@ -160,13 +230,6 @@ input, textarea, select, option {
 
 textarea {
 	width: 100%;
-}
-
-.wysiwygmenu {
-	display: block;
-}
-.wysiwygmenu a {
-	padding: 0.125em 0.25em;
 }
 
 /*	====	Footer	====	*/
@@ -187,6 +250,8 @@ div.credit {
 
 div.credit p {margin: 0;}
 </textarea></p>
+
+    <p><button type="button" class="button fu-copy-btn" data-copy-target="fu-css-rules"><i class="ti ti-copy" aria-hidden="true"></i> Copy</button></p>
 
 </div><!-- END .col22 -->
 

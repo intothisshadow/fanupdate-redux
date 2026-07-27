@@ -99,6 +99,16 @@ $fu->db->PrintPaginate();
 
 ## Transactions
 
+**Requires `ENGINE=InnoDB`.** Every FanUpdate-owned table is InnoDB as of
+the Database Engine & Charset Migration (see `install.php`'s
+`fu_migrate_table_engine_and_charset()` and TODO.md item "9. Database
+Engine & Charset Migration" for the migration itself). On `ENGINE=MyISAM`
+(the default on every installation before that migration ran)
+`beginTransaction()`/`commit()`/`rollBack()` are silent no-ops — every
+statement auto-commits immediately regardless of a later rollback — so the
+example below only actually provides atomicity once the tables it touches
+are InnoDB.
+
 ```php
 $fu->db->beginTransaction();
 try {

@@ -23,13 +23,13 @@ declare(strict_types=1);
 // ── release identity ─────────────────────────────────────────────────────────
 
 /** Human-readable version string displayed in the UI, footer, and RSS feeds. */
-const FU_VERSION      = 'Redux 2.2.0';
+const FU_VERSION      = 'Redux 2.3.0';
 
 /** Database schema version — update only when install.php adds/alters tables. */
 const FU_DB_VERSION   = '2.2.1b2';
 
 /** ISO 8601 release date. */
-const FU_RELEASE_DATE = '2026-07-17';
+const FU_RELEASE_DATE = '2026-07-27';
 
 /** Short release codename (shown on the Dashboard and Credits page). */
 const FU_RELEASE_NAME = '';
@@ -60,6 +60,14 @@ const FU_LICENCE_URL = 'https://www.gnu.org/licenses/gpl-3.0.html';
 
 const FU_UPDATE_PROVIDER_OWNER = 'intothisshadow';
 const FU_UPDATE_PROVIDER_REPO  = 'fanupdate-redux';
+
+// ── install ping (Opt-In Anonymous Install Ping — see admin/privacy.php,
+// class/Service/InstallPingService.php) ─────────────────────────────────────
+// Deliberately separate from the update provider above — the install ping
+// must remain completely independent of update checking (own endpoint, own
+// request code, functions regardless of whether update checks are enabled).
+
+const FU_INSTALL_PING_URL = 'https://coding.unloved-heart.net/fanupdate-redux/install-tracking-server/ping.php';
 
 // ── contributor roster ───────────────────────────────────────────────────────
 // Used by credits.php. Add entries here when a new contributor is credited.

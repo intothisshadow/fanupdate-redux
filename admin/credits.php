@@ -35,8 +35,7 @@ $fu->getHeader('Credits');
     <h3>Version</h3>
     <p>
         <strong>FanUpdate <?php echo htmlspecialchars(FU_VERSION, ENT_QUOTES, 'UTF-8'); ?></strong>
-        (<?php echo htmlspecialchars(FU_RELEASE_NAME, ENT_QUOTES, 'UTF-8'); ?>,
-        released <?php echo htmlspecialchars(FU_RELEASE_DATE, ENT_QUOTES, 'UTF-8'); ?>)
+        (<?php if (FU_RELEASE_NAME !== '') { ?><?php echo htmlspecialchars(FU_RELEASE_NAME, ENT_QUOTES, 'UTF-8'); ?>, <?php } ?>released <?php echo htmlspecialchars(FU_RELEASE_DATE, ENT_QUOTES, 'UTF-8'); ?>)
     </p>
     <p class="credits-meta">
         <a href="<?php echo htmlspecialchars(FU_URL_ORIGINAL, ENT_QUOTES, 'UTF-8'); ?>" target="_blank" rel="noopener">Original project</a>

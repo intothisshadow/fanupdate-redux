@@ -28,13 +28,24 @@ require_once('../class/Update/UpdateProviderInterface.php');
 require_once('../class/Update/GitHubUpdateProvider.php');
 require_once('../class/Repository/UpdateRepositoryInterface.php');
 require_once('../class/Repository/UpdateRepository.php');
+require_once('../class/Repository/CategoryRepositoryInterface.php');
+require_once('../class/Repository/CategoryRepository.php');
+require_once('../class/Service/CategoryService.php');
 require_once('../class/Service/UpdateManager.php');
+require_once('../class/Repository/PrivacyRepositoryInterface.php');
+require_once('../class/Repository/PrivacyRepository.php');
+require_once('../class/Service/InstallPingService.php');
 
 $fu = FanUpdate::instance();
 $fu->addOptFromDb();
 $fu->login();
 
 $showNav = true;
+
+// "install.php still present" and "pending DB upgrades" notices used to be
+// computed and rendered here (Dashboard-only) — both are now global banners
+// in admin/header.php, shown on every admin page. See that file's comment
+// for the full rationale.
 
 // ── Update notice ───────────────────────────────────────────────────────
 // runAutomaticCheckIfDue() only makes a live GitHub call when automatic
@@ -62,6 +73,38 @@ if (isset($_POST['action']) && $_POST['action'] === 'dismiss_update') {
         exit;
     }
 }
+
+// ── Opt-In Anonymous Install Ping (TODO.md "FP-15") ────────────────────────
+// Deliberately independent of the update-check block above: its own
+// repository, its own request code, and it runs (or doesn't) regardless of
+// whether update checking is enabled — see class/Service/InstallPingService.php's
+// docblock. Off by default; maybePingIfDue() is a no-op unless an admin has
+// explicitly opted in from admin/privacy.php, and even then it only actually
+// contacts the network once every ~30 days. Never throws, nothing to render.
+(new InstallPingService(
+    new PrivacyRepository($fu->db, (string) $fu->getOpt('options_table')),
+    FU_VERSION,
+    FU_INSTALL_PING_URL
+))->maybePingIfDue();
+
+// ── Integrated Mode: orphaned collective-sourced categories notice ──────
+// Cheap enough for every Dashboard load — one indexed LEFT JOIN, no network
+// call. Detects a category FanUpdate holds settings for that's since been
+// deleted upstream in the collective script (Enthusiast/Fanatically/Listing
+// Admin), per TODO.md's Integrated Mode sections.
+$collectiveScriptConfigured = $fu->hasCollectiveScript();
+$standaloneCategoryTableOpt = (string) $fu->getOpt('standalone_category_table');
+$standaloneCategoryTable = $standaloneCategoryTableOpt !== '' ? $standaloneCategoryTableOpt : null;
+$categoryService = new CategoryService(new CategoryRepository(
+    $fu->db,
+    (string) $fu->getOpt('collective_table'),
+    (string) $fu->getOpt('catjoin_table'),
+    (string) $fu->getOpt('catoptions_table'),
+    (string) $fu->getOpt('col_id'),
+    (string) $fu->getOpt('col_subj'),
+    $collectiveScriptConfigured ? $standaloneCategoryTable : null
+));
+$hasOrphanedCategories = $collectiveScriptConfigured && $categoryService->hasOrphanedCollectiveCategories();
 
 // ── Unapproved comment count ──────────────────────────────────────────────
 
@@ -106,6 +149,19 @@ $fu->getHeader('Dashboard');
             <input type="hidden" name="action" value="dismiss_update" />
             <button type="submit" class="button" style="margin-left:0.5rem;">Dismiss</button>
         </form>
+    </p>
+</div>
+<?php } ?>
+
+<?php if ($hasOrphanedCategories) { ?>
+<div class="error" style="display:flow-root;">
+    <p style="margin-bottom:0.5rem;">
+        <strong>Some categories no longer exist upstream.</strong>
+        One or more categories FanUpdate holds template/gravatar settings for have since been
+        deleted in your collective script and no longer appear in the category list.
+    </p>
+    <p style="margin-bottom:0;">
+        <a href="category.php#orphaned-categories" class="button update">Review &amp; confirm removal</a>
     </p>
 </div>
 <?php } ?>

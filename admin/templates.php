@@ -77,6 +77,8 @@ $fu->getHeader('Templates');
         <li><a href="blacklist.php">Blacklist</a></li>
         <li><a href="smilies.php">Smilies</a></li>
         <li class="active"><a href="templates.php">Templates</a></li>
+        <li><a href="collective-source.php">Collective Source</a></li>
+        <li><a href="privacy.php">Privacy</a></li>
     </ul>
 </div>
 

@@ -35,6 +35,16 @@ final class ReleaseInfo
         public readonly ?string $downloadUrl,
         /** ZIP asset size in bytes, if known. */
         public readonly ?int $downloadSize,
+        /**
+         * Published SHA-256 checksum for the ZIP asset (lowercase hex), if the
+         * release has a matching `.sha256`/`sha256sums.txt`/`checksums.txt`
+         * asset. Null when no such asset was found — this is the normal case
+         * for any release published before FP-16 shipped, or one cut without
+         * the packaging script. Distinct from DownloadResult::$sha256, which
+         * is computed *from* the downloaded file rather than published by the
+         * release.
+         */
+        public readonly ?string $expectedSha256 = null,
     ) {
     }
 }

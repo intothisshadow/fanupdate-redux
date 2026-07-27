@@ -23,7 +23,167 @@ require_once(__DIR__ . '/class/SqlConnection.php');
 require_once(__DIR__ . '/class/FanUpdate.php');
 require_once(__DIR__ . '/class/FanUpdate_Post.php');
 require_once(__DIR__ . '/class/FanUpdate_Comment.php');
+require_once(__DIR__ . '/class/Repository/CategoryRepositoryInterface.php');
+require_once(__DIR__ . '/class/Repository/CategoryRepository.php');
+require_once(__DIR__ . '/class/Repository/UpgradeRepositoryInterface.php');
+require_once(__DIR__ . '/class/Repository/UpgradeRepository.php');
+require_once(__DIR__ . '/class/Service/SchemaMigrator.php');
+require_once(__DIR__ . '/class/Service/UpgradeRunner.php');
 
+// _____________________________________________ BOOLEAN (Y/N) OPTIONS
+
+/**
+ * Canonical list of option keys that render as an on/off toggle switch
+ * (admin/options.php's ".fu-toggle" markup) instead of a plain text field
+ * — shared by admin/options.php's Main list and install.php's fresh-install
+ * form so both render these identically. Previously admin/options.php
+ * detected a boolean option purely by sniffing its stored description for
+ * the substring "y or n"; now that install.php's own descriptions for
+ * these seven no longer say that (the toggle itself makes it obvious — see
+ * fu_is_yn_option() below), an explicit list is the single source of truth
+ * instead of description text neither page can rely on staying in sync.
+ */
+const FU_YN_OPTION_KEYS = [
+    'comments_on',
+    'email_new_comments',
+    'comment_moderation',
+    'captcha_on',
+    'gravatar_on',
+    'points_scoring',
+    'ajax_comments',
+];
+
+/**
+ * Whether $optkey should render as a toggle switch rather than a text
+ * field. Checks FU_YN_OPTION_KEYS first; falls back to sniffing $desc for
+ * "y or n" (case-insensitive) so a custom option added later by hand
+ * (following the original convention) still renders as a toggle without
+ * needing a code change here.
+ */
+function fu_is_yn_option(string $optkey, string $desc): bool
+{
+    return in_array($optkey, FU_YN_OPTION_KEYS, true) || stripos($desc, 'y or n') !== false;
+}
+
+// _____________________________________________ TIMEZONE OPTION
+//
+// FP-19 — the 'timezone' option stores a real IANA identifier (e.g.
+// 'Europe/Helsinki') instead of the legacy integer 'timezone_offset' (hours
+// from GMT), so display dates account for daylight saving time correctly.
+// Shared by admin/options.php's Main list and install.php's fresh-install
+// form, which both render this key as a searchable <select> grouped by
+// region rather than a plain text field.
+
+/** The option key that render as a timezone dropdown instead of a plain text field. */
+const FU_TIMEZONE_OPTION_KEY = 'timezone';
+
+/** Fallback used whenever no timezone is configured, or the stored value is invalid. */
+const FU_DEFAULT_TIMEZONE = 'UTC';
+
+/**
+ * Every IANA timezone identifier PHP knows about, grouped by region
+ * (Africa, America, Asia, Europe, Oceania, ...) for <optgroup> rendering.
+ * Identifiers with no '/' (UTC, and a handful of legacy zones under
+ * DateTimeZone::ALL) are grouped under 'Other'.
+ *
+ * @return array<string, array<int, string>>
+ */
+function fu_timezone_identifiers_grouped(): array
+{
+    $groups = [];
+
+    foreach (DateTimeZone::listIdentifiers() as $tz) {
+        $region = str_contains($tz, '/') ? substr($tz, 0, (int) strpos($tz, '/')) : 'Other';
+        $groups[$region][] = $tz;
+    }
+
+    ksort($groups);
+
+    return $groups;
+}
+
+/**
+ * Human-friendly label for a timezone identifier, e.g.
+ * "Europe/Helsinki (UTC+02:00)". The offset reflects daylight saving time
+ * as it stands right now — it is a display label only, never stored.
+ */
+function fu_timezone_label(string $tz): string
+{
+    try {
+        $offsetSeconds = (new DateTimeZone($tz))->getOffset(new DateTime('now', new DateTimeZone('UTC')));
+    } catch (Exception) {
+        return $tz;
+    }
+
+    $sign   = $offsetSeconds < 0 ? '-' : '+';
+    $abs    = abs($offsetSeconds);
+    $hours  = intdiv($abs, 3600);
+    $mins   = intdiv($abs % 3600, 60);
+    $offset = sprintf('%s%02d:%02d', $sign, $hours, $mins);
+
+    return $tz . ' (UTC' . $offset . ')';
+}
+
+/** Whether $tz is a real IANA timezone identifier PHP's DateTimeZone accepts. */
+function fu_is_valid_timezone(string $tz): bool
+{
+    return in_array($tz, DateTimeZone::listIdentifiers(), true);
+}
+
+/**
+ * Best-effort mapping from a legacy whole-hour 'timezone_offset' value to a
+ * single representative IANA zone, used only for the one-time migration off
+ * that option (FP-19). A fixed hour offset is inherently ambiguous — many
+ * zones share the same standard offset, and most also observe daylight
+ * saving time the old option never accounted for at all — so this is a
+ * reasonable guess, not an exact reconstruction; the admin is always
+ * notified to review Options -> Timezone after migration regardless of
+ * whether a mapping was found.
+ *
+ * @var array<int, string>
+ */
+const FU_LEGACY_OFFSET_TIMEZONE_MAP = [
+    -12 => 'Etc/GMT+12',
+    -11 => 'Pacific/Midway',
+    -10 => 'Pacific/Honolulu',
+    -9  => 'America/Anchorage',
+    -8  => 'America/Los_Angeles',
+    -7  => 'America/Denver',
+    -6  => 'America/Chicago',
+    -5  => 'America/New_York',
+    -4  => 'America/Halifax',
+    -3  => 'America/Sao_Paulo',
+    -2  => 'Atlantic/South_Georgia',
+    -1  => 'Atlantic/Azores',
+    0   => 'UTC',
+    1   => 'Europe/Berlin',
+    2   => 'Europe/Helsinki',
+    3   => 'Europe/Moscow',
+    4   => 'Asia/Dubai',
+    5   => 'Asia/Karachi',
+    6   => 'Asia/Dhaka',
+    7   => 'Asia/Bangkok',
+    8   => 'Asia/Shanghai',
+    9   => 'Asia/Tokyo',
+    10  => 'Australia/Sydney',
+    11  => 'Pacific/Noumea',
+    12  => 'Pacific/Auckland',
+    13  => 'Pacific/Tongatapu',
+    14  => 'Pacific/Kiritimati',
+];
+
+/**
+ * Resolve a legacy 'timezone_offset' value (hours from GMT, possibly
+ * fractional — e.g. 5.5 for India) to the closest matching IANA identifier,
+ * or FU_DEFAULT_TIMEZONE when the (rounded) offset has no entry in
+ * FU_LEGACY_OFFSET_TIMEZONE_MAP.
+ */
+function fu_migrate_legacy_timezone_offset(float $offsetHours): string
+{
+    $rounded = (int) round($offsetHours);
+
+    return FU_LEGACY_OFFSET_TIMEZONE_MAP[$rounded] ?? FU_DEFAULT_TIMEZONE;
+}
 
 // _____________________________________________ ERROR REPORTING
 
@@ -91,6 +251,122 @@ function is_email(string $email): bool
 function is_url(string $url): bool
 {
     return (bool) preg_match('!^[\w]+?://[\w\#$%&~/.\-;:=,?@\[\]+]+$!', $url);
+}
+
+
+// _____________________________________________ SECURITY
+
+/**
+ * Whether install.php is still present under $installPath (TODO.md item
+ * "13. Dashboard"). install.php deletes itself automatically after a
+ * successful fresh install or upgrade, but that self-deletion can fail
+ * silently (e.g. a non-writable directory) — see install.php's own
+ * "Could not auto-delete install.php" fallback message. Left in place, it's
+ * a real security risk: anyone who finds the URL can attempt to re-run it
+ * against a live installation. Used by admin/index.php's Dashboard notice
+ * and admin/update.php's Updates-page notice so an admin who never saw (or
+ * missed) that one-time message still gets reminded on every subsequent
+ * page load until the file is actually gone.
+ */
+function fu_install_script_exists(string $installPath): bool
+{
+    $installPath = rtrim($installPath, '/');
+
+    if ($installPath === '') {
+        return false;
+    }
+
+    return is_file($installPath . '/install.php');
+}
+
+/**
+ * Builds the SchemaMigrator + UpgradeRunner pair used to check for (and,
+ * from admin/update.php, actually run) pending database migrations —
+ * TODO.md item "10. Admin-Panel Database Update Runner". Extracted here so
+ * every caller (admin/header.php's global pending-upgrades banner,
+ * admin/update.php's own check-and-run action) builds the exact same
+ * UpgradeRunner instead of duplicating this construction — previously
+ * admin/index.php and admin/update.php each had their own copy, with
+ * comments on each pointing at the other's "identical construction" as the
+ * reason to keep them in sync by hand.
+ *
+ * Reads $fanupdate/$coltable directly (the raw blog-config.php globals,
+ * always available by the time this runs — every caller requires
+ * blog-config.php before functions.php) rather than through FanUpdate's own
+ * getOpt() fallback, for the same reason admin/update.php's original
+ * construction did: it keeps UpgradeRunner decoupled from the FanUpdate
+ * singleton (see UpgradeRunner's own class docblock).
+ */
+function fu_build_upgrade_runner(FanUpdate $fu): UpgradeRunner
+{
+    global $fanupdate, $coltable;
+
+    $collectiveScriptConfigured = $fu->hasCollectiveScript();
+    $standaloneCategoryTableOpt = (string) $fu->getOpt('standalone_category_table');
+    $mediaTableOpt              = (string) $fu->getOpt('media_table');
+
+    $schemaMigrator = new SchemaMigrator(
+        $fu->db,
+        (string) $fu->getOpt('blog_table'),
+        (string) $fu->getOpt('comments_table'),
+        (string) $fu->getOpt('collective_table'),
+        (string) $fu->getOpt('catjoin_table'),
+        (string) $fu->getOpt('options_table'),
+        (string) $fu->getOpt('blacklist_table'),
+        (string) $fu->getOpt('catoptions_table'),
+        (string) $fu->getOpt('smilies_table'),
+        (string) $fu->getOpt('col_subj'),
+        $collectiveScriptConfigured,
+        $standaloneCategoryTableOpt !== '' ? $standaloneCategoryTableOpt : null,
+        $mediaTableOpt !== '' ? $mediaTableOpt : null
+    );
+
+    $legacyCollectiveScript = (string) ($fanupdate['collective_script'] ?? 'n');
+    if ($legacyCollectiveScript === '') {
+        $legacyCollectiveScript = 'n';
+    }
+    $legacyColId   = (string) ($coltable[$legacyCollectiveScript]['id']      ?? '');
+    $legacyColSubj = (string) ($coltable[$legacyCollectiveScript]['subject'] ?? '');
+    $legacyCollectiveTable = (string) ($fanupdate['collective_table'] ?? '');
+
+    return new UpgradeRunner(
+        new UpgradeRepository($fu->db, (string) $fu->getOpt('options_table')),
+        $schemaMigrator,
+        $legacyCollectiveScript,
+        $legacyColId !== '' ? $legacyColId : null,
+        $legacyColSubj !== '' ? $legacyColSubj : null,
+        $legacyCollectiveTable !== '' ? $legacyCollectiveTable : null
+    );
+}
+
+/**
+ * Whether a configured table reference exists, supporting an optional
+ * schema-qualified form ("other_db.table_name") for a collective_table
+ * living in a separate database on the same MySQL server (TODO.md's
+ * Database Architecture item — "same server, different schema" support).
+ * A plain `SHOW TABLES LIKE` only ever checks the connection's current
+ * database, so a schema-qualified reference needs an explicit
+ * information_schema lookup instead; a bare table name keeps using the
+ * original SHOW TABLES LIKE check, unchanged from before this existed.
+ *
+ * Used by install.php's collective_table existence check. Requires the
+ * connected DB user to have been granted privileges on the second schema
+ * too — a hosting-side prerequisite this function cannot verify or set up,
+ * only surface as a clear error if it's missing (see install.php's call
+ * site).
+ */
+function fu_table_exists(SqlConnection $db, string $tableRef): bool
+{
+    if (!str_contains($tableRef, '.')) {
+        return (bool) $db->GetFirstCell("SHOW TABLES LIKE '" . $tableRef . "'");
+    }
+
+    [$schema, $table] = explode('.', $tableRef, 2);
+
+    return $db->fetchColumn(
+        'SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? LIMIT 1',
+        [$schema, $table]
+    ) !== false;
 }
 
 

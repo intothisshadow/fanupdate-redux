@@ -129,11 +129,13 @@ class GitHubUpdateProvider implements UpdateProviderInterface
 
         $downloadUrl  = null;
         $downloadSize = null;
+        $zipAssetName = null;
 
         foreach ((array) ($release['assets'] ?? []) as $asset) {
             if (is_array($asset) && str_ends_with((string) ($asset['name'] ?? ''), '.zip')) {
                 $downloadUrl  = ((string) ($asset['browser_download_url'] ?? '')) ?: null;
                 $downloadSize = isset($asset['size']) ? (int) $asset['size'] : null;
+                $zipAssetName = (string) ($asset['name'] ?? '');
                 break;
             }
         }
@@ -144,6 +146,14 @@ class GitHubUpdateProvider implements UpdateProviderInterface
             $downloadUrl = ((string) ($release['zipball_url'] ?? '')) ?: null;
         }
 
+        // FP-17: a published checksum only makes sense when we actually know
+        // the ZIP asset's name (i.e. not the zipball_url fallback above) —
+        // look it up among the release's other assets, never throwing or
+        // blocking the release itself if it's missing or unparseable.
+        $expectedSha256 = $zipAssetName !== null
+            ? $this->findChecksum((array) ($release['assets'] ?? []), $zipAssetName)
+            : null;
+
         return new ReleaseInfo(
             version: $version,
             name: (string) ($release['name'] ?: $tag),
@@ -153,7 +163,194 @@ class GitHubUpdateProvider implements UpdateProviderInterface
             prerelease: (bool) ($release['prerelease'] ?? false),
             downloadUrl: $downloadUrl,
             downloadSize: $downloadSize,
+            expectedSha256: $expectedSha256,
         );
+    }
+
+    /**
+     * FP-17: find and parse a SHA-256 checksum for $zipAssetName among the
+     * release's assets. Looks for an asset named "{$zipAssetName}.sha256"
+     * first (exact match, so this stays correct regardless of what naming
+     * convention a given release actually used), then falls back to
+     * "sha256sums.txt"/"checksums.txt" (a multi-entry `sha256sum`-style
+     * file, one "{hash}  {filename}" line per asset).
+     *
+     * Never throws — a missing or unparseable checksum asset is the normal
+     * case for any release published before FP-16 shipped, and must never
+     * block the release itself from being detected/downloaded.
+     *
+     * @param array<int, mixed> $assets
+     */
+    private function findChecksum(array $assets, string $zipAssetName): ?string
+    {
+        $checksumAsset = null;
+        $exactName     = strtolower($zipAssetName) . '.sha256';
+
+        foreach ($assets as $asset) {
+            if (!is_array($asset)) {
+                continue;
+            }
+            $name = strtolower((string) ($asset['name'] ?? ''));
+            if ($name === $exactName) {
+                $checksumAsset = $asset;
+                break;
+            }
+        }
+
+        if ($checksumAsset === null) {
+            foreach ($assets as $asset) {
+                if (!is_array($asset)) {
+                    continue;
+                }
+                $name = strtolower((string) ($asset['name'] ?? ''));
+                if ($name === 'sha256sums.txt' || $name === 'checksums.txt') {
+                    $checksumAsset = $asset;
+                    break;
+                }
+            }
+        }
+
+        if ($checksumAsset === null) {
+            return null;
+        }
+
+        $url = (string) ($checksumAsset['browser_download_url'] ?? '');
+        if ($url === '') {
+            return null;
+        }
+
+        $raw = $this->fetchAssetContent($url);
+        if ($raw === null) {
+            return null;
+        }
+
+        return $this->parseChecksum($raw, $zipAssetName);
+    }
+
+    /**
+     * Parse a checksum file's content, handling two formats:
+     *   Single-hash:  a bare 64-char lowercase hex string (optionally with
+     *                 trailing whitespace/newline) — used when the checksum
+     *                 asset is dedicated to a single ZIP ("{zip}.sha256").
+     *   Multi-entry:  `sha256sum` output — "{hash}  {filename}" one entry
+     *                 per line — used for a shared "sha256sums.txt"/
+     *                 "checksums.txt" covering multiple assets; the line
+     *                 naming $zipAssetName is matched.
+     *
+     * Returns the lowercase hex hash string, or null when it cannot be found.
+     */
+    private function parseChecksum(string $raw, string $zipAssetName): ?string
+    {
+        $trimmed = trim($raw);
+
+        if (preg_match('/^[a-f0-9]{64}$/i', $trimmed)) {
+            return strtolower($trimmed);
+        }
+
+        $needle = strtolower($zipAssetName);
+        foreach (explode("\n", $trimmed) as $line) {
+            $line = trim($line);
+            if (
+                str_contains(strtolower($line), $needle)
+                && preg_match('/^([a-f0-9]{64})\s/i', $line, $m)
+            ) {
+                return strtolower($m[1]);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Fetch the raw content of a release asset (e.g. a checksum file) via
+     * its browser_download_url. Unlike request(), this follows redirects
+     * (asset downloads redirect to objects.githubusercontent.com /
+     * release-assets.githubusercontent.com) and returns the raw body rather
+     * than JSON-decoding it. Response size is capped defensively — checksum
+     * files are always tiny — and any failure (network, non-2xx status, a
+     * non-HTTPS URL) yields null rather than throwing, since a checksum
+     * asset is optional and must never block the release itself.
+     */
+    private function fetchAssetContent(string $url): ?string
+    {
+        if (!str_starts_with($url, 'https://')) {
+            return null;
+        }
+
+        try {
+            $body = function_exists('curl_init')
+                ? $this->fetchAssetViaCurl($url)
+                : $this->fetchAssetViaStream($url);
+        } catch (\Throwable) {
+            return null;
+        }
+
+        return $body !== null ? substr($body, 0, 65536) : null;
+    }
+
+    private function fetchAssetViaCurl(string $url): ?string
+    {
+        $ch = curl_init($url);
+        if ($ch === false) {
+            return null;
+        }
+
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_MAXREDIRS      => 3,
+            CURLOPT_TIMEOUT        => self::TIMEOUT_SECONDS,
+            CURLOPT_CONNECTTIMEOUT => self::TIMEOUT_SECONDS,
+            CURLOPT_PROTOCOLS      => CURLPROTO_HTTPS,
+            CURLOPT_REDIR_PROTOCOLS => CURLPROTO_HTTPS,
+            CURLOPT_USERAGENT      => 'FanUpdateRedux-Updater',
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
+            CURLOPT_RANGE          => '0-65535',
+        ]);
+
+        $body   = curl_exec($ch);
+        $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ($body === false || $status < 200 || $status >= 300) {
+            return null;
+        }
+
+        return (string) $body;
+    }
+
+    private function fetchAssetViaStream(string $url): ?string
+    {
+        $context = stream_context_create([
+            'http' => [
+                'method'           => 'GET',
+                'header'           => 'User-Agent: FanUpdateRedux-Updater' . "\r\n" . 'Range: bytes=0-65535',
+                'timeout'          => self::TIMEOUT_SECONDS,
+                'ignore_errors'    => true,
+                'protocol_version' => 1.1,
+                'follow_location'  => 1,
+                'max_redirects'    => 4,
+            ],
+            'ssl' => [
+                'verify_peer'      => true,
+                'verify_peer_name' => true,
+            ],
+        ]);
+
+        $body = @file_get_contents($url, false, $context);
+        if ($body === false) {
+            return null;
+        }
+
+        $status = 0;
+        foreach ($http_response_header ?? [] as $header) {
+            if (preg_match('#^HTTP/\S+\s+(\d{3})#', $header, $m)) {
+                $status = (int) $m[1];
+            }
+        }
+
+        return ($status >= 200 && $status < 300) ? (string) $body : null;
     }
 
     /**

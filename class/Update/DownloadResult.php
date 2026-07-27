@@ -28,6 +28,14 @@ final class DownloadResult
         public readonly int $size,
         /** SHA-256 hex digest of the downloaded file, for later verification/logging. */
         public readonly string $sha256,
+        /**
+         * FP-17: true when the release published a checksum and $sha256
+         * matched it. False means no checksum was published for this
+         * release to verify against — never false due to a mismatch, since
+         * DownloadManager::download() throws instead of returning a result
+         * in that case.
+         */
+        public readonly bool $checksumVerified = false,
     ) {
     }
 }

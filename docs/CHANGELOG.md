@@ -9,6 +9,1354 @@ All notable changes to this project are documented here.
 
 ---
 
+## [Redux 2.3.0] — July 27, 2026 — Database Architecture, Media Manager & TinyMCE Editor
+
+### Added
+
+- **Timezone selection (TODO.md item "FP-19. Replace Timezone Offset with
+  Timezone Selection").** Replaces the legacy `timezone_offset` option (a
+  fixed hour offset from GMT) with a proper **Timezone** IANA identifier
+  (e.g. `Europe/Helsinki`), so displayed dates account for daylight saving
+  time automatically instead of drifting by an hour every spring/autumn.
+  - New `functions.php` helpers: `fu_timezone_identifiers_grouped()` (every
+    identifier PHP's `DateTimeZone::listIdentifiers()` knows, grouped by
+    region for `<optgroup>` rendering), `fu_timezone_label()` (human-friendly
+    label with the current UTC offset, e.g. "Europe/Helsinki (UTC+02:00)"),
+    and `fu_is_valid_timezone()`.
+  - **Admin → Options** and `install.php`'s fresh-install form both render
+    `timezone` as a searchable `<select>` grouped by region instead of a
+    plain text field (same special-case pattern as the existing y/n toggle
+    switches). `install.php`'s form pre-selects the browser's own detected
+    zone via `Intl.DateTimeFormat().resolvedOptions().timeZone` when it's a
+    recognised identifier; `admin/options.php` rejects an invalid value on
+    save rather than silently falling back to UTC.
+  - `FanUpdate_Post`/`FanUpdate_Comment::getDateFormatted()` now convert the
+    stored UTC timestamp via `DateTime`/`DateTimeZone` instead of adding a
+    fixed number of hours — this is what actually fixes the DST drift, since
+    every date shown throughout the site (post dates, comment dates, the
+    admin dashboard and entries list) goes through these two methods.
+  - **Migration:** an existing installation's `timezone_offset` is migrated
+    automatically, both via `install.php`'s interactive "upgrade from any
+    version" block and via `UpgradeRunner` (the non-interactive path the
+    Admin Update Manager uses) — whichever the installation actually uses.
+    A new `fu_migrate_legacy_timezone_offset()` helper maps the old hour
+    offset to a representative IANA zone using a best-effort lookup table
+    (`FU_LEGACY_OFFSET_TIMEZONE_MAP`) covering whole-hour offsets -12..+14;
+    an offset with no table entry (or no `timezone_offset` at all) defaults
+    to `UTC`. Either way, a message asks the admin to check **Options →
+    Timezone** afterwards — a fixed offset can't be mapped back to an exact
+    zone with certainty, since several zones share any given offset and most
+    also observe DST that `timezone_offset` never did. The old
+    `timezone_offset` row is deleted once migrated.
+
+- **`admin/get-code.php`'s "CSS Rules" snippet now includes the
+  `a.fu-lightbox` image styles** — requested directly, so site owners
+  copying this snippet into their own stylesheet get working styling
+  (rounded corners, border, hover state, zoom cursor, and the
+  `fu-img-left`/`fu-img-right`/`fu-img-center` alignment helpers) for
+  images inserted via the post editor, instead of having to find and
+  copy them from `assets/css/style.css` themselves. Each rule has a short
+  comment explaining what it does. Also removed the snippet's stale
+  `.wysiwygmenu {}`/`.wysiwygmenu a {}` stub, left over from the front-end
+  comment form's WYSIWYG toolbar — since that toolbar was removed earlier
+  this session, the stub no longer styles anything that exists.
+
+- **TinyMCE post editor (TODO.md item "FP-18. Implement TinyMCE Editor").**
+  **Admin → Entries**' post-body editor is now a self-hosted TinyMCE 7.9.3
+  instance, replacing the previous hand-rolled WYSIWYG toolbar.
+  - Vendored via `npm pack tinymce@7` into `assets/vendor/tinymce/`
+    (~1.6 MB trimmed: core, the `silver` theme, `dom` model, `default`
+    icons, `oxide`/`oxide-dark` UI skins, `default`/`dark` content skins,
+    and the `lists`/`link`/`table`/`code`/`fullscreen`/`autoresize`/
+    `charmap` plugins) — no CDN, no Tiny Cloud account, `license_key:
+    'gpl'` for self-hosted GPL use. New `docs/THIRD-PARTY-LICENSES.md`
+    entries for TinyMCE (GPL-2.0-or-later) and the DOMPurify it bundles
+    internally (MPL-2.0/Apache-2.0).
+  - New `assets/js/fanupdate-tinymce.js` initialises the editor on
+    `admin/blog.php`'s `#body` textarea only — the only page that had the
+    previous WYSIWYG toolbar. Toolbar/plugins cover every item TODO.md's
+    FP-18 asked for; `paste`/`hr` have no separate plugin as of TinyMCE
+    6+ (folded into core), so there was nothing to vendor for either.
+  - A custom `fuimage` toolbar button (not the stock `image` plugin) opens
+    an Upload New/Choose Existing dialog reusing `admin/upload.php` and
+    `admin/media.php` (TODO.md item "4. UI - Create an Image/File
+    Manager") — the same UI/CSS the previous editor's image button used.
+    Drag-and-drop/pasted images are handled separately via
+    `images_upload_handler`, core TinyMCE behaviour needing no plugin.
+  - Editor skin (`oxide`/`oxide-dark`) and content CSS follow the saved
+    night-theme preference at page-load time; height is configurable via
+    new `editor_min_height`/`editor_max_height` options (advanced, not
+    exposed in Admin → Options — same precedent as
+    `upload_max_filesize`/`upload_thumb_width`).
+  - `tinymce.triggerSave()` on the form's submit event keeps native form
+    submission working exactly as before; with JavaScript disabled the
+    real `<textarea id="body">` TinyMCE always leaves in the DOM behaves
+    as a plain textarea, same as before this change — no separate
+    fallback code needed.
+  - **Removed** as dead code (no other callers, confirmed via a
+    full-codebase search): the hand-rolled admin WYSIWYG toolbar
+    (`myWysiwyg`/`fuImageButtonClick()`/`fuBuildImageModal()`/
+    `fuUploadImage()`/etc., previously in `assets/js/fanupdate-admin.js`),
+    `class/FanUpdate.php`'s `printWysiwyg()` no-op stub, and the
+    `.wysiwygmenu` toolbar CSS in `assets/css/style.css`/`style-night.css`.
+    `assets/js/fanupdate.js`'s shared `makeWysiwyg()`/`wysiwygButton()`/
+    `formatText()`/`insertLink()` were kept — they're still used by the
+    public comment form's own separate toolbar
+    (`assets/js/fanupdate-comment-submit.js`), unrelated to this change.
+
+- **Media gallery: browse, manage, and select uploaded images (TODO.md item
+  "4. UI - Create an Image/File Manager").** New **Admin → Media**
+  (`admin/media.php`): a paginated thumbnail grid of every image ever
+  uploaded through the WYSIWYG editor, with per-image delete.
+  - New `media_table` (`blog_media` by default), recorded in via new
+    `MediaRepository`/`MediaRepositoryInterface`/`MediaService` classes.
+    `admin/upload.php` now inserts one row per successful upload
+    (filename, uploads/-relative file/thumb paths, dimensions, size, MIME
+    type, timestamp) alongside its existing file-save/thumbnail-generation
+    work — indexed DB lookups instead of a filesystem scan, to hold up
+    under CLAUDE.md's "tens of thousands of images" performance target.
+  - `SchemaMigrator::ensureMediaTable()` creates the table for existing
+    installations (via Admin → Updates) the same way
+    `ensureStandaloneCategoryTable()` already does for Categories Support,
+    except unconditionally rather than gated on `collective_script` — every
+    installation gets a Media gallery regardless of collective-script
+    configuration.
+  - Deletion removes the original file, its thumbnail, and the DB row, with
+    a full confirm-then-POST view (same nested-form-avoidance pattern as
+    `admin/blog.php`'s single-entry delete). Deliberately does not check
+    whether the image is still referenced by a post — that would need a
+    non-indexed `LIKE` scan over every post body; a post that already
+    embedded a deleted image just ends up with a broken `<img>` src, same
+    as manually deleting a file from `uploads/images/` always could.
+  - The WYSIWYG "insert image" toolbar button now opens a modal with
+    **Upload New** (the existing upload flow, unchanged) and **Choose
+    Existing** tabs — the latter fetches `admin/media.php?action=list`
+    (JSON, paginated) and inserts the selected image directly, no upload
+    needed. New `.fu-image-modal*`/`.media-grid`/`.media-item` CSS in both
+    `assets/css/style.css` and `style-night.css`.
+  - New **Media** entry in the admin nav (`admin/header.php`), between
+    Categories and Options.
+
+- **Copy buttons for Display Code / CSS Rules output (TODO.md "3. UI / UX").**
+  **Admin → Categories/Entries → "Get Code"** (`admin/get-code.php`) now
+  shows a **Copy** button below both the PHP display-code snippet and the
+  CSS rules block, so an admin can copy either directly to the clipboard
+  instead of manually selecting the textarea contents. New generic
+  `fuCopyButtonInit()`/`fuCopyButtonClick()` in
+  `assets/js/fanupdate-admin.js` wire up any `.button.fu-copy-btn` element
+  via its `data-copy-target` textarea id, using `navigator.clipboard
+  .writeText()` where available (secure contexts) and falling back to
+  `textarea.select()` + `document.execCommand('copy')` otherwise, with a
+  brief "Copied!" label swap for feedback. Reusable as-is for any future
+  textarea-output page.
+
+- **Full GitHub Flavored Markdown rendering for release notes (TODO.md item
+  "8. Implement Full Markdown Rendering for GitHub Release Notes").**
+  **Admin → Updates**' "Latest release" panel previously rendered a
+  release's raw GitHub Markdown body via `htmlspecialchars()` followed by
+  the legacy WordPress-derived `wpautop()`/`doHeaders()`/`doLists()`
+  formatter (`functions.php`) — that pipeline only ever produced
+  paragraphs, headers, lists, and auto-linking, so `**bold**`, `_italic_`,
+  inline code, fenced code blocks, tables, blockquotes, task lists,
+  images, reference-style links, strikethrough, and horizontal rules all
+  displayed as plain, unformatted text.
+  - New `class/Parsedown.php` — Parsedown 1.8.0 vendored directly
+    (unmodified, MIT-licensed — see `docs/THIRD-PARTY-LICENSES.md`), the
+    same "embed the library's own file directly in `class/`" approach
+    already used for `class/FeedWriter.php`'s Universal Feed Writer,
+    since the production app assumes no Composer/CLI at runtime on
+    shared hosting. Parsedown natively covers headers, emphasis, inline
+    code, fenced code blocks with language identifiers, tables,
+    blockquotes, links (including reference-style and bare-URL
+    autolinking), images, horizontal rules, and strikethrough — i.e.
+    everything the TODO item asked for except GFM task-list checkboxes,
+    which aren't part of upstream Parsedown by the maintainer's own
+    choice (outside the CommonMark spec it targets).
+  - New `class/Service/ReleaseNotesRenderer.php` wraps Parsedown with
+    **safe mode always enabled** (raw HTML in release notes is dropped
+    entirely rather than passed through; link/image destinations outside
+    a scheme allow-list have their `:` neutralised to `%3A` so a
+    `javascript:` URL can never execute) and GFM-style single-newline
+    line breaks. Adds GFM task-list checkboxes
+    (`- [ ]`/`- [x]`/`- [X]`) as a small, safe HTML post-processing step
+    of its own (`renderTaskListCheckboxes()`) rather than patching the
+    vendored file — the replacement markup is a fixed literal the method
+    controls, never built from the Markdown source, so it can't be used
+    to smuggle attacker-controlled HTML past safe mode. Handles both
+    "tight" and "loose" list rendering shapes. Malformed Markdown can't
+    actually throw in Parsedown (it always produces a best-effort
+    interpretation — unmatched brackets/asterisks fall back to literal
+    text, an unterminated fence renders through the rest of the input,
+    etc.), so the try/catch fallback to escaped plain text is defence in
+    depth only, exercised in tests via an injectable stub.
+  - `admin/update.php`'s release-notes block now calls
+    `ReleaseNotesRenderer::renderToHtml()` directly on the raw (not
+    pre-escaped) notes — the renderer does its own escaping internally.
+    The container gained a `fu-release-notes` class for the new CSS
+    below; nothing else about the page changed.
+  - `assets/css/style.css`/`style-night.css`: new `.fu-release-notes`
+    rules for blockquotes, inline-code background (distinct from the
+    panel's own surface colour so it stays visible), constrained image
+    width, table cell borders, and GFM task-list checkbox layout —
+    mirrored identically in both stylesheets per this project's existing
+    "night theme duplicates all structural rules" convention.
+  - New `docs/THIRD-PARTY-LICENSES.md` recording Parsedown's MIT license
+    text (required by the license) alongside a note on Universal Feed
+    Writer's existing in-file attribution.
+  - Deliberately unrelated to blog-post rendering: `functions.php`'s
+    `wpautop()`/`doHeaders()`/`doLists()` are untouched and still used for
+    actual blog post/comment display — this change only replaces how
+    *GitHub release notes* are rendered on the Updates admin page.
+  - Tests: new `PHP Test Suite/Unit/Service/ReleaseNotesRendererTest.php`
+    — headers, bold/italic, inline code, fenced code with a language
+    identifier, tables (including column alignment), task lists (tight
+    and loose lists, both `[x]` and `[X]`), nested lists, blockquotes,
+    links (inline, reference-style, and bare-URL autolinking), images,
+    horizontal rules, strikethrough, a mixed multi-feature document,
+    malformed Markdown (both Parsedown's own best-effort handling and the
+    injectable-stub fallback path), several XSS payloads (`<script>`, an
+    `onerror` attribute, `javascript:` URLs in both a link and an image),
+    and a large-input performance check. **Confirmed passing on Ariane's
+    machine on the first run: 351 tests, 1060 assertions, zero failures**
+    (up from the 328/1008 baseline — +23 tests, +52 assertions, matching
+    the new test methods) — see `PHP Test Suite/TEST_LOG.md`'s July 18,
+    2026 entry.
+
+- **Integrated Mode: Fanatically (TODO.md item "6. Categories Support" →
+  "Integrated Mode: Fanatically").** Fanatically's `fanatic_listings`
+  table (`id`, `subject`, among others — the fanlistings this collective
+  actually owns) fits the generic collective-table shape (`col_id`/
+  `col_subj`) the hybrid categories model already supports, so no
+  Fanatically-specific query code was needed — category listing,
+  selection, and presentation are already always live
+  (`findById()`/`listAll()`/`listForDropdown()` query the collective
+  table directly on every call). What this change actually adds is
+  detecting and cleaning up the one thing that CAN go stale: a
+  FanUpdate-side settings row (template/gravatar) for a category that's
+  since been deleted upstream.
+  - **Correction (caught live, same day):** this entry and the config
+    it documented originally pointed at Fanatically's `fanatic_categories`
+    table instead — that table is Fanatically's own site-wide list of
+    every category across the whole directory (Actors, Movies, Music,
+    ...), unrelated to which fanlistings any one collective actually
+    owns. Pointing `collective_table` at it pulled in every category in
+    the whole Fanatically directory instead of just this site's own
+    fanlistings. Every reference below, and everywhere else in this
+    codebase, has been corrected to `fanatic_listings`/`id`/`subject`.
+  - `blog-config.sample.php` documents the Fanatically shorthand (`'f'`)
+    and a new `$coltable['f']` entry (`id` = `id`, `subject` = `subject`)
+    — `parent_id` (Fanatically's own subcategory support) is deliberately
+    not read; every category is treated as a flat list, same as
+    Enthusiast.
+  - New `CategoryRepository::listOrphanedCollectiveCategoryIds(): array` —
+    a single indexed `LEFT JOIN` (catoptions → collective table,
+    excluding the standalone ID space) returning every collective-space
+    `cat_id` with a settings row here but no matching row upstream.
+    Returns `[]` without querying anything when no standalone table is
+    configured (`collective_script = 'n'`), since there's no external
+    source to fall out of sync with in that mode.
+  - `CategoryService` gained `hasOrphanedCollectiveCategories()` (cheap
+    boolean check, same "safe on every page load" bar as
+    `SchemaMigrator::hasPendingSchemaChanges()`/`UpgradeRunner::
+    hasPendingUpgrades()`), `listOrphanedCollectiveCategoryIds()`, and
+    `confirmDeleteOrphanedCategory(int $catId): bool` — re-checks the
+    category is genuinely still orphaned before deleting its settings
+    row, so a stale/forged request can't remove a still-live category's
+    settings. Deliberately does NOT touch `catjoin_table` (post-to-
+    category assignments) — existing blog entries stay filed under the
+    deleted category's ID, matching how a live collective-sourced
+    category's deletion already leaves `catjoin_table` alone.
+  - **`admin/index.php`** (Dashboard): new notice, same pattern as the
+    existing update/pending-database-updates notices, shown whenever any
+    category is orphaned — links to `admin/category.php#orphaned-categories`.
+  - **`admin/category.php`**: new section (above the category list, only
+    when a collective script is configured and something's orphaned)
+    listing each orphaned category by ID (its name isn't known locally
+    once it's gone upstream) with its own CSRF-protected "confirm delete"
+    button and a JS `confirm()` prompt. New `confirm-delete-orphan` POST
+    action.
+  - Generic, not Fanatically-specific — the same mechanism will cover
+    Enthusiast/Listing Admin's own Integrated Mode sections once those
+    are picked up, since nothing here is tied to which script the
+    collective table belongs to.
+  - Tests: new `CategoryRepositoryTest`/`CategoryServiceTest` coverage —
+    empty-array short-circuit without a standalone table, the LEFT JOIN
+    query shape (including the standalone-ID-space exclusion), multiple
+    orphaned IDs, `confirmDeleteOrphanedCategory()`'s re-check refusing a
+    non-orphaned ID without touching the repository, and the delete-
+    fails case. **Confirmed passing on Ariane's machine on the first
+    run: 328 tests, 1008 assertions, zero failures** (up from the
+    319/989 baseline) — see `PHP Test Suite/TEST_LOG.md`'s July 18,
+    2026 entry.
+
+- **Separate-database support for the collective script (TODO.md item
+  "11. Database Architecture").** FanUpdate no longer strictly requires
+  its collective/fanlisting script (Enthusiast, etc.) to live in the same
+  database — `collective_table` can now be schema-qualified in
+  `blog-config.php` (e.g. `enthusiast_db.owned`) for a collective script
+  on a **different database on the same MySQL server**, which is the
+  common shared-hosting case (one MySQL server, a small quota of separate
+  databases) rather than needing one database per script.
+  - No query-building changes were needed: every existing table
+    reference is built via plain string concatenation with no
+    backtick-wrapping of the whole identifier, so `otherdb.tablename`
+    already works correctly in every `JOIN` as-is.
+  - The one place that didn't already work unchanged: `install.php`'s
+    collective-table existence check used `SHOW TABLES LIKE`, which is
+    scoped to the connection's current database and would never find a
+    schema-qualified table. New `fu_table_exists()` in `functions.php`
+    replaces it with an `information_schema.TABLES` lookup when the
+    configured name contains a `.`; a bare table name keeps using the
+    original `SHOW TABLES LIKE` check, unchanged.
+  - Requires the configured `dbuser` to have been **GRANTed privileges on
+    the second database too** — a hosting-side prerequisite this can't
+    automate, only surface a clearer error message for if it's missing.
+  - `dbhost`/`dbuser`/`dbpass`/`dbname` are unaffected — FanUpdate still
+    makes exactly one database connection; only `collective_table` can
+    point at a different schema on that same server.
+  - **Genuinely separate MySQL servers remain unsupported** — several
+    places (`CategoryRepository::findById()`/`listAll()`,
+    `show-blog.php`'s category-archive query) run direct SQL `JOIN`s
+    between FanUpdate's own tables and the collective table in one
+    query, which isn't possible across servers. Supporting that would
+    mean breaking `SqlConnection`'s singleton design and rewriting those
+    JOINs into separate application-level queries — a much larger,
+    higher-risk change not undertaken here; see TODO.md's investigation
+    notes for the full reasoning.
+  - Documented in `blog-config.sample.php` (inline comment on
+    `collective_table`) and `README.md`'s new "Separate-database
+    support" subsection under Collective integration.
+  - Not covered by automated tests — `functions.php` isn't loaded by
+    the PHPUnit bootstrap (it registers a global `set_error_handler()`
+    at file scope) and `install.php` has no PHPUnit coverage, same as
+    every other change touching either file. Not yet manually verified
+    live against a real second database.
+
+- **Dashboard/Updates security notice when `install.php` is still present
+  (TODO.md item "13. Dashboard").** `install.php` deletes itself
+  automatically after a successful fresh install or upgrade, but that
+  self-deletion can fail silently (e.g. a non-writable directory) — left
+  in place, it's a real security risk, since anyone who finds the URL can
+  attempt to run it against a live installation.
+  - New `fu_install_script_exists(string $installPath): bool` in
+    `functions.php` — a single `is_file()` check (guarded against an
+    empty path), used by both pages below.
+  - **`admin/index.php`** (Dashboard): a red notice at the very top of the
+    page — above the update-available and pending-database-updates
+    notices, since this is the highest-priority one — linking to
+    `admin/update.php#install-php-notice` for the full detail.
+  - **`admin/update.php`**: the matching detailed notice (naming the full
+    resolved path) right after the success/error messages, before the
+    existing maintenance-mode notice.
+  - Both reuse the same `$install_path` resolution (`getOpt('install_path')`,
+    falling back to `dirname(__DIR__)`) each page already computes for its
+    other needs (backup/update-staging directories on `admin/update.php`;
+    the legacy `collective_script` migration on `admin/index.php`).
+  - Not covered by automated tests — `functions.php` isn't loaded by the
+    PHPUnit bootstrap at all (it registers a global `set_error_handler()`
+    at file scope, which would affect the whole test suite if required
+    there), and `admin/*.php` pages have no PHPUnit coverage in this
+    project, same as every other admin-page-only change. Not yet manually
+    verified live.
+
+- **Move collective-script configuration from `blog-config.php` into the
+  database (TODO.md item "12. Move collective-script configuration from
+  blog-config.php into the database").** `collective_script` (which
+  collective/fanlisting script, if any, this installation is paired with)
+  and its `col_id`/`col_subj` column-name mapping — previously hardcoded
+  in `blog-config.php`'s `$fanupdate`/`$coltable` globals, requiring a
+  file edit to change — now live in the options table as plain rows,
+  editable via **Admin → Options** like every other runtime setting.
+  `dbhost`/`dbuser`/`dbpass`/`dbname` and the table-name settings
+  (`collective_table`, `blog_table`, etc.) are unchanged and stay in
+  `blog-config.php`, since the database connection itself has to exist
+  before any DB-stored config can be read.
+  - **Descriptive identifier, not shorthand:** `collective_script` is now
+    stored as `none`/`enthusiast`/`fanatically`/`listingadmin` (or a
+    custom string for an unlisted integration) instead of the legacy
+    single-letter shorthand (`n`/`e`/etc.). New
+    `FanUpdate::normalizeCollectiveScriptIdentifier()` (public static, a
+    pure string transform — same "no singleton dependency" precedent as
+    `UpdateManager::normalizeVersion()`) converts the legacy shorthand;
+    an already-descriptive value or an unrecognised custom identifier
+    passes through unchanged.
+  - **New `FanUpdate::hasCollectiveScript(): bool`** replaces every
+    `getOpt('collective_script') !== false`/`(bool) getOpt('collective_script')`
+    truthy check across `admin/category.php`, `admin/blog.php`,
+    `admin/index.php`, `admin/update.php`, and `install.php` —
+    `getOpt()`'s generic y/n-string truthy mapping only special-cases
+    `'n'`/`'no'`/`'y'`/`'yes'`/`0`/`1`, so it would not have treated the
+    new `'none'` value as falsy the way it always treated `'n'`.
+  - **`class/FanUpdate.php`'s constructor no longer touches
+    `blog-config.php`'s `$coltable` global at all.** A new private
+    `resolveCollectiveScriptConfig()`, called from `addOptFromDb()` once
+    DB-backed options are loaded, prefers the options-table-backed
+    `collective_script`/`col_id`/`col_subj` values and falls back
+    read-only to the legacy `blog-config.php` globals only for an
+    installation that hasn't gone through the one-time migration below
+    yet — so deploying this code doesn't silently break an
+    Enthusiast-integrated site's category queries before that migration
+    has actually run.
+  - **Migration path for existing installations:** `UpgradeRunner`
+    gained three new optional, nullable constructor parameters
+    (`$legacyCollectiveScript`/`$legacyColId`/`$legacyColSubj` — fully
+    backward compatible, every existing call site and test constructing
+    it without them is unaffected) and a
+    `collectiveScriptMigrationPending()`/`migrateLegacyCollectiveScript()`
+    pair. This migration is independent of `_db_version`, the same as
+    the item 10 schema migration — an installation already on the
+    current version still needs it to run exactly once. `admin/update.php`
+    and `admin/index.php` pass the raw `$fanupdate['collective_script']`/
+    `$coltable` globals in (available there since `blog-config.php` is
+    required at the top of both files), so `hasPendingUpgrades()`/
+    `runPendingUpgrades()` pick this migration up alongside the schema
+    migration and option/version housekeeping, through the same
+    Dashboard notice and Database Updates section item 10 already built.
+  - **Fresh installs** get the same three keys seeded directly:
+    `install.php` gained `$setting[29..31]` (`collective_script`,
+    `col_id`, `col_subj`, sourced from `blog-config.php`'s legacy values
+    the same way every other setting is seeded), shown as editable
+    fields on the install form and written into the options table
+    through the existing generic settings-insertion loop — no special-
+    cased write path needed.
+  - **`blog-config.sample.php`'s `collective_script`/`$coltable` entries
+    are marked deprecated in comments, not removed** — they're still
+    read once (by `install.php` on a fresh install, or by
+    `UpgradeRunner`'s migration for an existing one) but the running
+    application never reads them again afterward.
+  - Tests: 7 new tests in `PHP Test Suite/Unit/Service/UpgradeRunnerTest.php`
+    covering `hasPendingUpgrades()`/`runPendingUpgrades()`'s new pending
+    state (a legacy value supplied and not yet migrated), not-pending
+    once migrated or when no legacy value was supplied at all (backward
+    compatible with every pre-existing test in the file), the shorthand-
+    to-descriptive normalisation, and that `col_id`/`col_subj` are only
+    written when a legacy value for each was actually supplied.
+    **Confirmed passing on Ariane's machine on the first run: 319 tests,
+    989 assertions, zero failures** (up from the 312/977 baseline — +7
+    tests, +12 assertions, matching the new test methods) — see
+    `PHP Test Suite/TEST_LOG.md`'s July 18, 2026 entry. `FanUpdate`
+    itself (the constructor change, `hasCollectiveScript()`,
+    `resolveCollectiveScriptConfig()`, `normalizeCollectiveScriptIdentifier()`)
+    and `install.php`'s new seeded settings are not covered by automated
+    tests — same as every other top-level/singleton file in this
+    codebase — and not yet manually verified live.
+
+- **Admin-Panel Database Update Runner (TODO.md item "10. Admin-Panel
+  Database Update Runner").** Manual file-upload deployments — uploading
+  a zip instead of going through the Admin Update Manager's GitHub-release
+  flow, exactly how the item 9 InnoDB/utf8mb4 migration was actually
+  deployed to production — now have a persistent, discoverable way to run
+  pending database migrations from the admin panel, instead of needing
+  `install.php` (which self-deletes after a successful run) re-uploaded
+  every time.
+  - **`class/Service/SchemaMigrator.php` (new)** — the schema-migration
+    logic previously inline in `install.php` (`fu_table_has_mis_encoded_utf8()`/
+    `fu_migrate_table_engine_and_charset()`, and the Categories Support
+    `standalone_category_table` creation block) extracted into a proper
+    class, so there's exactly one copy shared between `install.php` and
+    the admin panel. New `hasPendingSchemaChanges(): bool` — a cheap
+    `information_schema`-only check, no writes — and
+    `runPendingSchemaChanges(?callable $onProgress = null): array`,
+    which accepts the same `callable(string, int, int): void` progress
+    pattern `InstallManager`/`RollbackManager` already use.
+  - **`UpgradeRunner`** gained an optional, nullable `SchemaMigrator`
+    constructor dependency (fully backward compatible — every existing
+    call site and test constructing it with just a repository is
+    unaffected) and a new `hasPendingUpgrades(string $targetVersion):
+    bool`, true when `_db_version` is behind *or* the injected
+    `SchemaMigrator` reports pending schema changes. `runPendingUpgrades()`
+    now runs whichever of the two is actually pending — critically,
+    schema migration now runs even when `_db_version` is already current,
+    which is exactly the case for a manual-upload deployment that never
+    touched that option at all.
+  - **`UpdateManager`** gained `runPendingUpgrades(UpgradeRunner
+    $upgradeRunner, string $targetVersion): array`, wrapping the call
+    with the same `reportProgress()`/`logEvent()` pattern
+    `installLatestRelease()`/`restoreBackup()` already use (new `'upgrade'`
+    log type) — so the existing `?action=install-progress` JSON endpoint
+    and its client-side polling script needed no changes at all to work
+    for this too.
+  - **`admin/update.php`**: new "Database Updates" section (a CSRF-protected
+    "Run pending database updates" button + the same progress-bar/polling
+    markup pattern the confirm-install/confirm-rollback pages use),
+    completely hidden when nothing is pending. The existing
+    `?action=run-upgrades` redirect step (run automatically right after a
+    GitHub-release install) now goes through `UpdateManager::
+    runPendingUpgrades()` too, instead of calling `UpgradeRunner` directly
+    — same behaviour, now also logged and progress-reported like every
+    other update action.
+  - **`admin/index.php`** (Dashboard): new notice, alongside the existing
+    cached update-availability notice, shown whenever
+    `UpgradeRunner::hasPendingUpgrades()` is true — links straight to
+    `admin/update.php`'s new section. Read-only check
+    (`information_schema` reads + one option read), same "cheap enough
+    for every Dashboard load" bar as the existing notice.
+  - `install.php` itself is unaffected in behaviour — it now calls the
+    same extracted `SchemaMigrator` instead of duplicating the logic
+    inline, but still handles fresh installs and the "upload install.php
+    directly" path exactly as before. The admin-panel route is the new,
+    additional way to reach the same migrations for an already-running
+    installation.
+  - Tests: new `PHP Test Suite/Unit/Service/SchemaMigratorTest.php`
+    (hasPendingSchemaChanges()'s no-op/pending detection, the standalone-
+    vs-collective-script branching, the mis-encoded-UTF-8 reinterpretation
+    path, step/progress reporting), and new tests appended to
+    `UpgradeRunnerTest`/`UpdateManagerTest` for the `SchemaMigrator`
+    integration and `UpdateManager::runPendingUpgrades()` respectively —
+    not yet confirmed passing on Ariane's machine; see
+    `PHP Test Suite/TEST_LOG.md`'s pending entry.
+
+- **Database Engine & Charset Migration: MyISAM → InnoDB, latin1 →
+  utf8mb4 (TODO.md item "9. Database Engine & Charset Migration").**
+  Every FanUpdate-owned table is now created as `ENGINE=InnoDB` with
+  `utf8mb4`/`utf8mb4_general_ci` on a fresh install, and an existing
+  installation is migrated to the same on its next upgrade run —
+  combining both changes into one `ALTER TABLE` per table, since either
+  change alone triggers a full table rebuild and doing them separately
+  would rebuild every table twice for no benefit.
+  - **Why it matters:** `MyISAM` (the engine every table used until now,
+    on both fresh installs and confirmed via a live installation's
+    schema) has no transaction support, so `CategoryService`'s and
+    `BlogService`'s `beginTransaction()`/`commit()`/`rollBack()` calls
+    (added during the Final Security & Code Quality Audit specifically
+    for data-integrity reasons) were silent no-ops — every statement
+    auto-committed immediately regardless of a later rollback. This was
+    a contributing factor in the `catoptions`/`catjoin` bug fixed
+    earlier the same day (see the entry below): the failed settings
+    write should have rolled back the category's identity insert too,
+    but MyISAM had no rollback to perform.
+  - **Charset:** every table except `blog_category` defaulted to
+    `latin1_swedish_ci` (confirmed via the same live installation), even
+    though the project targets modern multi-byte content (emoji,
+    non-Latin scripts). Folded into the same migration rather than a
+    separate future pass, since both changes touch the same `ALTER
+    TABLE` statement.
+  - **Mis-encoded UTF-8 safety:** a plain `CONVERT TO CHARACTER SET` is
+    only correct if the existing `latin1`-declared columns genuinely
+    contain latin1 bytes. This codebase ran on raw `mysqli` before the
+    Redux 2.1.0 PDO migration, and it's a common failure mode for an
+    older PHP app's *connection* to have sent UTF-8 while the *column*
+    stayed declared latin1 — the raw bytes get stored as-is, without
+    transcoding. A plain `CONVERT` in that case would double-encode
+    already-UTF-8 bytes into mojibake. `install.php`'s new
+    `fu_table_has_mis_encoded_utf8()` scans each table's text columns
+    (up to 2,000 rows) for a value that is both non-ASCII and valid
+    UTF-8 — vanishingly unlikely to occur by chance in genuine latin1
+    text — and when found, `fu_migrate_table_engine_and_charset()` uses
+    a binary-intermediate reinterpretation (`MODIFY` to `VARBINARY`/
+    `BLOB` first, then back to `VARCHAR`/`TEXT CHARACTER SET utf8mb4`)
+    instead of a plain `CONVERT`, so the existing bytes are reinterpreted
+    rather than transcoded a second time.
+  - `fu_migrate_table_engine_and_charset()` is idempotent — it checks
+    `information_schema.TABLES` first and is a safe no-op on a table
+    that's already InnoDB/utf8mb4, or that doesn't exist at all (e.g.
+    `standalone_category_table` on a standalone-only install). Runs on
+    every fresh install and upgrade submission, same pattern as the
+    Categories Support table-creation block.
+  - `collective_table` is migrated only in standalone mode
+    (`collective_script = 'n'`) — when an external collective script is
+    configured, that table belongs to the external script, not to
+    FanUpdate, and altering its engine/charset out from under it is out
+    of scope.
+  - `docs/DATABASE.md`'s transaction section now states the InnoDB
+    requirement explicitly rather than leaving it an unstated
+    assumption.
+  - Not yet covered by automated tests — `install.php` has no dedicated
+    PHPUnit coverage (it's a top-level procedural script, not a
+    class/service), so this lands without a test-count change. See
+    TODO.md's Testing section for the still-open live-database
+    smoke-testing item this should eventually be verified against.
+
+- **Categories Support — hybrid categories, standalone + collective side
+  by side (TODO.md item "6. Categories Support").** Standalone
+  (FanUpdate-managed) and collective-sourced (synced from an external
+  collective script) categories now coexist in the same installation
+  instead of "standalone" and "integrated" being mutually exclusive
+  modes. This is the foundational data-model/service/UI increment; the
+  per-script sync adapters (Fanatically/Enthusiast/Listing Admin —
+  refresh-from-source, upstream-delete confirmation) are separate,
+  not-yet-built follow-ups.
+  - `CategoryRepository`/`CategoryRepositoryInterface` gained a hybrid
+    design: a new, always-FanUpdate-owned `standalone_category_table`
+    (only actually created/used when a collective script is configured)
+    holds admin-created categories, with IDs shifted into their own space
+    via the new `CategoryRepository::STANDALONE_ID_OFFSET` constant so
+    they can never collide with the collective table's native IDs. When
+    no collective script is configured, every new method
+    (`insertStandalone()`/`updateStandaloneName()`/`deleteStandalone()`/
+    `isStandaloneId()`) transparently delegates to the original
+    single-table methods — a plain standalone installation's SQL and
+    behaviour are unchanged from before this feature.
+  - `CategoryService`'s business rule is now per-category rather than
+    page-wide: `createCategory()` always creates a standalone category
+    (regardless of whether a collective script is configured);
+    `updateCategory()` only renames a category when it's standalone
+    (settings like templates/gravatar stay editable for any category, as
+    before); `deleteCategory()` refuses outright, touching nothing, for a
+    collective-sourced category.
+  - `admin/category.php`'s list shows a "Source" column
+    (Standalone/collective-script badges) whenever a collective script is
+    configured; the edit form shows the name field as read-only text for
+    a collective-sourced category instead of an editable input.
+  - `admin/blog.php`'s category dropdown/filter now delegate to the new
+    `CategoryService::listForDropdown()` instead of querying the
+    collective table directly, so both sources appear together there too
+    (with a "(Standalone)"/"(Collective)" label suffix in hybrid mode).
+  - New `standalone_category_table` option in `blog-config.sample.php`
+    (default `blog_category_standalone`); `install.php` creates it
+    idempotently (via a `SHOW TABLES LIKE` guard) on both fresh installs
+    and upgrades whenever a collective script is configured, seeding its
+    `AUTO_INCREMENT` past `STANDALONE_ID_OFFSET`.
+  - Tests: `CategoryRepositoryTest`/`CategoryServiceTest` gained hybrid-mode
+    coverage (ID-offset boundary, delegation-when-no-standalone-table,
+    findById/listAll branching, dropdown array shape, per-category
+    standalone/collective business-rule enforcement) alongside the
+    original Milestone 4 tests, which continue to pass unmodified for the
+    no-standalone-table (plain standalone installation) case.
+
+### Changed
+
+- **Admin panel header logo now reads "FanUpdate Redux"** (was
+  "FanUpdate") — requested directly. `admin/header.php`'s `<h1>` gained
+  " Redux" after the existing "Fan"/"Update" split; shows on every admin
+  page including the login form, since they all share this one header.
+
+- **"`install.php` still present" and "Pending database updates" now show
+  as global banners on every admin page, not just the Dashboard.**
+  Requested directly — previously an admin who logged in, missed the
+  Dashboard's one-time notice, and went straight to e.g. Entries would
+  never see either warning again until their next Dashboard visit.
+  - New `fu_build_upgrade_runner(FanUpdate $fu): UpgradeRunner` in
+    `functions.php` — extracts the SchemaMigrator + UpgradeRunner
+    construction (including the legacy collective_script/col_id/col_subj/
+    collective_table one-time-migration values) that `admin/index.php` and
+    `admin/update.php` each used to duplicate, with comments on each
+    pointing at the other's "identical construction" as the reason to keep
+    them in sync by hand. Now built once, in one place; both callers (and
+    the new global banner) use it.
+  - `admin/header.php` (included by every `admin/*.php` page) renders both
+    banners right after `<main>` opens, gated on `isLoggedIn()` — which
+    never redirects, so it's safe to call unconditionally, and guarantees
+    neither banner ever renders on the login form itself or during
+    `install.php`'s own execution (which never has valid auth cookies), so
+    these DB-touching checks never run before an admin is actually
+    authenticated.
+  - `admin/update.php` is excluded from the global banner: it already shows
+    its own richer, detail-page version of both notices (exact install
+    path, inline "Review & run now" action), so the generic summary banner
+    would just duplicate it there.
+  - `admin/index.php`'s own copies of both banners (and the SchemaMigrator/
+    UpgradeRunner construction that powered the pending-upgrades one) are
+    removed — the Dashboard now gets both from the same global banner as
+    every other page, instead of a second, redundant rendering.
+  - Full suite: **384 tests, 1143 assertions, all passing, zero failures**
+    — identical count, as expected; none of `install.php`/`admin/header.php`/
+    `admin/index.php`/`admin/update.php` have PHPUnit coverage (untested
+    procedural pages, as established repeatedly in this log), and
+    `fu_build_upgrade_runner()`'s construction is unchanged from what
+    `UpgradeRunnerTest` already exercises via `UpgradeRunner` directly.
+
+- **Admin credentials (`admin_username`/`admin_password`) moved from
+  `blog-config.php` into the database — plain `options` table rows, same as
+  every other setting.** Requested directly, and a clean design choice for a
+  script not yet released (no existing installs to migrate): file-based
+  credential storage was the underlying cause of the "logged out on every
+  click after a fresh install" bug just above, and this removes that whole
+  class of problem rather than just patching the specific regex that
+  triggered it.
+  - `install.php`'s fresh-install form still collects username/password the
+    same way, but now writes them via a plain `INSERT` into the options
+    table instead of regex-patching `blog-config.php`. The corresponding
+    regex-writing code (and its bug-fix comments from the entry above) is
+    gone entirely — nothing left to patch.
+  - `FanUpdate::login()`'s legacy MD5-hash-in-`blog-config.php` upgrade path
+    (which also rewrote the config file on a successful legacy login) is
+    removed along with it — bcrypt-only now, matching a fresh install's
+    actual credential format from day one.
+  - `FanUpdate::updateConfigKey()` removed entirely — it was only ever
+    called by `AccountRepository::updateUsername()`/`updatePasswordHash()`
+    (Admin -> Account), both of which now do a plain `SqlConnection`
+    `UPDATE` against the options table, exactly like `updateEmail()`
+    already did. Both also call `FanUpdate::addOpt()` on success to keep
+    the in-memory config in sync within the same request — essential, not
+    cosmetic: `AccountService::updatePassword()` calls `reissueToken()`
+    immediately after, which reads `getOpt('admin_password')` to compute
+    the new session cookie token; without the sync it would use the
+    stale, pre-change hash and log the admin out of the password change
+    they just made.
+  - `OptionRepository::listEditableOptions()`'s SQL now also excludes
+    `admin_username`/`admin_password` (previously only `admin_email` was
+    excluded there, since the other two never lived in the options table
+    at all before this) — otherwise the bcrypt hash would show up as a
+    plain editable text field on the generic Main Options list.
+  - `blog-config.sample.php`'s entire ADMIN VARIABLES section (including
+    the `password_hash('changeme', PASSWORD_BCRYPT)` line responsible for
+    the bug above) is gone — nothing left in that file for a fresh install
+    to get wrong.
+  - Tests: `AccountRepositoryTest`'s four `updateConfigKey`-mocking tests
+    rewritten against the new `SqlConnection`/`addOpt()` calls (mocking a
+    method that no longer exists on the real class would otherwise fail
+    outright); `OptionRepositoryTest`'s exact-SQL assertion updated for the
+    new exclusions. Full suite: **384 tests, 1143 assertions, all passing,
+    zero failures.**
+  - README.md and docs/TROUBLESHOOTING.md updated throughout — every
+    mention of admin credentials living in or being written to
+    `blog-config.php`, including the now-nonexistent automatic MD5 → bcrypt
+    upgrade path, corrected to describe database storage.
+
+- **`install.php`'s seven y/n settings now render as the same on/off toggle
+  switch as Admin → Options's Main list, instead of a plain text field
+  where you typed `y` or `n` by hand.** Affects `comments_on`,
+  `email_new_comments`, `comment_moderation`, `captcha_on`, `gravatar_on`,
+  `points_scoring`, `ajax_comments`. The literal phrase "y or n" is removed
+  from all seven descriptions — the toggle itself makes the choice obvious,
+  so the text was now redundant (and would have read strangely next to a
+  switch instead of a text box).
+  - Boolean-option detection used to be admin/options.php sniffing the
+    stored description for the substring "y or n" — fragile once
+    install.php's own descriptions for these no longer say that. Replaced
+    with `FU_YN_OPTION_KEYS`, a single explicit list in `functions.php`
+    (shared by both pages), plus `fu_is_yn_option(string $optkey, string
+    $desc): bool`, which checks the list first and still falls back to the
+    "y or n" text sniff — so a custom option added later by hand, following
+    the original convention, still renders as a toggle with no code change.
+  - `admin/options.php`'s previously-local `fu_is_yn_option(string $desc)`
+    removed in favour of the shared one; its one call site updated to pass
+    `$optkey` too.
+  - install.php's toggle can't reuse admin/options.php's "hidden `n` +
+    checkbox `y` sharing one explicit array key" trick as-is: install.php's
+    `key[]`/`value[]` are plain unindexed arrays, paired up purely by
+    position in the parsing loop (`$clean['value'][$key]`) — a checkbox
+    that only submits when checked would silently shift every later
+    field's value out of alignment with its key. Instead the checkbox
+    carries no `name` at all (purely visual/interactive) and a separate,
+    always-present hidden field carries the actual submitted value[],
+    kept in sync by a `data-yn-hidden`-driven listener.
+  - The `.fu-toggle__input:checked + .fu-toggle__track` CSS rule uses an
+    adjacent-sibling combinator, so `.fu-toggle__track` must be the
+    checkbox's *immediately following* sibling — caught and fixed before
+    finalizing: an earlier draft placed the hidden sync field between the
+    checkbox and the track, which silently broke the switch's visual
+    checked/unchecked styling. The hidden field now sits before the
+    checkbox instead.
+  - The Yes/No state-label update (and, on install.php only, the hidden
+    field sync) moved out of admin/options.php's per-page inline `<script>`
+    and into `assets/js/fanupdate.js` (loaded on every admin page and
+    install.php via header.php already), so both pages share one
+    implementation instead of duplicating it.
+
+- **`install.php` no longer shows `collective_script`/`col_id`/`col_subj`/
+  `collective_table` as editable fields on the fresh-install form.** These
+  are meant to be configured AFTER installing, from Admin -> Options ->
+  Collective Source, which has a proper `<select>` with auto-fill for known
+  scripts (see the `collective_table` admin-UI fix and `blog-config.
+  sample.php` cleanup above) — showing raw text fields for the same four
+  settings here too, with none of that guidance, only invited picking a
+  script without realizing `col_id`/`col_subj`/`collective_table` have to
+  actually match its real schema.
+  - Still seeded on fresh install with sane defaults (standalone/`none`,
+    `fl_id`/`fl_subject`, `blog_category`) via hidden `<input>` fields —
+    not skipped entirely, since `collective_table` in particular is needed
+    immediately to create a standalone install's own categories table (see
+    the `blog-config.sample.php` cleanup entry above for why it can't just
+    be absent). Only the visible, editable form row is gone.
+  - Implemented as an explicit key list (`$fuHiddenCollectiveSourceKeys`)
+    checked alongside the existing underscore-prefix "private var" hiding
+    convention, rather than renaming these to `_collective_script` etc. —
+    their real `optkey` has to stay exactly `collective_script`/`col_id`/
+    `col_subj`/`collective_table` for `getOpt()` to read them anywhere else
+    in the app.
+
+- **`install.php`'s `blog_page` field now auto-detects a suggested value,
+  same as `install_path`/`install_url` already did.** Previously the only
+  one of the three still defaulting to a hardcoded placeholder
+  (`https://example.com/updates.php`) that had to be hand-edited on every
+  fresh install. Since `show-blog.php` (the public blog listing) always
+  lives at the project root right alongside `install.php`, the suggested
+  value is now computed as `{install_url}/show-blog.php` — reusing the same
+  protocol/host detection already done for `install_url` just above it.
+  Still just a suggested default, always editable in the form; a
+  pre-existing v1.6 installation's real `collective_updates_page` value
+  (already read separately during version detection) continues to take
+  priority, so upgrading never overwrites an already-customized blog page
+  URL with this guess.
+
+- **`blog-config.sample.php` cleanup: `collective_script` and the entire
+  `$coltable['e'|'f'|'n']` block removed from the template.** Follow-up to
+  the `collective_table` admin-UI fix above — with Admin -> Options ->
+  Collective Source now fully capable of configuring a collective script
+  from scratch (including auto-filling column names for a known script
+  entirely client-side), pre-declaring these in a hand-edited config file
+  before the database even exists added nothing but clutter. Verified every
+  read site already null-coalesces to a sane default (`?? 'n'`, `?? ''`,
+  `?? 'fl_id'`) except one — `install.php`'s standalone-mode table creation
+  read `$coltable['n']['id']`/`['subject']` directly — which is now
+  hardcoded to `'fl_id'`/`'fl_subject'` (FanUpdate's own fixed schema for
+  standalone mode, not actually collective-script-specific data).
+  - **Existing installations are unaffected**: `blog-config.php` is
+    generated once at install time and never overwritten by updates, so
+    this only changes what a brand-new install starts with — any site
+    whose config still declares these keeps working exactly as before.
+  - `collective_table` was deliberately NOT removed alongside the other
+    two, despite looking similar at a glance: unlike `collective_script`/
+    `col_id`/`col_subj`, `collective_table` is read completely unguarded on
+    **every single page load** (`FanUpdate.php`'s `$fanupdate['tables']`
+    array, built at file-load time before the class is even constructed)
+    and is required to actually `CREATE TABLE` a fresh standalone
+    install's own categories table, before the database has anywhere else
+    to source a name from. Removing it would have broken every page load
+    for a config that omitted it, and broken fresh standalone installs
+    outright — caught before implementing, not after.
+  - `class/FanUpdate.php` gains `$coltable = $coltable ?? [];` alongside
+    the existing `$fanupdate = $fanupdate ?? [];` guard, so a config file
+    that no longer declares `$coltable` at all doesn't throw an "Undefined
+    variable" warning anywhere it's still read (the legacy-migration
+    fallback paths in `install.php`/`admin/index.php`/`admin/update.php`,
+    all already null-coalesced at the array-key level).
+  - Verified live: a config array without `collective_script`/`$coltable`
+    loads `class/FanUpdate.php` with zero warnings under `error_reporting
+    (E_ALL)`.
+
+- **`collective_script`/`col_id`/`col_subj` moved off the Main Options list
+  onto their own subpage (TODO.md "UI: Move to a dedicated Options
+  subpage").** These three settings control which collective/fanlisting
+  script's categories appear at all (see Categories Support), but used to
+  be listed on `admin/options.php` styled like any other setting (no
+  different from `num_per_page`), with no room to explain accepted values.
+  - New `admin/collective-source.php` ("Collective Source" tab in the
+    Options subnav, added alongside it to `options.php`/`blacklist.php`/
+    `smilies.php`/`templates.php`). Reuses `OptionService`/
+    `OptionRepository` exactly as before — no new repository method.
+  - `collective_script` now renders as a `<select>` (None / Enthusiast /
+    Fanatically / Custom…) instead of a free-text field. Choosing a known
+    script auto-fills `col_id`/`col_subj` from a small inline-JS lookup
+    (Enthusiast: `listingid`/`subject`, Fanatically: `id`/`subject`, None:
+    `fl_id`/`fl_subject`) mirroring `blog-config.sample.php`'s `$coltable`;
+    `col_id`/`col_subj` stay freely editable regardless. Choosing
+    Custom… reveals a plain text field for the identifier, so an
+    existing self-integrated installation's value is never clobbered —
+    the underlying storage is still three plain option rows and
+    `FanUpdate::normalizeCollectiveScriptIdentifier()`'s
+    passthrough-for-unknown-values behaviour is unchanged. `listingadmin`
+    is intentionally left out of the dropdown until its Integrated Mode
+    adapter (see TODO.md item 6) actually ships.
+  - `OptionRepository::listEditableOptions()` now excludes these three
+    keys from the Main list's query, the same way templates and
+    `admin_email` already are.
+  - Updated the `optdesc` text for all three keys (both `install.php`'s
+    seeded defaults and `UpgradeRunner`'s legacy migration path) to name
+    the currently supported scripts, explain `none` (standalone — no
+    external script involved), and give the expected `col_id`/`col_subj`
+    values per script.
+  - UI relocation only — how the values are read/resolved
+    (`FanUpdate::resolveCollectiveScriptConfig()`) is unchanged, so
+    existing Enthusiast/Fanatically installations keep working unchanged
+    after the move.
+
+### Fixed
+
+- **`footer_template` (Admin → Templates → Footer) was fully editable but
+  never actually rendered anywhere** — discovered while auditing
+  `admin/get-code.php`'s CSS snippet against what the public templates
+  really emit (asked directly: "are there any other now dead css or new
+  css that is actually missing"). `FanUpdate::printBlogFooter()` — called
+  from both `show-blog.php` and `show-cat.php` — was a literal no-op stub
+  ("Hook for theme customisation"), so the option had no effect on any
+  public page. Fixed: `printBlogFooter()` now reads `footer_template`
+  (falling back to the same built-in default `install.php` seeds on fresh
+  installs) and substitutes its five documented variables —
+  `{{main_url}}` (`blog_page` option), `{{archive_url}}` (`blog_page` +
+  `?view=archive`, matching `show-blog.php`/`show-cat.php`'s own
+  `?view=archive` handling), `{{rss_url}}` (`install_url` + `/rss.php`,
+  scoped to `?c={{cat_id}}` when `show-cat.php` passes one),
+  `{{fanupdate_url}}` (`FU_URL_REDUX`, same link `printCredits()` already
+  uses for "Powered by"), and `{{fanupdate_version}}` (`getOpt('version')`,
+  also matching `printCredits()`) — then echoes the result, same
+  str_replace pattern `FanUpdate_Post::printPost()` already uses for
+  `entry_template`/`comment_template`.
+
+- **`admin/get-code.php`'s CSS snippet was missing several real, currently
+  unstyled front-end elements, and still listed a few that render
+  nothing** — same audit as above.
+  - **Added**: `span.date` (entry date in `show-cat.php`'s archive
+    listing), `p.comments-closed` (shown when an entry has comments
+    turned off), `p.error`/`ul.error` (comment validation/spam-guard
+    messages), `h3#postcomment`, `label.checkbox` ("Remember me"),
+    `.submit` (comment form submit button), `#captcha-img`, and `p.hint`
+    (moderation notice in the built-in fallback comment-form template).
+  - **Removed** (matched nothing in the current codebase): `div.post`,
+    `div.odd`, `div.author`, `div.comments-form`.
+  - `a.rss`/`div.archivelink`/`div.credit` were flagged as dead too (tied
+    to `footer_template`, which wasn't rendering) — kept, since fixing
+    `printBlogFooter()` above (see the entry immediately above this one)
+    made them real again.
+
+- **Admin → Credits showed a dangling `(, released 2026-07-17)`** —
+  reported live. `version.php`'s `FU_RELEASE_NAME` is genuinely optional
+  (empty string for this release — no codename assigned), but
+  `admin/credits.php` always printed
+  `(<?php echo FU_RELEASE_NAME; ?>, released ...)` unconditionally,
+  leaving a stray leading comma when it's blank. Fixed: the codename and
+  its trailing `, ` are now only printed when `FU_RELEASE_NAME !== ''`,
+  producing plain `(released 2026-07-17)` when unset and the original
+  `(Codename, released 2026-07-17)` format when a codename is set.
+
+- **TinyMCE's content-area focus ring used TinyMCE's own default blue/white
+  instead of the admin theme's accent color** — reported live ("make match
+  the theme better"). The vendored oxide/oxide-dark skins draw this ring
+  via `.tox-edit-area::before` (an absolutely-positioned overlay shown
+  while the editor has focus, not a plain CSS outline), hardcoded to
+  `#006ce7` (day skin) / `#fff` (night skin). New override in both
+  `assets/css/style.css` and `style-night.css` sets its `border-color` to
+  `var(--fu-accent)` with `!important` — needed because TinyMCE injects
+  its skin `<link>` after these stylesheets load, so plain selector-order
+  alone couldn't guarantee the override wins.
+
+- **TinyMCE's toolbar overflow row (the "Reveal or hide additional toolbar
+  items" toggle) stayed open, overlapping the Insert Image dialog** —
+  reported live ("cumbersome and partially in the way when the items are
+  used"), through two follow-up rounds before landing on a proper fix.
+  1. First attempt: `fuTinyCollapseToolbarOverflow()` guessed at the
+     toggle's selector (`.tox-toolbar__overflow-toggle`/
+     `aria-label^="More"`) and matched nothing — the row stayed open.
+  2. Corrected the selector to `button[data-mce-name="overflow-button"]`
+     (the real button, confirmed from a live DOM paste) — this closed the
+     row, but only for our own `fuimage` button, which explicitly forces
+     it closed before opening its dialog. Every *other* toolbar button
+     (alignment, lists, etc.) still needed a manual close, because
+     TinyMCE's overflow drawer turns out not to auto-close for any button
+     by default in this configuration — the first fix compensated for our
+     one custom button, not a general behaviour gap.
+  3. **Final fix — a structural change, not another click-to-close hack**:
+     `toolbar` is now an array of two fixed, always-visible rows (an
+     array here means exactly that to TinyMCE — no overflow drawer for
+     either row at all) instead of one row plus a collapsible drawer.
+     Bullet/numbered list moved off the toolbar entirely into a new
+     custom `fumore` dropdown menu — a real TinyMCE menu, unlike the
+     toolbar drawer, closes itself automatically on selection with no
+     hack needed. The `lists` plugin is still loaded and still provides
+     the actual list behaviour (nested lists, Enter-key handling) behind
+     `InsertUnorderedList`/`InsertOrderedList` — only its own toolbar
+     buttons were replaced by the menu. `fuTinyCollapseToolbarOverflow()`
+     was kept as a defensive fallback for the (now unlikely, since each
+     row comfortably fits the editor width) case either row still needs
+     to overflow on a narrow viewport.
+
+- **Images inserted via the TinyMCE post editor were broken on the public
+  front end** — reported live with a page-source paste showing
+  `<img src="../uploads/images/2026/07/…">` instead of an absolute URL.
+  Root cause: TinyMCE's default `relative_urls: true` rewrites absolute
+  URLs to be relative to the *current page* — here, `admin/blog.php` — so
+  the perfectly correct absolute URL `admin/upload.php` returned (built
+  from `install_url`) got rewritten to a path relative to `admin/`, which
+  resolves to something completely different (or nonexistent) on whatever
+  front-end page actually displays the post body. Fixed by setting
+  `relative_urls: false`, `remove_script_host: false`, and
+  `convert_urls: false` in `assets/js/fanupdate-tinymce.js`'s
+  `tinymce.init()` config, so inserted URLs are stored exactly as given.
+
+- **TinyMCE's "Choose File…" upload button threw `Uncaught TypeError:
+  uploadBtn is null` and silently did nothing** — reported live via the
+  browser console after selecting a file in the OS picker. Root cause:
+  `assets/js/fanupdate-tinymce.js`'s `#fu-tiny-choose-file` click handler
+  read `e.currentTarget` lazily inside the hidden file input's `onchange`
+  callback, but `Event.currentTarget` is only valid while an event is
+  actively dispatching — per the DOM spec it reverts to `null` once
+  dispatch finishes, which happens well before the user has even opened
+  the OS file picker, let alone selected something. Fixed by capturing the
+  button reference into a local variable synchronously, inside the click
+  handler itself, before it's used in the later `onchange` closure.
+
+- **Every admin page except Dashboard and Updates rendered as a blank page
+  below the header** — reported live ("all pages except for dashboard and
+  updates look like this"). Root cause: `admin/header.php`'s global
+  "pending database updates" banner (shown on every logged-in admin page
+  except `admin/update.php` itself) calls
+  `fu_build_upgrade_runner($this)->hasPendingUpgrades(FU_VERSION)`, which
+  can reach `UpgradeRunner::isVersionBehind()` →
+  `UpdateManager::normalizeVersion()` — but `class/Service/UpdateManager.php`
+  was only ever `require_once`'d by `admin/index.php` and `admin/update.php`
+  (the two pages that happen to use `UpdateManager` directly for their own,
+  unrelated reasons), not by `functions.php` or `admin/header.php`
+  themselves. Every other admin page hit a fatal `Class "UpdateManager" not
+  found` the instant that code path executed, with nothing surviving to
+  render past that point in `<main id="main">` — and, since the server had
+  `display_errors`/logging configured such that nothing showed up in the
+  error log either, it looked like a silent, unexplained blank page.
+  Diagnosed with a temporary try/catch added to `admin/header.php` (removed
+  again once the trace pinpointed the exact call chain). Fixed at the
+  source: `class/Service/UpgradeRunner.php` now `require_once`'s
+  `class/Service/UpdateManager.php` itself — the class with a hard
+  dependency loads it directly rather than relying on incidental load
+  order from unrelated callers, same pattern as `class/FeedWriter.php`
+  requiring `class/FeedItem.php`. This bug predates this session's Media
+  gallery/TinyMCE work (the global banner itself, and the
+  `UpdateManager`-requiring code paths in `UpgradeRunner`, were both added
+  in an earlier pass) — it simply hadn't been triggered live until now.
+
+- **Posts filed under a standalone (admin-created) category displayed with
+  a blank date** — reported live ("fanatically cats are working fine, but
+  the standalone cat is missing date"). Root cause: `show-cat.php` loads a
+  category's `catoptions_table` row (per-category `date_format`/
+  `comments_on`/template/gravatar overrides) and applies every non-empty
+  column onto the site-wide options for that page — but the guard only
+  checked for an empty *string* (`$value !== ''`), not SQL `NULL`.
+  `CategoryRepository::insertSettings()` (called by every standalone
+  category creation, via `CategoryService::createCategory()`) never sets
+  `date_format`/`comments_on` at all — both columns are nullable with no
+  `DEFAULT` — so a standalone category's row always has them as `NULL`,
+  not `''`. That `NULL` sailed straight through the guard into
+  `FanUpdate::addOpt('date_format', null)`, clobbering the site-wide
+  `date_format` option for the rest of the request; `getDateFormatted()`
+  then cast that to `''`, and `date('', $ts)` returns `''` — a blank date
+  on every post filed under that category.
+  - Fanatically/Enthusiast-synced categories never hit this: they only get
+    a `catoptions_table` row at all once an admin explicitly saves
+    per-category settings for one, so `show-cat.php`'s `$cat` lookup
+    returns nothing and the whole override loop is skipped until then —
+    exactly matching the live report that synced categories displayed
+    correctly while the standalone one didn't.
+  - Fixed by also excluding `null` in the guard
+    (`$value !== '' && $value !== null`). Same fix incidentally also
+    prevents the identical latent issue for `comments_on` (also nullable,
+    also never set by `insertSettings()`) — `FanUpdate::getOpt()`'s
+    `isset()` check already treats an in-memory `null` value as "not set"
+    and falls back to `false`, so once `null` stops being written into
+    `_cfg` at all, both columns behave correctly.
+
+- **After a fresh install, logging in appeared to work but every subsequent
+  page load immediately bounced back to the login form** — reported live.
+  Root cause: `blog-config.sample.php`'s own default admin_password line is
+  a *live expression*, `password_hash('changeme', PASSWORD_BCRYPT)`, not a
+  static string — meant to be overwritten by `install.php`'s credential-
+  writing step when you actually run the installer. That step's regex only
+  matched `md5('...')`, a bare 32-hex-char string, or an already-bcrypt
+  `'$2y$...'` string — never the `password_hash(...)` call itself, which is
+  exactly what every fresh install's `blog-config.php` actually contains at
+  that point (nobody hand-edits this line before running the installer).
+  So the regex silently found no match and left the line completely
+  unchanged: a live function call, re-evaluated on *every single request*,
+  and bcrypt's random salt makes it produce a genuinely different hash
+  string each time. `FanUpdate::login()`/`isLoggedIn()` derive the
+  session's HMAC cookie token directly from this value
+  (`hash_hmac('sha256', $username, $storedHash)`) — so the token computed
+  at login time never matched the token expected on the very next request,
+  logging the admin out unconditionally on every single click, for every
+  fresh install, regardless of the password actually chosen.
+  - Fixed `install.php`'s admin_password regex to also match
+    `password_hash\([^)]*\)`, so the real bcrypt hash of the password
+    actually entered during install gets written as a proper static string,
+    exactly as the file's own top-of-file instructions already describe.
+  - Found and fixed the identical gap in `FanUpdate::updateConfigKey()`
+    (used by Admin -> Account to change the password later) — broadened
+    only for the `admin_password` key specifically, since it's the one
+    key that can legitimately arrive in any of these four forms; every
+    other key stays on the original plain-quoted-string-only pattern.
+    This one mattered doubly: it's the *only* self-service way to escape
+    the broken state once install.php has already run, so it couldn't be
+    allowed to silently fail the same way.
+  - Verified both regexes directly against all four historical formats
+    (`md5('...')`, bare 32-hex MD5, already-bcrypt, and the sample's live
+    `password_hash(...)` default) with standalone scripts — each now
+    matches and replaces correctly; `admin_username`'s unaffected plain-
+    string path also re-verified unchanged.
+  - **Action needed on any installation already caught by this** (including
+    the one this was found on): `blog-config.php`'s `admin_password` line
+    must be replaced with a static bcrypt string. Either log in with
+    password `changeme` (the only password that happens to work against
+    the broken default, since it's *hashing* "changeme" every time,
+    just with a new salt) and immediately change the password from
+    Admin -> Account, which now writes correctly — or hand-edit the line
+    directly: run `php -r "echo password_hash('yourpassword', PASSWORD_BCRYPT);"`
+    and paste the result as `$fanupdate['admin_password'] = '...';`,
+    replacing the `password_hash(...)` call entirely.
+
+- **Login page's "Remember?" text was nearly unreadable** — dark text on
+  the same accent-purple background it sat on (light mode; the night theme
+  had the mirror-image bug, light text on light-ish background). Root
+  cause: `#loginButton` (the `<p>` wrapping both the submit button and the
+  "Remember?" `<span>`) sets its own background + text color for the
+  submit button's benefit, but as an id rule it colors the *whole* element,
+  including the span — and `label.checkbox`'s own `color: var(--fu-text)`
+  (correct everywhere else it's used) targets the `<label>` directly, which
+  always wins over an ancestor's inherited color regardless of the
+  ancestor's specificity. Fixed with a dedicated `#loginButton label.
+  checkbox` rule in both `style.css` (white) and `style-night.css`
+  (matching that theme's own `#loginButton` text color, `#0D1117`).
+
+- **`<ul class="success">`/`<ul class="error">` notice lists (rendered by
+  `FanUpdate::reportSuccess()`/`reportErrors()` whenever there's more than
+  one message — e.g. `install.php`'s line-by-line progress log) had their
+  bullet markers and first/last line sitting almost flush against the box
+  border.** Root cause: the bare `.success`/`.error` rule's `padding`
+  shorthand wins over the global `ul, ol { padding-left: 1.4rem }` rule
+  (higher specificity), effectively zeroing out the list's own indent.
+  Added a dedicated `ul.success, ul.error` rule (both `style.css` and
+  `style-night.css`) with more generous padding on all sides.
+
+- **`install.php`'s page heading read "Install vRedux 2.2.0"** instead of
+  something sensible. `FU_VERSION` (`version.php`) already stores the full
+  human-readable string `"Redux 2.2.0"` (script name comes separately), so
+  hardcoding a literal `v` immediately before it produced `vRedux 2.2.0`
+  once concatenated. Fixed to `Install FanUpdate ` + the version string,
+  matching how every other page in the app displays it (e.g. the
+  "Powered by FanUpdate Redux 2.2.0" footer, `admin/credits.php`) — now
+  reads `Install FanUpdate Redux 2.2.0`. Checked every other
+  `getOpt('version')`/`FU_VERSION` display site in the codebase for the
+  same mistake; this was the only one.
+
+- **`install.php` rendered completely unstyled** — no theme CSS, icon font,
+  favicon, or JS. Root cause: `admin/header.php` (shared by every
+  `admin/*.php` page and, via `FanUpdate::getHeader()`, by `install.php`
+  too) hardcoded `../assets/css/style.css`, `../assets/js/*.js`, and
+  `../favicon.ico`. Those `../` paths are correct from an `admin/*.php`
+  page's URL (one directory below `assets/`), but `install.php` lives at
+  the project root, a **sibling** of `assets/` — from its URL, `../` walks
+  up and out of the project directory entirely, so every asset 404s.
+  - Fixed by computing `$fuAssetPrefix` in `admin/header.php`: compares the
+    actually-requested script's directory (`$_SERVER['SCRIPT_FILENAME']`)
+    against `header.php`'s own directory (always `admin/`) — `'../'` when
+    they match (an `admin/*.php` caller), `''` otherwise (`install.php`).
+    Every asset/favicon/script link now uses this instead of a hardcoded
+    `../`.
+  - Not caught earlier because rendering `install.php` in an actual browser
+    isn't part of this codebase's automated test suite (it's a top-level
+    procedural page with heavy `$_SERVER`/filesystem dependencies, same
+    category as `admin/options.php`'s install-path auto-detect); confirmed
+    the fix analytically by comparing `dirname($_SERVER['SCRIPT_FILENAME'])`
+    against `admin/header.php`'s `__DIR__` for both an `admin/index.php`
+    and an `install.php` request shape.
+
+- **`CategoryRepository::listAll()`'s hybrid (standalone + collective)
+  `UNION ALL` failed with `SQLSTATE[HY000]: General error: 1271 Illegal mix
+  of collations for operation 'UNION'`** once `collective_table` (see the
+  `collective_table` admin-UI fix directly below) was correctly pointed at a
+  schema-qualified external database. Every table this codebase creates
+  itself (including `standalone_category_table`) uses `utf8mb4_general_ci`,
+  but Fanatically's own `fanatic_listings` table ships as
+  `utf8mb4_unicode_ci` — MySQL refuses to `UNION` two string columns with
+  incompatible collations. Discovered live immediately after fixing
+  `collective_table` for a real Fanatically integration: Entries started
+  working, but Categories still failed, now with this specific error
+  instead of silently returning nothing.
+  - Fixed by explicitly `COLLATE`-ing both `cname` columns in the `UNION`
+    to `utf8mb4_general_ci` before the `UNION ALL` runs, regardless of
+    what collation the external collective table (Enthusiast, Fanatically,
+    or a custom integration) actually uses. Safe to do — these are
+    read-only synced strings from the external script, and `COLLATE` only
+    affects comparison/sort behaviour, never the stored bytes.
+  - The plain (non-hybrid) branch of `listAll()`, `findById()`, and
+    `FanUpdate_Post::getCatFromDb()` were not affected — none of them
+    compare or `UNION` two differently-sourced string columns in the same
+    query (their cross-table joins are all on integer `cat_id`/`col_id`
+    columns), so no `COLLATE` is needed there.
+  - Tests: new
+    `CategoryRepositoryTest::testListAllUnionQueryCollatesBothCnameColumnsToAvoidMixedCollationError()`.
+
+- **`collective_table` had no admin UI anywhere, so switching
+  `collective_script` (e.g. standalone → Fanatically) via Admin → Options →
+  Collective Source silently left Categories/Entries pointed at the wrong
+  table.** Discovered live on a fresh Fanatically integration: the Categories
+  page showed "No categories found" and the Entries page warned
+  `Undefined array key "cat_id"` repeatedly, because `col_id`/`col_subj` had
+  been correctly updated to Fanatically's `id`/`subject`, but `collective_table`
+  — which only ever existed as a one-time read of blog-config.php's legacy
+  `$fanupdate['collective_table']` — still pointed at the previous
+  (standalone) categories table, whose columns don't match.
+  - `admin/collective-source.php` gains a fourth field, `collective_table`,
+    alongside `collective_script`/`col_id`/`col_subj` — auto-filled from the
+    same known-script lookup (Enthusiast = `owned`, Fanatically =
+    `fanatic_listings`, None = `blog_category`) and always freely
+    editable, including schema-qualified (`other_db.table_name`) values.
+  - `OptionRepository::updateOption()` now upserts (`INSERT ... ON
+    DUPLICATE KEY UPDATE`) instead of a plain `UPDATE` — required for
+    `collective_table` to actually persist on an installation that never
+    had a row for it, and a strict improvement for every other key: a
+    plain `UPDATE` against a nonexistent key silently affected 0 rows,
+    indistinguishable from "value unchanged" to every caller.
+  - `install.php` seeds a `collective_table` row (from blog-config.php's
+    legacy value) on fresh installs and installer-driven upgrades, same as
+    `col_id`/`col_subj`. `UpgradeRunner` gains an independent one-time
+    `collective_table` migration (`collectiveTableMigrationPending()`/
+    `migrateLegacyCollectiveTable()`), deliberately gated separately from
+    the existing `collective_script` migration — an installation that had
+    already migrated `collective_script` (by using the dropdown before this
+    fix shipped) would otherwise never pick up `collective_table` at all.
+  - `OptionRepository::listEditableOptions()`'s exclusion list now also
+    excludes `collective_table`, so it doesn't also appear (and risk being
+    edited out of context) on the generic Main Options list.
+  - Tests: `PHP Test Suite/Unit/Repository/OptionRepositoryTest.php` updated
+    for the upsert query; `PHP Test Suite/Unit/Service/UpgradeRunnerTest.php`
+    gains coverage for the new independent `collective_table` migration gate,
+    including the exact "collective_script already migrated, collective_table
+    still isn't" scenario this bug was found in.
+
+- **`admin/options.php` — `install_path` auto-detect only caught a
+  *missing* stored path, not a stale-but-still-existing one.** Follow-up
+  hardening from the `BackupManager` "empty archive" investigation
+  below, whose real root cause was exactly this gap: a stale
+  `install_path` left over from a domain move pointed at a real, but
+  abandoned, directory, so the existing `!is_dir($storedInstallPath)`
+  check never triggered the auto-correction.
+  - New `fu_looks_like_install_path(string $dir): bool` replaces the
+    plain `is_dir()` check: requires `version.php`/`index.php` present
+    plus `admin/`/`class/` directories — the same validation
+    `InstallManager` already performs on an extracted release before
+    installing it over a live site, applied here to the *stored*
+    install path instead. A directory that exists but isn't a real copy
+    of this installation (stale, unrelated, or leftover) is now treated
+    the same as a missing one and auto-corrected, exactly as a genuinely
+    missing directory always was.
+  - Not yet covered by automated tests — `admin/options.php` has no
+    PHPUnit coverage, same as `install.php`, since both are top-level
+    procedural pages rather than class/service code with an injectable
+    `SqlConnection` to mock. Not yet manually re-verified live.
+
+- **`BackupManager` — "Back up now" failed with "Backup produced an empty
+  archive" (plus a `ZipArchive::close(): Can't remove file` warning) on a
+  real shared-hosting deployment.** Discovered live after upgrading a
+  test site from 2.0.1 to the current unreleased version. **Real root
+  cause, confirmed live: a stale `install_path` option left over from a
+  domain move weeks earlier** (`admin/options.php`'s existing
+  install-path auto-detect only corrects a stored path that no longer
+  resolves to *any* real directory — the old domain's directory still
+  physically existed on disk, so the safety net never triggered).
+  `BackupManager` was reading a real but abandoned, essentially empty
+  directory the entire time, which also explains why `fu-backups`/
+  `fu-update-tmp` appeared to be missing — they were being created under
+  the stale path, not the one being looked at. Fixed by correcting the
+  install path/URL options to the current domain; "Back up now" then
+  succeeded immediately.
+  - Two defensive code improvements were made alongside diagnosing this,
+    both worth keeping even though neither was the actual cause here:
+    - `walkSourceFiles()`/`writeArchive()` no longer call `realpath()`
+      on the configured install path before handing file paths to
+      `ZipArchive::addFile()`. On a host where the install path is a
+      symlink, `open_basedir` is scoped to the symlink path, but
+      `realpath()` resolves to the underlying target, which can sit
+      outside that restriction — every `addFile()` call would then fail
+      silently (the loop had no `else` branch to surface a failure),
+      producing a zero-entry archive. A new `normalizedSourceDir()`
+      helper (trailing-slash normalisation only, no `realpath()`) is
+      now used consistently in both methods instead, matching how the
+      same install path is already used successfully elsewhere in
+      `update.php` (creating `fu-backups/`/`fu-update-tmp/`, their
+      `.htaccess`/`index.html` guards).
+    - `createBackup()`'s single generic "empty archive" message
+      previously covered three genuinely different causes
+      indistinguishably. New `describeEmptyBackupFailure()` now reports
+      which actually applies: the source directory doesn't exist/isn't
+      readable (bad `install_path`), the directory exists but is
+      completely empty (`install_path` pointing at a real but wrong
+      directory — exactly this bug), or the directory has entries but
+      every one is an excluded name (`uploads`/`fu-update-tmp`/
+      `fu-backups`/`.git`) with nothing left to back up. `writeArchive()`
+      separately reports the case where files *are* found but
+      `ZipArchive::addFile()` rejects every one of them (the
+      open_basedir/symlink scenario above), pointing at `open_basedir`
+      and file permissions.
+  - **Follow-up identified, not yet actioned:** `admin/options.php`'s
+    `install_path` auto-detect should also check that the stored path
+    looks like *this* installation (e.g. `version.php`/`index.php`
+    present), not just that it resolves to *some* real directory — a
+    stale-but-still-existing path (this bug, exactly) currently defeats
+    it silently. Tracked in TODO.md.
+  - Confirmed passing on Ariane's machine across both code changes:
+    **312 tests, 977 assertions, zero failures** (up from the 312/974
+    baseline — no new test methods either time; existing
+    `BackupManagerTest` coverage exercises both changed code paths).
+    Confirmed resolved live on the actual hosting environment that
+    surfaced this — see `PHP Test Suite/TEST_LOG.md`'s July 18, 2026
+    entries.
+
+- **`CategoryRepository` — category settings (entry/comment template,
+  Gravatar options) were being written to and read from the wrong table.**
+  `admin/category.php` constructed `CategoryRepository` passing
+  `catjoin_table` as the settings-table argument for
+  `insertSettings()`/`updateSettings()`/`deleteSettings()`/`findById()`'s
+  settings join. But `catjoin_table`'s real schema
+  (`entry_id`/`cat_id`/`collective_id`, one row per post-to-category
+  assignment) has none of the `entry_template`/`comment_template`/
+  `gravatar_*` columns those methods write to and read from — that's
+  `catoptions_table`'s schema (one row per category, primary key
+  `cat_id`), which is also what `show-cat.php` (the public side) reads
+  its per-category overrides from. `listAll()`'s per-category entry-count
+  join is unaffected — it genuinely needs the real catjoin table, and
+  still uses it.
+  - In practice this meant a category's template/Gravatar customisation
+    entered via **Admin → Categories** never reached the table the
+    front end actually reads, and the edit form's template fields always
+    read back empty. Discovered by inspecting a live installation's SQL
+    dump rather than any visible error: both `blog_category` and
+    `blog_catjoin` are `ENGINE=MyISAM`, which doesn't support
+    transactions, so `CategoryService`'s rollback-on-settings-failure
+    never actually undid the identity insert either — a category could
+    still end up created (and its name saved) even though its settings
+    write silently failed against a table with no matching columns.
+  - Fixed by giving `CategoryRepository` a distinct `$catoptionsTable`
+    constructor dependency (new required parameter, positioned right
+    after `$catjoinTable`), used by `insertSettings()`/`updateSettings()`/
+    `deleteSettings()` and by `findById()`'s settings join in both the
+    standalone and collective branches. `admin/category.php` and
+    `admin/blog.php` now pass `(string) $fu->getOpt('catoptions_table')`
+    for it. No schema changes needed — `catoptions_table` already exists
+    on every installation (created by `install.php` since Milestone 4;
+    read by `show-cat.php` since before that).
+  - Tests: `CategoryRepositoryTest`'s `insertSettings()`/`updateSettings()`/
+    `deleteSettings()` tests and all three `findById()` tests updated to
+    assert against the new `catoptions_table` constant instead of
+    `catjoin_table`; `listAll()`'s tests are unchanged, since that query's
+    catjoin-table join was already correct.
+
+### Removed
+
+- **Public comment form WYSIWYG toolbar (Bold/Italic/Link buttons above the
+  Comment textarea)** — removed per a direct request; the Comment field is
+  now a plain `<textarea>`. `assets/js/fanupdate-comment-submit.js` no
+  longer builds the toolbar, injects its scoped `<style>`, or pixel-aligns
+  it to the textarea (`injectToolbarStyles()`/`alignToolbar()`/the local
+  `myWysiwyg` array and its SVG icons were all deleted). Commenters can
+  still type `[B]`/`[I]`/`[URL=...]` tags by hand if the comment renderer
+  still parses them server-side — only the client-side insertion buttons
+  and toolbar chrome are gone. Since this was the toolbar's last caller,
+  `assets/js/fanupdate.js`'s shared `makeWysiwyg()`/`wysiwygButton()`/
+  `formatText()`/`insertLink()` (kept alive earlier this session
+  specifically for this caller — see FP-18's entry above) were deleted
+  too, confirmed dead via a full-codebase search first. `install.php`'s
+  default comment form template no longer claims "some formatting can be
+  applied via the buttons above the textarea" (now-inaccurate copy) —
+  existing installations with an already-seeded `comment_form_template`
+  row keep their current wording until edited from
+  **Admin → Templates → Comment Form**.
+
+- **`class/FeedItem.php` — removed dead `toUtf8()`/`fromUtf8()` static
+  methods (TODO.md item "FP-14. Refactor Legacy RSS Component for PHP
+  8.2+").** Added in an earlier pass as `mb_convert_encoding()` replacements
+  for the deprecated `utf8_encode()`/`utf8_decode()`, but never called from
+  anywhere in the codebase — the app's `SqlConnection` DSN already forces
+  `charset=utf8mb4`, so there was no live encoding-mismatch case for them to
+  guard against. Confirmed via an FP-14 audit that the rest of the RSS
+  component (`rss.php`, `rss-comments.php`, `class/FeedWriter.php`,
+  `class/FeedItem.php`) already meets every PHP 8.2+ requirement — strict
+  types, explicitly declared properties, no `utf8_encode()`/`utf8_decode()`
+  calls, `htmlspecialchars(ENT_XML1 | ENT_QUOTES)` escaping — from earlier
+  work; this was the only outstanding item.
+
+- **`README.md` — removed lingering Flinx Collective / Fan Admin mention
+  (TODO.md item "7. Cleanup / Technical Debt").** The Features list still
+  named them ("works alongside Enthusiast 3, Flinx Collective, and Fan
+  Admin, or fully standalone") even though the actual code references
+  (`blog-config.sample.php`'s `$coltable['f']`/`$coltable['g']` entries)
+  were already removed back in Redux 2.1.0. Re-audited the rest of the
+  current codebase (`class/FanUpdate.php`, `install.php`,
+  `admin/category.php`, `TODO-security.md`) and confirmed no other
+  references remain. `old-docs/readme.txt`/`changelog.txt` (the preserved
+  original 2008 documents) still mention them, left untouched as
+  historical record, as is this changelog's own Redux 2.1.0 entry
+  documenting the original removal.
+
+---
+
 ## [Redux 2.2.0] — July 17, 2026 — Admin Update Manager
 
 The entire Admin Update Manager milestone (TODO.md item "1. Admin Update

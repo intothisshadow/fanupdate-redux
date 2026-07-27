@@ -3,8 +3,8 @@
 /*****************************************************************************
  * FanUpdate — OptionRepositoryInterface
  *
- * Data-access contract for the general (non-template, non-email) rows of
- * the options table (mirrors TemplateRepositoryInterface, which covers the
+ * Data-access contract for the general (non-template, non-credential) rows
+ * of the options table (mirrors TemplateRepositoryInterface, which covers the
  * complementary template-flavoured rows of the same table). OptionService
  * (see class/Service/OptionService.php) depends on this interface rather
  * than the concrete OptionRepository, so unit tests can substitute a test
@@ -29,15 +29,20 @@ interface OptionRepositoryInterface
 {
     /**
      * Every options-table row except template-flavoured ones (optkey
-     * containing "template") and the admin_email row, ordered
-     * alphabetically by optkey.
+     * containing "template"), the admin_email/admin_username/admin_password
+     * rows (see admin/account.php), and the collective-source keys
+     * (collective_script/col_id/col_subj/collective_table — see
+     * admin/collective-source.php), ordered alphabetically by optkey.
      *
      * @return array<int, array<string, mixed>>
      */
     public function listEditableOptions(): array;
 
     /**
-     * Update a single option's value by key.
+     * Update a single option's value by key — an upsert (INSERT ... ON
+     * DUPLICATE KEY UPDATE): if no row exists yet for $key, one is created
+     * (with an empty optdesc); otherwise only optvalue is touched, leaving
+     * the existing optdesc alone.
      *
      * @return int|null The number of affected rows (0 or more) on success,
      *         or null when the query itself failed to execute.

@@ -3,16 +3,20 @@
  * FanUpdate — admin/options.php
  *
  * General site options: lists and updates all editable option-table rows
- * (excluding templates, credentials, and private/internal keys, which have
- * their own pages or are never user-editable). Delegates persistence to
- * OptionService/OptionRepository; this page parses/sanitises $_POST,
- * enforces CSRF, and renders. y/n options render as toggle switches.
+ * (excluding templates, credentials, private/internal keys, and the
+ * collective-source keys collective_script/col_id/col_subj, which have
+ * their own pages or are never user-editable — see admin/collective-source.php
+ * for the latter). Delegates persistence to OptionService/OptionRepository;
+ * this page parses/sanitises $_POST, enforces CSRF, and renders. y/n options
+ * render as toggle switches.
  *
  * Also auto-detects and corrects install_path on every page load: if the
- * stored value no longer resolves to a real, existing directory (e.g. after
- * a server move/migration where install_path was never manually updated),
- * it is corrected automatically. A manually-set install_path that still
- * points to a real directory is left alone.
+ * stored value no longer resolves to a directory that actually looks like
+ * this installation (missing entirely, or a real directory that doesn't
+ * contain this app's own files — e.g. left over from a domain move where
+ * the old directory is still physically present but is no longer the live
+ * install), it is corrected automatically. A manually-set install_path that
+ * still resolves to a real copy of this installation is left alone.
  ******************************************************************************/
 
 declare(strict_types=1);
@@ -39,12 +43,8 @@ $showNav = true;
 //  these are additional explicit exclusions)
 $disallow = ['admin_password', 'admin_username', 'admin_email', 'version'];
 
-// ── Helper: detect y/n boolean options ───────────────────────────────────
-// An option is a boolean toggle if its description contains "y or n"
-// (case-insensitive) — this matches all y/n fields defined in install.php.
-function fu_is_yn_option(string $desc): bool {
-    return stripos($desc, 'y or n') !== false;
-}
+// fu_is_yn_option() (boolean-toggle detection) lives in functions.php now,
+// shared with install.php's fresh-install form — see FU_YN_OPTION_KEYS.
 
 // ── Helper: human-readable label from an option key ──────────────────────
 // Replaces underscores with spaces and applies sentence case (first word
@@ -63,6 +63,36 @@ function fu_detect_install_path(): string {
     $dir = dirname(__DIR__);
     $dir = (string) preg_replace('#/\.([a-z]+)#', '', $dir);
     return str_replace('\\', '/', $dir);
+}
+
+// ── Helper: does a directory actually look like a FanUpdate Redux install? ──
+// A plain is_dir() check only proves *some* directory exists at the stored
+// path — it says nothing about whether it's still *this* installation. A
+// stale install_path left over from a domain move can keep pointing at a
+// real, but abandoned, directory indefinitely (confirmed live: this was the
+// actual root cause of a BackupManager "empty archive" failure on July 18,
+// 2026 — see docs/CHANGELOG.md's [Unreleased] "Fixed" entry). Checked the
+// same way InstallManager validates an extracted release before installing
+// over the live site: version.php/index.php present, plus admin/ and
+// class/ directories.
+function fu_looks_like_install_path(string $dir): bool {
+    if (!is_dir($dir)) {
+        return false;
+    }
+
+    foreach (['version.php', 'index.php'] as $file) {
+        if (!is_file($dir . '/' . $file)) {
+            return false;
+        }
+    }
+
+    foreach (['admin', 'class'] as $subdir) {
+        if (!is_dir($dir . '/' . $subdir)) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -86,6 +116,17 @@ if (isset($_POST['action']) && $_POST['action'] === 'update' && !$fu->verifyCsrf
 
         $value = clean_input((string) ($values[$id] ?? ''));
 
+        // FP-19: 'timezone' must be a real IANA identifier — a hand-edited
+        // or tampered value would otherwise silently break every date
+        // display (FanUpdate_Post/FanUpdate_Comment::getDateFormatted()
+        // already falls back to UTC for an invalid stored value, but
+        // rejecting it here means the admin finds out immediately instead
+        // of dates quietly reverting to UTC).
+        if ($key === FU_TIMEZONE_OPTION_KEY && !fu_is_valid_timezone($value)) {
+            $fu->addErr('<strong>' . htmlspecialchars($value, ENT_QUOTES, 'UTF-8') . '</strong> is not a recognised timezone — timezone not updated.');
+            continue;
+        }
+
         $affected = $optionService->updateOption($key, $value);
 
         if ($affected === null) {
@@ -100,18 +141,25 @@ if (isset($_POST['action']) && $_POST['action'] === 'update' && !$fu->verifyCsrf
 }
 
 // ── Auto-detect install path ───────────────────────────────────────────────
-// If the site has been moved to a different server or directory (a plain
-// file copy, unlike a real "migration" tool, never updates install_path),
-// the stored value stops pointing at a directory that actually exists on
-// this filesystem. When that happens, silently correct it to match this
-// server's real location, same as install.php auto-detects it on first
-// install. A manually-entered install_path is left alone as long as it
-// still resolves to a real, existing directory — that's the override
-// escape hatch for non-standard setups (e.g. a symlinked path).
+// If the site has been moved to a different server, directory, or domain (a
+// plain file copy, unlike a real "migration" tool, never updates
+// install_path), the stored value stops pointing at a directory that's
+// still actually this installation. That covers two distinct cases, both
+// checked by fu_looks_like_install_path(): the stored path no longer exists
+// at all, OR it exists but is some other (possibly stale/abandoned)
+// directory that isn't this app — e.g. left over from an old domain that
+// was never cleaned up after a move, which otherwise defeats this exact
+// auto-correction silently (confirmed live as the root cause of a
+// BackupManager "empty archive" failure — see docs/CHANGELOG.md). When
+// either happens, silently correct install_path to match this server's real
+// location, same as install.php auto-detects it on first install. A
+// manually-entered install_path is left alone as long as it still resolves
+// to a real copy of this installation — that's the override escape hatch
+// for non-standard setups (e.g. a symlinked path).
 $detectedInstallPath = fu_detect_install_path();
 $storedInstallPath   = (string) $fu->getOpt('install_path', true);
 
-if ($storedInstallPath !== '' && $storedInstallPath !== $detectedInstallPath && !is_dir($storedInstallPath)) {
+if ($storedInstallPath !== '' && $storedInstallPath !== $detectedInstallPath && !fu_looks_like_install_path($storedInstallPath)) {
     $affected = $optionService->updateOption('install_path', $detectedInstallPath);
 
     if ($affected === null) {
@@ -120,7 +168,8 @@ if ($storedInstallPath !== '' && $storedInstallPath !== $detectedInstallPath && 
         $fu->addOpt('install_path', $detectedInstallPath);
         $fu->addSuccess(
             'Install path automatically updated to <strong>' . htmlspecialchars($detectedInstallPath, ENT_QUOTES, 'UTF-8') . '</strong> '
-            . '(the previously stored path no longer exists on this server, likely after a move or migration). '
+            . '(the previously stored path no longer looks like this installation on this server, likely after a move or migration — '
+            . 'it may still exist as a leftover, unrelated, or stale directory). '
             . 'You can override this manually below if needed.'
         );
     }
@@ -143,6 +192,8 @@ $fu->getHeader('Options');
         <li><a href="blacklist.php">Blacklist</a></li>
         <li><a href="smilies.php">Smilies</a></li>
         <li><a href="templates.php">Templates</a></li>
+        <li><a href="collective-source.php">Collective Source</a></li>
+        <li><a href="privacy.php">Privacy</a></li>
     </ul>
 </div>
 
@@ -168,14 +219,35 @@ $fu->reportErrors();
         $display_key = htmlspecialchars(fu_option_label($optkey), ENT_QUOTES, 'UTF-8');
         $safe_desc   = htmlspecialchars((string) ($row['optdesc']  ?? ''), ENT_QUOTES, 'UTF-8');
         $safe_val    = htmlspecialchars((string) ($row['optvalue'] ?? ''), ENT_QUOTES, 'UTF-8');
-        $is_yn       = fu_is_yn_option((string) ($row['optdesc'] ?? ''));
+        $is_yn       = fu_is_yn_option($optkey, (string) ($row['optdesc'] ?? ''));
         $is_on       = (strtolower(trim((string) ($row['optvalue'] ?? ''))) === 'y');
         ?>
 
         <div class="option <?php echo $class; ?>" style="display:flow-root; padding:0.875rem 0; border-bottom:0.5px solid var(--fu-border);">
             <input type="hidden" name="key[<?php echo $id; ?>]" value="<?php echo $safe_key; ?>" />
 
-            <?php if ($is_yn): ?>
+            <?php if ($optkey === FU_TIMEZONE_OPTION_KEY): ?>
+
+            <label for="val_<?php echo $id; ?>" style="font-weight:500; color:var(--fu-text); margin-bottom:3px;">
+                <?php echo $display_key; ?>
+            </label>
+            <select id="val_<?php echo $id; ?>" name="value[<?php echo $id; ?>]">
+                <?php foreach (fu_timezone_identifiers_grouped() as $region => $zones) { ?>
+                <optgroup label="<?php echo htmlspecialchars($region, ENT_QUOTES, 'UTF-8'); ?>">
+                    <?php foreach ($zones as $tz) { ?>
+                    <option value="<?php echo htmlspecialchars($tz, ENT_QUOTES, 'UTF-8'); ?>"
+                            <?php echo ($tz === (string) $row['optvalue']) ? 'selected' : ''; ?>>
+                        <?php echo htmlspecialchars(fu_timezone_label($tz), ENT_QUOTES, 'UTF-8'); ?>
+                    </option>
+                    <?php } ?>
+                </optgroup>
+                <?php } ?>
+            </select>
+            <?php if ($safe_desc !== ''): ?>
+            <p class="hint small" style="margin-top:3px;"><?php echo $safe_desc; ?></p>
+            <?php endif; ?>
+
+            <?php elseif ($is_yn): ?>
 
             <div class="option-yn-row">
                 <label class="option-yn-label" for="val_<?php echo $id; ?>">
@@ -232,17 +304,8 @@ $fu->reportErrors();
     </p>
 </form>
 
-<script>
-// Update the Yes/No state label live when the toggle is clicked
-document.querySelectorAll('.fu-toggle__input').forEach(function(cb) {
-    cb.addEventListener('change', function() {
-        var label = this.closest('.fu-toggle').querySelector('.fu-toggle__state-label');
-        if (label) {
-            label.textContent = this.checked ? 'Yes' : 'No';
-        }
-    });
-});
-</script>
-
 <?php
+// Toggle state-label live update (.fu-toggle__input) is wired globally by
+// assets/js/fanupdate.js, loaded on every admin page (and install.php) via
+// header.php — no per-page inline script needed here anymore.
 $fu->getFooter();

@@ -8,31 +8,36 @@
  * repository or the FanUpdate singleton, so it can be unit tested with a
  * fake/mock repository.
  *
- * "Standalone vs. integrated" mode (the collective_script option) is a
- * genuine business rule, not presentation, so it lives here: whether the
- * collective table (category name/identity) is managed by FanUpdate at all
- * depends on it.
+ * Categories Support (hybrid): standalone and collective-sourced
+ * categories now coexist rather than being mutually exclusive modes. The
+ * business rule this class enforces is per-category, not page-wide:
  *
- * Per-mode behaviour:
- *  - createCategory(): in standalone mode, a collective-table row is
- *    inserted first, and the catjoin settings are only inserted if that
- *    succeeds; both writes run inside one transaction, so if the settings
- *    insert fails, the collective insert is rolled back too — cat_id/
- *    standalone_insert_ok reflect "nothing was persisted" rather than a
- *    half-created category. In integrated mode, the collective insert is
- *    skipped entirely and — since the add form does not submit a cat_id in
- *    that mode — the catjoin settings insert never runs either; the "add"
- *    action is effectively a no-op with no success/error message.
- *  - updateCategory(): the collective-table name update is attempted in
- *    standalone mode, but its result is not checked or reported — only the
- *    catjoin settings update's result determines success/failure. This is
- *    existing behaviour, not an oversight.
- *  - deleteCategory(): deletes the collective-table row and the catjoin
- *    settings row atomically (both must succeed for the delete to commit).
- *    Callers (admin/category.php) are responsible for only invoking this
- *    in standalone mode, exactly as the admin page gates the delete action
- *    (and hides the delete button) behind `!collective_script`; this
- *    service does not re-check the flag.
+ *  - createCategory() always creates a NEW standalone category — there is
+ *    no "create a collective category" action; collective-sourced
+ *    categories only ever arrive via that script's own sync (a separate,
+ *    not-yet-built feature — see TODO.md's Categories Support integrated-
+ *    mode sections). This works identically whether or not a collective
+ *    script is configured: the repository's insertStandalone() already
+ *    knows how to fall back to the single-table behaviour when there is no
+ *    dedicated standalone table (collective_script = 'n').
+ *  - updateCategory() renames the category only when it is standalone
+ *    ($categories->isStandaloneId()) — a collective-sourced category's
+ *    identity is owned by its source script and is read-only here. The
+ *    catjoin settings (templates, gravatar) are always editable for any
+ *    category regardless of source; that has been true since before
+ *    Categories Support and is unchanged.
+ *  - deleteCategory() refuses outright (returns false, touches nothing)
+ *    for a collective-sourced category — read-only except through the
+ *    explicit "confirm deletion" flow described in TODO.md, which is
+ *    integration-specific and not implemented by this generic service.
+ *    Deletion of a standalone category is unchanged: both the standalone
+ *    row and its catjoin settings row are removed atomically.
+ *
+ * Per-mode behaviour before Categories Support (documented for context —
+ * superseded by the above): "standalone vs. integrated" used to be a single
+ * page-wide flag gating whether the add form did anything at all. That
+ * flag no longer exists; every category now individually reports its own
+ * source via isStandaloneCategory().
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -50,31 +55,22 @@ class CategoryService
     }
 
     /**
+     * Create a new standalone category. Works the same whether or not a
+     * collective script is configured — see class docblock.
+     *
      * @param array{name:string,entry_template:string,comment_template:string,gravatar_default:string,gravatar_size:int,gravatar_rating:string} $clean
      * @return array{cat_id:?int,standalone_insert_ok:?bool,settings_ok:?bool}
-     *   In integrated mode ($standalone === false), nothing is attempted
-     *   and every key is null — matches the original no-op behaviour.
-     *   In standalone mode, the collective insert and the settings insert
-     *   are wrapped in one transaction: if the settings insert fails, the
-     *   collective insert is rolled back too, so cat_id/standalone_insert_ok
-     *   reflect "nothing was persisted" rather than a half-created category.
+     *   The collective/standalone insert and the settings insert are
+     *   wrapped in one transaction: if the settings insert fails, the
+     *   identity insert is rolled back too, so cat_id/standalone_insert_ok
+     *   reflect "nothing was persisted" rather than a half-created
+     *   category.
      */
-    public function createCategory(array $clean, bool $standalone): array
+    public function createCategory(array $clean): array
     {
-        if (!$standalone) {
-            // Integrated mode: no cat_id ever arrives via $_POST on the add
-            // form, so this is a no-op — no success or error message, no
-            // repository access at all.
-            return [
-                'cat_id'               => null,
-                'standalone_insert_ok' => null,
-                'settings_ok'          => null,
-            ];
-        }
-
         $this->categories->beginTransaction();
 
-        $newId              = $this->categories->insertCollective($clean['name']);
+        $newId              = $this->categories->insertStandalone($clean['name']);
         $standaloneInsertOk = $newId > 0;
 
         if (!$standaloneInsertOk) {
@@ -97,7 +93,7 @@ class CategoryService
         ]);
 
         if (!$settingsOk) {
-            // Roll back the collective insert too — a category with no
+            // Roll back the identity insert too — a category with no
             // template settings is a partial write, not a usable category.
             $this->categories->rollBack();
 
@@ -118,14 +114,18 @@ class CategoryService
     }
 
     /**
+     * Update a category's settings, and — only when it is standalone — its
+     * name too. Collective-sourced categories' names are read-only; see
+     * class docblock.
+     *
      * @param array{name:string,entry_template:string,comment_template:string,gravatar_default:string,gravatar_size:int,gravatar_rating:string} $clean
      */
-    public function updateCategory(int $catId, array $clean, bool $standalone): bool
+    public function updateCategory(int $catId, array $clean): bool
     {
-        if ($standalone) {
+        if ($this->categories->isStandaloneId($catId)) {
             // Result deliberately not checked — only the catjoin settings
             // update below determines success/failure. See class docblock.
-            $this->categories->updateCollectiveName($catId, $clean['name']);
+            $this->categories->updateStandaloneName($catId, $clean['name']);
         }
 
         return $this->categories->updateSettings($catId, [
@@ -138,29 +138,48 @@ class CategoryService
     }
 
     /**
-     * Deletes the category's collective-table row and its catjoin settings
-     * row atomically: both must succeed for the delete to commit,
+     * Deletes a standalone category's identity row and its catjoin
+     * settings row atomically: both must succeed for the delete to commit,
      * otherwise the transaction rolls back and neither row is removed.
-     * Callers must only invoke this in standalone mode — see class
+     *
+     * Collective-sourced categories are read-only and refused outright —
+     * nothing is attempted against the repository at all. See class
      * docblock.
      *
      * @return bool True if both rows were deleted; false if either delete
-     *              failed (in which case neither was removed).
+     *              failed (in which case neither was removed), or if
+     *              $catId is not a standalone category.
      */
     public function deleteCategory(int $catId): bool
     {
+        if (!$this->categories->isStandaloneId($catId)) {
+            return false;
+        }
+
         $this->categories->beginTransaction();
 
-        $collectiveOk = $this->categories->deleteCollective($catId);
-        $settingsOk   = $this->categories->deleteSettings($catId);
+        $identityOk = $this->categories->deleteStandalone($catId);
+        $settingsOk = $this->categories->deleteSettings($catId);
 
-        if ($collectiveOk && $settingsOk) {
+        if ($identityOk && $settingsOk) {
             $this->categories->commit();
             return true;
         }
 
         $this->categories->rollBack();
         return false;
+    }
+
+    /**
+     * Whether $catId is a standalone (FanUpdate-managed) category, as
+     * opposed to one synced from a collective script. Used by
+     * admin/category.php to decide whether to show the name field/delete
+     * action as editable, and by admin/blog.php's category picker to label
+     * each option's source.
+     */
+    public function isStandaloneCategory(int $catId): bool
+    {
+        return $this->categories->isStandaloneId($catId);
     }
 
     /**
@@ -179,5 +198,67 @@ class CategoryService
     public function listAll(): void
     {
         $this->categories->listAll();
+    }
+
+    /**
+     * Simple array form of the category listing for dropdown/select
+     * pickers (e.g. admin/blog.php) that don't need the manual cursor
+     * pattern listAll() uses.
+     *
+     * @return list<array{cid:int,cname:string,num:int}>
+     */
+    public function listForDropdown(): array
+    {
+        return $this->categories->listForDropdown();
+    }
+
+    /**
+     * Integrated Mode (Fanatically/Enthusiast/Listing Admin): cheap,
+     * read-only check for whether any collective-sourced category that
+     * FanUpdate holds settings for has since been deleted upstream in the
+     * collective script. Safe to call on every Dashboard/Categories page
+     * load, same bar as SchemaMigrator::hasPendingSchemaChanges()/
+     * UpgradeRunner::hasPendingUpgrades() — one indexed LEFT JOIN, no
+     * network call.
+     */
+    public function hasOrphanedCollectiveCategories(): bool
+    {
+        return $this->categories->listOrphanedCollectiveCategoryIds() !== [];
+    }
+
+    /**
+     * @return list<int>
+     */
+    public function listOrphanedCollectiveCategoryIds(): array
+    {
+        return $this->categories->listOrphanedCollectiveCategoryIds();
+    }
+
+    /**
+     * Delete an orphaned collective-sourced category's FanUpdate-side
+     * settings row, after the admin has explicitly confirmed via the
+     * "notify the user and request confirmation before deleting the
+     * corresponding category in FanUpdate" flow (TODO.md's Integrated Mode
+     * sections). Deliberately does NOT touch catjoin_table (post-to-
+     * category assignments) — existing entries stay filed under $catId,
+     * matching how a live collective-sourced category's deletion is
+     * already handled (deleteCategory() refuses to touch catjoin either);
+     * only the settings row this class actually owns is removed.
+     *
+     * Re-checks that $catId is genuinely orphaned before touching
+     * anything, rather than trusting the caller — defence in depth so a
+     * stale or forged request can't delete a still-live category's
+     * settings out from under it.
+     *
+     * @return bool True if the settings row was deleted; false if $catId
+     *              is not (or no longer) orphaned, or the delete failed.
+     */
+    public function confirmDeleteOrphanedCategory(int $catId): bool
+    {
+        if (!in_array($catId, $this->categories->listOrphanedCollectiveCategoryIds(), true)) {
+            return false;
+        }
+
+        return $this->categories->deleteSettings($catId);
     }
 }

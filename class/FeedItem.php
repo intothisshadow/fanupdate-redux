@@ -128,23 +128,4 @@ class FeedItem
             'type'   => $type,
         ]);
     }
-
-    /**
-     * Safely convert a string to UTF-8.
-     * Replaces the deprecated utf8_encode() from PHP 8.2.
-     */
-    public static function toUtf8(string $value): string
-    {
-        // mb_convert_encoding is the recommended replacement for utf8_encode()
-        return mb_convert_encoding($value, 'UTF-8', 'ISO-8859-1');
-    }
-
-    /**
-     * Safely convert a UTF-8 string to ISO-8859-1.
-     * Replaces the deprecated utf8_decode() from PHP 8.2.
-     */
-    public static function fromUtf8(string $value): string
-    {
-        return mb_convert_encoding($value, 'ISO-8859-1', 'UTF-8');
-    }
 }

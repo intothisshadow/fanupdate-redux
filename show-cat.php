@@ -47,8 +47,22 @@ if (!isset($cat_id) || !is_numeric($cat_id)) {
     $cat = $fu->db->GetRecord($query, [(int) $cat_id]);
 
     if (is_array($cat)) {
+        // Bug fix: this used to only guard against an empty STRING, not SQL
+        // NULL. catoptions_table's date_format/comments_on columns are
+        // nullable with no DEFAULT, and CategoryRepository::insertSettings()
+        // (called by every standalone-category creation, via
+        // CategoryService::createCategory()) never sets either one — so a
+        // standalone category's row always has date_format/comments_on as
+        // NULL, not ''. That NULL was passed straight through to addOpt(),
+        // clobbering the site-wide date_format option with null for the
+        // rest of the request — getDateFormatted() then cast that to '',
+        // and date('', $ts) returns '', blanking the date on every post
+        // filed under a standalone category. Fanatically/Enthusiast-synced
+        // categories never hit this: they only get a catoptions row at all
+        // if an admin explicitly saves per-category settings for one, so
+        // $cat is null/false and this whole loop is skipped until then.
         foreach ($cat as $key => $value) {
-            if ($value !== '') { // don't update defaults!
+            if ($value !== '' && $value !== null) { // don't update defaults!
                 $fu->addOpt($key, $value);
             }
         }

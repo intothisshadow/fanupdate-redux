@@ -12,7 +12,6 @@
  *    with native addEventListener / removeEventListener.
  *  - Replaced getXmlHttpObject() + XMLHttpRequest-based makeRequest() with
  *    the Fetch API (fetch()).
- *  - Deleted dead document.selection.createRange() IE-only branch in formatText().
  *  - Deleted getXmlHttpObject() entirely (was only an IE ActiveXObject fallback).
  *  - Replaced createElement() XHTML-namespace helper with document.createElement().
  *  - Replaced getEventTarget() quirksmode shim with e.target (standard since IE9).
@@ -23,34 +22,16 @@
  *  - Standardista table-sorting code preserved verbatim (Neil Crosby, MIT 2006)
  *    except for its own addEvent calls replaced with addEventListener.
  *
- * Redux 2.0.8:
- *  - makeWysiwyg(): toolbar buttons now use inline SVG instead of external PNG
- *    files. wysiwygButton.img is now an SVG string (or legacy src URL); the
- *    builder detects which form is supplied and creates either an <svg> element
- *    (via innerHTML on a wrapper) or an <img> element accordingly. This removes
- *    the dependency on text_bold.png, text_italic.png, link.png etc. which were
- *    never shipped reliably and caused the toolbar to render as broken-image
- *    alt text.
- *  - makeWysiwyg(): accepts optional second parameter `anchor` — insertion
- *    point defaults to el itself (admin behaviour unchanged) but can be set to
- *    a block-level parent so the toolbar sits above an entire label+field row
- *    rather than inside a <p> beside a floated label (front-end comment form).
- *  - makeWysiwyg(): double-init guard — stamps data-wysiwyg="1" on the
- *    textarea after wiring; subsequent calls for the same element are no-ops.
+ * WYSIWYG toolbar (wysiwygButton()/makeWysiwyg()/formatText()/insertLink())
+ * removed: it was shared infrastructure for admin/blog.php's post editor
+ * (superseded by TinyMCE — TODO.md item "FP-18. Implement TinyMCE Editor",
+ * see assets/js/fanupdate-tinymce.js) and the public comment form's
+ * bold/italic/link toolbar (assets/js/fanupdate-comment-submit.js, removed
+ * per a direct request — the comment form is now a plain <textarea>).
+ * Confirmed via a full-codebase search that neither caller remained before
+ * deleting.
  *
- * Redux 2.0.9:
- *  - makeWysiwyg(): accepts optional third parameter `toolbarClass` — the CSS
- *    class applied to the outer toolbar <span>. Defaults to 'wysiwygmenu' (admin
- *    behaviour unchanged). The front-end comment form passes 'fu-wysiwygmenu'
- *    so its self-contained scoped styles don't depend on the admin stylesheet.
- *
- * Image upload + lightbox (added this release):
- *  - makeWysiwyg(): the entry in myWysiwyg whose name === 'image' gets a
- *    dynamically-bound click handler via fuImageButtonClick() (defined in
- *    fanupdate-admin.js). The handler captures the specific textarea instance
- *    via closure so the file picker always inserts into the right field.
- *    On non-admin pages where fanupdate-admin.js is not loaded this branch is
- *    simply skipped — no errors.
+ * Lightbox:
  *  - fuLightboxInit(): scans document for <a class="fu-lightbox"> elements and
  *    wires a click handler that opens a full-screen overlay displaying the
  *    linked full-size image. The overlay (#fu-lightbox-overlay) is created once
@@ -205,149 +186,6 @@ const css = {
     },
 };
 
-// ── WYSIWYG toolbar ───────────────────────────────────────────────────────────
-
-/**
- * wysiwygButton — descriptor for one toolbar button.
- *
- * @param {string}   name   Short identifier (used as aria-label / alt text).
- * @param {string}   img    Either an SVG string ('<svg …>…</svg>') or a legacy
- *                          image URL ('.../foo.png'). makeWysiwyg detects which
- *                          form is supplied.
- * @param {string}   title  Tooltip text.
- * @param {Function} func   Click handler.
- */
-function wysiwygButton(name, img, title, func) {
-    this.name  = name;
-    this.img   = img;
-    this.func  = func;
-    this.title = title;
-}
-
-/**
- * makeWysiwyg — build the toolbar span and insert it into the DOM.
- *
- * Double-init guard: stamps data-wysiwyg="1" on the textarea on first call;
- * subsequent calls for the same element are silent no-ops.
- *
- * SVG / image detection: if wysiwygButton.img starts with '<' it is treated as
- * an inline SVG string; otherwise as a legacy URL (<img src>).
- *
- * Image button: the entry in myWysiwyg whose name === 'image' has func === null
- * (set in fanupdate-admin.js). makeWysiwyg replaces that null with a closure
- * that calls fuImageButtonClick(e, textarea) so the upload handler always knows
- * which textarea to insert into. If fuImageButtonClick is not defined (i.e. on
- * a non-admin public page) the button is simply omitted from the toolbar.
- *
- * @param {HTMLTextAreaElement} el            The textarea the toolbar controls.
- * @param {Element}            [anchor]       Insertion point. Defaults to el.
- * @param {string}             [toolbarClass] CSS class for the toolbar <span>.
- *   Defaults to 'wysiwygmenu' (admin panel). Pass 'fu-wysiwygmenu' for the
- *   front-end comment form so it uses self-contained scoped styles and doesn't
- *   depend on the admin stylesheet being loaded on the public page.
- */
-function makeWysiwyg(el, anchor, toolbarClass) {
-    // ── double-init guard ─────────────────────────────────────────────────────
-    if (el.dataset.wysiwyg === '1') { return; }
-    el.dataset.wysiwyg = '1';
-
-    const insertionPoint = anchor || el;
-    const toolbar = document.createElement('span');
-    toolbar.className = toolbarClass || 'wysiwygmenu';
-
-    for (let i = 0; i < myWysiwyg.length; i++) {
-        const button = myWysiwyg[i];
-
-        // ── image button: requires fuImageButtonClick (fanupdate-admin.js) ───
-        // If that function is not in scope (public page, no admin JS loaded)
-        // skip the button entirely — no image uploads on the comment form.
-        if (button.name === 'image') {
-            if (typeof fuImageButtonClick !== 'function') { continue; }
-        }
-
-        const a = document.createElement('a');
-        a.href      = '#';
-        a.title     = button.title;
-        a.className = el.id;
-        a.setAttribute('aria-label', button.name);
-
-        // ── bind click handler ────────────────────────────────────────────────
-        if (button.name === 'image') {
-            // Bind with a closure that captures this specific textarea.
-            // fuImageButtonClick is defined in fanupdate-admin.js.
-            /* eslint-disable no-loop-func */
-            (function (anchor_el, anchor_a) {
-                anchor_a.addEventListener('click', function (e) {
-                    fuImageButtonClick(e, anchor_el);
-                });
-            }(el, a));
-            /* eslint-enable no-loop-func */
-        } else {
-            a.addEventListener('click', button.func);
-        }
-
-        // ── SVG vs legacy image ───────────────────────────────────────────────
-        if (button.img && button.img.trimStart().startsWith('<')) {
-            // Inline SVG — wrap in a <span> so we can set innerHTML safely
-            // without touching the <a> directly (which would clobber listeners).
-            const wrap = document.createElement('span');
-            wrap.className = el.id;
-            wrap.innerHTML = button.img;
-            wrap.setAttribute('aria-hidden', 'true');
-            const svgEl = wrap.firstElementChild;
-            if (svgEl) {
-                svgEl.className.baseVal = el.id; // propagate class for formatText lookup
-            }
-            a.appendChild(wrap);
-        } else {
-            // Legacy PNG/GIF path — kept for custom installs that still have
-            // the image files on disk.
-            const img     = document.createElement('img');
-            img.src       = button.img;
-            img.alt       = button.name;
-            img.className = el.id;
-            a.appendChild(img);
-        }
-
-        toolbar.appendChild(a);
-    }
-
-    insertBefore(toolbar, insertionPoint);
-}
-
-// ── Text formatting (WYSIWYG tag insertion) ───────────────────────────────────
-
-function insertLink(ID, bbcode) {
-    let url = prompt('Link destination:', '');
-    if (!url || url === '') { return false; }
-    if (!url.match(/^https?:/i)) { url = 'http://' + url; }
-    if (bbcode) {
-        return formatText(ID, '[URL=' + url + ']', '[/URL]');
-    }
-    return formatText(ID, '<a href="' + url + '">', '</a>');
-}
-
-function formatText(ID, tagstart, tagend) {
-    const el = $(ID);
-    if (!el) { return false; }
-
-    const scrollTop   = el.scrollTop;
-    const selStart    = el.selectionStart;
-    const selEnd      = el.selectionEnd;
-    const newLen      = selEnd + tagstart.length + tagend.length;
-
-    const before      = el.value.substring(0, selStart);
-    const selected    = el.value.substring(selStart, selEnd);
-    const after       = el.value.substring(selEnd);
-
-    el.value = before + tagstart + selected + tagend + after;
-    el.setSelectionRange(newLen, newLen);
-    el.focus();
-    el.scrollTop = scrollTop;
-
-    return false;
-}
-
 // ── Radio / checkbox helpers ──────────────────────────────────────────────────
 
 // http://www.somacon.com/p143.php
@@ -387,6 +225,40 @@ window.addEventListener('load', () => {
         } else {
             css.removeClassFromElement(input.parentNode, 'highlight');
         }
+    });
+});
+
+// ── Y/N toggle switch state label ────────────────────────────────────────────
+
+/**
+ * Updates a .fu-toggle switch's Yes/No text label live when clicked, and —
+ * only on install.php, where the checkbox itself carries no `name` (see
+ * that page's comment on why: key[]/value[] are positional arrays, so a
+ * checkbox that only submits when checked would misalign every later
+ * field) — mirrors the checked state into the separate always-present
+ * hidden field named in data-yn-hidden. admin/options.php's toggles don't
+ * set that attribute, so this part is simply a no-op there; the checkbox's
+ * own `name`/`value` there already submits correctly on its own.
+ * Shared by admin/options.php's Main list and install.php's fresh-install
+ * form — both render the same .fu-toggle markup for boolean options (see
+ * FU_YN_OPTION_KEYS in functions.php), so this only needs to live in one
+ * place instead of a per-page inline <script>.
+ */
+window.addEventListener('load', () => {
+    document.querySelectorAll('.fu-toggle__input').forEach(function (cb) {
+        cb.addEventListener('change', function () {
+            const label = this.closest('.fu-toggle').querySelector('.fu-toggle__state-label');
+            if (label) {
+                label.textContent = this.checked ? 'Yes' : 'No';
+            }
+
+            if (this.dataset.ynHidden) {
+                const hidden = document.getElementById(this.dataset.ynHidden);
+                if (hidden) {
+                    hidden.value = this.checked ? 'y' : 'n';
+                }
+            }
+        });
     });
 });
 

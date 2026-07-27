@@ -3,16 +3,13 @@
 /*****************************************************************************
  * FanUpdate — AccountRepositoryInterface
  *
- * Data-access contract for the admin account. Unlike every other domain,
- * account storage is split across two backends: the admin email lives in
- * the options table (plain SQL, like every other domain), but the admin
- * username and password hash live in blog-config.php, written via
- * FanUpdate::updateConfigKey() (not SqlConnection) — and a username or
- * password change also requires FanUpdate::reissueToken() to re-issue the
- * HMAC session cookie so the admin stays logged in. Both are FanUpdate
- * responsibilities, not SqlConnection ones, so this repository depends on
- * FanUpdate itself (in addition to SqlConnection, for the email query)
- * rather than only SqlConnection.
+ * Data-access contract for the admin account. admin_username/admin_password/
+ * admin_email are all plain options-table rows, so every read/write here is
+ * ordinary SqlConnection-backed SQL, same shape as every other domain. This
+ * repository still depends on FanUpdate itself (in addition to SqlConnection)
+ * because a username or password change requires FanUpdate::reissueToken()
+ * to re-issue the HMAC session cookie so the admin stays logged in — that's
+ * a FanUpdate responsibility, not a SqlConnection one.
  *
  * AccountService (see class/Service/AccountService.php) depends on this
  * interface rather than the concrete AccountRepository, so unit tests can

@@ -123,10 +123,32 @@ class DownloadManager
             throw new \RuntimeException('The downloaded file is not a valid ZIP archive.');
         }
 
+        $actualSha256 = hash_file('sha256', $destPath) ?: '';
+
+        // FP-17: verify against the release's published checksum, when it
+        // has one. Fail closed on a mismatch — the same pattern as the size
+        // check above — since a downloaded ZIP that doesn't match what the
+        // release actually published must never be installed. A release
+        // with no published checksum (the normal case for anything cut
+        // before FP-16 shipped) is not an error; $checksumVerified is simply
+        // false and DownloadManager's caller decides how to surface that.
+        $checksumVerified = false;
+        if ($release->expectedSha256 !== null) {
+            if (!hash_equals(strtolower($release->expectedSha256), strtolower($actualSha256))) {
+                $this->cleanup($destPath);
+                throw new \RuntimeException(
+                    'Downloaded file checksum does not match the checksum published for this release. '
+                    . 'The download may be corrupted or tampered with — installation was refused.'
+                );
+            }
+            $checksumVerified = true;
+        }
+
         return new DownloadResult(
             filePath: $destPath,
             size: $actualSize,
-            sha256: hash_file('sha256', $destPath) ?: '',
+            sha256: $actualSha256,
+            checksumVerified: $checksumVerified,
         );
     }
 

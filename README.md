@@ -177,6 +177,26 @@ To show only "Whole Collective" entries, set `$cat_id = 0`.
 
 ## Upgrading
 
+### Enabling the Media gallery (upgrading from before Redux 2.3.0)
+
+**Admin → Media** is backed by `media_table`, a setting read from
+`blog-config.php` — not the database, so upgrading can't add it for you
+automatically the way database-backed settings migrate. A fresh install's
+`blog-config.php` already has it (copied from `blog-config.sample.php`),
+but an existing installation upgrading from before Redux 2.3.0 needs to add
+one line by hand:
+
+```php
+$fanupdate['media_table'] = 'blog_media';
+```
+
+Then visit **Admin → Updates** (a "Media gallery not configured" banner
+appears on every admin page until this is done, with a direct link) to
+create the table. Until then, **Admin → Media** shows an explanatory
+notice instead of the gallery, and the "Choose Existing" image picker in
+the post editor is simply unavailable — uploading and inserting new images
+still works as before.
+
 ### Timezone setting migration (any version with a `timezone_offset` option)
 
 The old **Options → `timezone_offset`** setting (a fixed hour offset from GMT

@@ -151,6 +151,7 @@ if (($_GET['action'] ?? '') === 'run-upgrades') {
             'Update installed: version ' . htmlspecialchars((string) $_GET['installed_version'], ENT_QUOTES, 'UTF-8')
             . (isset($_GET['installed_files']) ? ' (' . (int) $_GET['installed_files'] . ' files)' : '') . '.'
             . ($removedFiles > 0 ? ' Removed ' . $removedFiles . ' obsolete file(s) left over from the previous version.' : '')
+            . (($_GET['install_script_removed'] ?? '0') === '1' ? ' Deleted install.php — the release shipped one, but this flow never runs it, so it never gets the chance to delete itself the way it does after a manual install.' : '')
         );
     }
 
@@ -264,6 +265,7 @@ if ($action === 'check') {
                 . '&installed_version=' . rawurlencode((string) $result['version'])
                 . '&installed_files=' . (int) $result['fileCount']
                 . '&removed_files=' . (int) ($result['removedFileCount'] ?? 0)
+                . '&install_script_removed=' . ((!empty($result['installScriptRemoved'])) ? '1' : '0')
             );
             exit;
         }
@@ -723,6 +725,9 @@ if ($upgradeRunner->hasPendingUpgrades(FU_VERSION)) {
                 at <?php echo fu_update_format_date($summary['lastInstall']['installedAt']); ?>
                 <?php if (!empty($summary['lastInstall']['removedFileCount'])) { ?>
                     &middot; <?php echo (int) $summary['lastInstall']['removedFileCount']; ?> obsolete file(s) removed
+                <?php } ?>
+                <?php if (!empty($summary['lastInstall']['installScriptRemoved'])) { ?>
+                    &middot; install.php deleted
                 <?php } ?>
             </li>
             <?php } ?>

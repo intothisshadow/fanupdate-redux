@@ -28,11 +28,21 @@ declare(strict_types=1);
  *     a preserved path (uploads/, this tool's own temp/backup
  *     directories, blog-config.php, .git/) so user content and local
  *     configuration are never touched.
- *  6. Remove obsolete files — see below for how this stays safe.
- *  7. Reset OPcache, if loaded — the only cache layer present in this
+ *  6. Delete install.php from the live installation, if the just-copied
+ *     release shipped one — every release ships install.php (it's part of
+ *     the source tree build-release.sh packages), but this flow never
+ *     executes it, so its own self-delete-on-success code never runs.
+ *     Without this step, install.php would silently reappear on disk after
+ *     every single update, quietly reintroducing exactly the security
+ *     exposure the Dashboard/Updates "install.php still present" notice
+ *     (see fu_install_script_exists() in functions.php) exists to warn
+ *     about — worth actually fixing rather than just re-detecting each
+ *     time.
+ *  7. Remove obsolete files — see below for how this stays safe.
+ *  8. Reset OPcache, if loaded — the only cache layer present in this
  *     codebase, and the one most likely to keep serving stale bytecode
  *     after files have just been overwritten on disk.
- *  8. Disable maintenance mode and delete the staging directory.
+ *  9. Disable maintenance mode and delete the staging directory.
  *
  * Maintenance mode is a simple flag file
  * ({install_path}/.fu-maintenance) — not a full public-facing takeover.
@@ -137,7 +147,7 @@ class InstallManager
             throw new \RuntimeException('The release archive could not be found.');
         }
 
-        $totalSteps = 7;
+        $totalSteps = 8;
 
         $this->notifyProgress($onProgress, 'Enabling maintenance mode', 1, $totalSteps);
         $this->enableMaintenanceMode();
@@ -157,11 +167,14 @@ class InstallManager
             $this->notifyProgress($onProgress, 'Copying files to the live installation', 4, $totalSteps);
             $newManifest = $this->installFiles($sourceRoot);
 
-            $this->notifyProgress($onProgress, 'Removing obsolete files', 5, $totalSteps);
+            $this->notifyProgress($onProgress, 'Removing install.php', 5, $totalSteps);
+            [$installScriptRemoved, $newManifest] = $this->removeInstallScript($newManifest);
+
+            $this->notifyProgress($onProgress, 'Removing obsolete files', 6, $totalSteps);
             $removedCount = count($this->removeObsoleteFiles($oldManifest, $newManifest));
             $this->saveManifest($newManifest);
 
-            $this->notifyProgress($onProgress, 'Clearing the object cache', 6, $totalSteps);
+            $this->notifyProgress($onProgress, 'Clearing the object cache', 7, $totalSteps);
             if (function_exists('opcache_reset')) {
                 @opcache_reset();
             }
@@ -171,9 +184,10 @@ class InstallManager
                 fileCount: count($newManifest),
                 installedAt: gmdate('c'),
                 removedFileCount: $removedCount,
+                installScriptRemoved: $installScriptRemoved,
             );
         } finally {
-            $this->notifyProgress($onProgress, 'Disabling maintenance mode', 7, $totalSteps);
+            $this->notifyProgress($onProgress, 'Disabling maintenance mode', 8, $totalSteps);
             $this->removeTree($this->stagingDir);
             $this->disableMaintenanceMode();
         }
@@ -365,6 +379,37 @@ class InstallManager
         }
 
         return $manifest;
+    }
+
+    /**
+     * Delete install.php from the live installation if the just-copied
+     * release shipped one — see the class docblock for why this flow
+     * never runs install.php's own self-delete-on-success code. Every
+     * release ships install.php, so without this the file would silently
+     * reappear on disk after every single update. Best-effort, same as
+     * removeObsoleteFiles(): a file that can't be removed (e.g. a
+     * permissions issue) is simply left in place rather than failing the
+     * whole install over cleanup — the Dashboard/Updates notice still
+     * catches that case.
+     *
+     * @param array<int, string> $manifest
+     * @return array{0: bool, 1: array<int, string>} Whether the file was
+     *         actually removed, and $manifest with 'install.php' dropped
+     *         (whether or not the delete itself succeeded — a leftover
+     *         install.php should never be treated as an "obsolete file" by
+     *         removeObsoleteFiles() on some future install just because a
+     *         past delete attempt failed).
+     */
+    private function removeInstallScript(array $manifest): array
+    {
+        $manifest = array_values(array_diff($manifest, ['install.php']));
+
+        $installScript = $this->installDir . '/install.php';
+        if (!is_file($installScript)) {
+            return [false, $manifest];
+        }
+
+        return [@unlink($installScript), $manifest];
     }
 
     /**

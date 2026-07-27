@@ -7,6 +7,47 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Upgrading to Redux 2.3.0 gave no indication the new Media gallery
+  existed at all.** `media_table` (Admin → Media's backing table) is read
+  from `blog-config.php`, same as `dbhost`/`collective_table`/etc. — a
+  fresh install already has it via `blog-config.sample.php`, but there was
+  no way for an existing installation to pick it up on upgrade (unlike
+  database-backed settings, which `UpgradeRunner` can migrate
+  automatically, a config-file setting can't be safely added to a live PHP
+  file by an update). The only place this was ever surfaced was
+  `admin/media.php`'s own inline notice — invisible unless an admin
+  happened to click into Admin → Media itself, which most wouldn't right
+  after an update. Reported live after exactly that happened following a
+  2.2.0 → 2.3.0 upgrade. Fixed: `admin/header.php` now shows a
+  "Media gallery not configured" banner on every admin page (same
+  established pattern as the "install.php still present"/"pending database
+  updates" banners) until `media_table` is set and its table created.
+  `README.md`'s new "Upgrading" subsection documents the one-line
+  `blog-config.php` addition needed.
+
+- **`install.php` was silently reappearing on the server after every
+  Admin Update Manager install.** Every release ships `install.php` (it's
+  part of the source tree `build-release.sh` packages), but
+  `InstallManager::installUpdate()` only copies files onto the live
+  installation — it never executes `install.php`, so its own
+  self-delete-on-success code never got a chance to run. The result:
+  right after installing an update via **Admin → Updates**, a fresh
+  `install.php` would be sitting on the server again, quietly
+  reintroducing the exact security exposure the Dashboard/Updates
+  "install.php still present" notice exists to warn about — reported live
+  after updating from 2.2.0 to 2.3.0 through the Admin Update Manager.
+  Fixed: `InstallManager` now deletes `install.php` from the live
+  installation immediately after copying files over, if the just-installed
+  release shipped one. Surfaced in the post-install success message, the
+  Updates page's "Last install" summary, and the update log
+  (`InstallResult::$installScriptRemoved`, new `UpdateManager`/
+  `admin/update.php` plumbing to match). Best-effort, same as the existing
+  obsolete-file cleanup — a delete that fails (e.g. a permissions issue)
+  is simply left for the existing notice to catch, rather than failing the
+  whole install over it.
+
 ---
 
 ## [Redux 2.3.0] — July 27, 2026 — Database Architecture, Media Manager & TinyMCE Editor

@@ -33,6 +33,16 @@ final class InstallResult
          * Admin Update Manager) or when nothing was obsolete.
          */
         public readonly int $removedFileCount = 0,
+        /**
+         * Whether install.php (shipped in every release) was deleted from
+         * the live installation after this install — this flow copies
+         * install.php over like any other file but never executes it, so
+         * its own self-delete-on-success code never runs on its own.
+         * False when the release didn't ship install.php, or the delete
+         * itself failed (e.g. a permissions issue) — either way, the
+         * Dashboard/Updates "install.php still present" notice covers it.
+         */
+        public readonly bool $installScriptRemoved = false,
     ) {
     }
 }

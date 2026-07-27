@@ -375,7 +375,7 @@ class UpdateManager
      * the returned array as an error, the same pattern as
      * checkForUpdates()/downloadLatestRelease().
      *
-     * @return array{ok: bool, error?: string, version?: string, fileCount?: int, removedFileCount?: int}
+     * @return array{ok: bool, error?: string, version?: string, fileCount?: int, removedFileCount?: int, installScriptRemoved?: bool}
      */
     public function installLatestRelease(): array
     {
@@ -426,10 +426,11 @@ class UpdateManager
                 $state['downloadedAt'],
             );
             $state['lastInstall'] = [
-                'version'          => $result->version,
-                'fileCount'        => $result->fileCount,
-                'installedAt'      => $result->installedAt,
-                'removedFileCount' => $result->removedFileCount,
+                'version'              => $result->version,
+                'fileCount'            => $result->fileCount,
+                'installedAt'          => $result->installedAt,
+                'removedFileCount'     => $result->removedFileCount,
+                'installScriptRemoved' => $result->installScriptRemoved,
             ];
 
             $this->repository->saveState($state);
@@ -439,13 +440,15 @@ class UpdateManager
                 'ok',
                 'Installed version ' . $result->version . ' (' . $result->fileCount . ' files).'
                 . ($result->removedFileCount > 0 ? ' Removed ' . $result->removedFileCount . ' obsolete file(s).' : '')
+                . ($result->installScriptRemoved ? ' Deleted install.php.' : '')
             );
 
             return [
-                'ok'               => true,
-                'version'          => $result->version,
-                'fileCount'        => $result->fileCount,
-                'removedFileCount' => $result->removedFileCount,
+                'ok'                    => true,
+                'version'               => $result->version,
+                'fileCount'             => $result->fileCount,
+                'removedFileCount'      => $result->removedFileCount,
+                'installScriptRemoved'  => $result->installScriptRemoved,
             ];
         } catch (\Throwable $e) {
             // Installation Engine "Automatic Rollback": detect the failure

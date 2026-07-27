@@ -171,5 +171,28 @@ $fuAssetPrefix = (dirname((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === __DI
             </div>
             <?php
         }
+
+        // Media gallery ("Redux 2.3.0" — TODO.md item "4. UI - Create an
+        // Image/File Manager") reads media_table from blog-config.php, same
+        // as dbhost/collective_table/etc. — it's a config-file setting, not
+        // an options-table one, so there's no safe way for an update to add
+        // it automatically the way UpgradeRunner migrates database-backed
+        // settings. Without this notice, an installation that upgrades
+        // (rather than fresh-installs) gets no indication the feature exists
+        // at all until an admin happens to click into Admin -> Media
+        // themselves and sees that page's own inline notice — reported live
+        // after exactly that happened following a 2.2.0 -> 2.3.0 upgrade.
+        if ((string) $this->getOpt('media_table') === '') {
+            ?>
+            <div class="error" style="display:flow-root;">
+                <p style="margin-bottom:0;">
+                    <strong>Media gallery not configured.</strong>
+                    Add <code>$fanupdate['media_table'] = 'blog_media';</code> to your
+                    <code>blog-config.php</code>, then visit
+                    <a href="update.php#database-updates">Admin &rarr; Updates</a> to create the table.
+                </p>
+            </div>
+            <?php
+        }
     }
     ?>

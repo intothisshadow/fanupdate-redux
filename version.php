@@ -46,7 +46,7 @@ const FU_URL_ROBOTESS = 'https://scripts.robotess.net';
  * URL of this Redux release.
  * Update this to your repo, release page, or distribution site.
  */
-const FU_URL_REDUX = 'https://www.unloved-heart.net';
+const FU_URL_REDUX = 'https://coding.unloved-heart.net/scripts/fanupdate-redux';
 
 // ── licence ──────────────────────────────────────────────────────────────────
 

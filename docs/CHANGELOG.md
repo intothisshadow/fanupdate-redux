@@ -7,7 +7,42 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- **`FU_URL_REDUX` (`version.php`) now points to
+  `https://coding.unloved-heart.net/scripts/fanupdate-redux`**, replacing the
+  previous `https://www.unloved-heart.net` placeholder.
+
+### Added
+
+- **README's Templates section now documents wrapping `entry_template` in a
+  container `<div>` so each post can get its own card in host-page CSS.**
+  The default template (`{{title}}`/catfile line/`{{body}}`) has no
+  per-post wrapper element, so a host site previously had no documented way
+  to give individual entries their own background/border/shadow without
+  guessing at sibling-combinator CSS hacks. A one-field `entry_template`
+  change from **Admin → Options → Templates** (no code) now gets the same
+  result — surfaced live while restyling `coding.unloved-heart.net`'s own
+  `/updates` embed.
+
 ### Fixed
+
+- **`show-blog.php`'s category-filtered listing (`?c=`) threw "Duplicate
+  column name 'entry_id'" instead of rendering (TODO.md item "FP-20. Fix
+  show-blog.php Pagination Query Bug (Duplicate `entry_id` Column)").**
+  Its entries query used
+  bare `SELECT *` while joining `blog_catjoin` for the `?c=` filter — both
+  `blog` and `blog_catjoin` have their own `entry_id` column, so the column
+  list was ambiguous. That's normally harmless (MySQL just returns both),
+  but `SqlConnection::ExecutePaginate()` wraps the query in
+  `SELECT COUNT(*) FROM (...) AS _fu_count_sub` to get the pagination total,
+  and a derived table can't have two columns with the same name — so the
+  count query itself failed outright. `show-cat.php`'s equivalent query
+  already used `SELECT b.*` and never hit this; `show-blog.php` just missed
+  the same table qualifier. Reported live after switching
+  `coding.unloved-heart.net`'s `/updates` page to `show-blog.php` (to show
+  latest posts across all categories, not one at a time) and clicking a
+  category link. Fixed: `SELECT *` → `SELECT b.*`.
 
 - **Upgrading to Redux 2.3.0 gave no indication the new Media gallery
   existed at all.** `media_table` (Admin → Media's backing table) is read

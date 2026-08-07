@@ -95,9 +95,9 @@ Copy `blog-config.sample.php` to `blog-config.php` and open it in a text editor.
 ```php
 // Database
 $fanupdate['dbhost'] = 'localhost';
+$fanupdate['dbname'] = 'db_name';
 $fanupdate['dbuser'] = 'db_user';
 $fanupdate['dbpass'] = 'db_pass';
-$fanupdate['dbname'] = 'db_name';
 ```
 
 You **must** set the database variables before running the installer. The
@@ -293,6 +293,26 @@ All templates are editable from **Admin → Options → Templates**.
 | `{{category}}` | Category names as links |
 | `{{comment_link}}` | Link to the comments section |
 | `{{body}}` | Full entry text |
+
+The default entry template has no wrapper element around a post — `{{title}}`,
+the catfile line, and `{{body}}` are printed one after another directly into
+`div#fanupdate`. That's enough to style titles, dates, and body text on their
+own, but if you want each entry to sit in its own card (background, border,
+shadow) in your site's CSS, wrap the template in a container `<div>`:
+
+```html
+<div class="fu-entry">
+<h2><a href="{{url}}" title="permanent link to this post">{{title}}</a></h2>
+<p class="catfile">Posted {{date}}. Filed under {{category}}. {{comment_link}}</p>
+{{body}}
+</div>
+```
+
+Paste that into **Admin → Options → Templates**'s `entry_template` field in
+place of the default, then add a `.fu-entry { ... }` rule to your site's CSS
+(alongside the `div#fanupdate`/`p.catfile`/etc. rules from **Admin →
+Category → Get Code**'s CSS starter). No PHP changes needed either way —
+`entry_template` accepts raw HTML.
 
 ### Comment template variables
 
@@ -548,7 +568,7 @@ This works as long as both databases are on the **same MySQL server**, and
 the `dbuser` FanUpdate connects with has been **GRANTed privileges on that
 other database too** (ask your host, or set it up yourself if you manage the
 server). FanUpdate still makes only one database connection, using the
-`dbhost`/`dbuser`/`dbpass`/`dbname` credentials above — those always describe
+`dbhost`/`dbname`/`dbuser`/`dbpass` credentials above — those always describe
 FanUpdate's own database; only `collective_table` can point at a different
 one. A genuinely separate MySQL *server* (a different host entirely) is not
 supported — several places join the collective table directly against

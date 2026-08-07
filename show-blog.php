@@ -94,7 +94,7 @@ ORDER BY c.' . $fu->getOpt('col_subj') . ' ASC';
         $single_page = false;
         $params = [];
 
-        $query = 'SELECT * FROM ' . $fu->getOpt('blog_table') . ' b';
+        $query = 'SELECT b.* FROM ' . $fu->getOpt('blog_table') . ' b';
 
         if (isset($_GET['c'])) {
             $c = (int)$_GET['c'];

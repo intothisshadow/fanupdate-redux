@@ -27,9 +27,9 @@ declare(strict_types=1);
 // ------------->DATABASE VARIABLES
 
 $fanupdate['dbhost']		= 'localhost';
+$fanupdate['dbname']		= 'database_name';
 $fanupdate['dbuser']		= 'admin';
 $fanupdate['dbpass']		= 'pass';
-$fanupdate['dbname']		= 'database_name';
 
 // ------------->TABLE VARIABLES
 
@@ -77,8 +77,8 @@ $fanupdate['dbname']		= 'database_name';
 // dbuser above must be GRANTed privileges on that other database too (ask
 // your host, or set it up yourself if you manage the server) — FanUpdate
 // connects once, using the credentials above, and simply qualifies this one
-// table reference; it does not open a second connection. dbhost/dbuser/
-// dbpass/dbname above always describe FanUpdate's OWN database — only this
+// table reference; it does not open a second connection. dbhost/dbname/
+// dbuser/dbpass above always describe FanUpdate's OWN database — only this
 // one setting (the externally-owned collective table) can point elsewhere.
 // This value is also freely editable later from Admin -> Options ->
 // Collective Source, same as collective_script/col_id/col_subj.

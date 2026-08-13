@@ -38,7 +38,7 @@ $fu->getHeader('Credits');
         (<?php if (FU_RELEASE_NAME !== '') { ?><?php echo htmlspecialchars(FU_RELEASE_NAME, ENT_QUOTES, 'UTF-8'); ?>, <?php } ?>released <?php echo htmlspecialchars(FU_RELEASE_DATE, ENT_QUOTES, 'UTF-8'); ?>)
     </p>
     <p class="credits-meta">
-        <a href="<?php echo htmlspecialchars(FU_URL_ORIGINAL, ENT_QUOTES, 'UTF-8'); ?>" target="_blank" rel="noopener">Original project</a>
+        <a href="<?php echo htmlspecialchars(FU_URL_REDUX, ENT_QUOTES, 'UTF-8'); ?>" target="_blank" rel="noopener">FanUpdate Redux</a>
         &middot;
         <a href="<?php echo htmlspecialchars(FU_URL_ROBOTESS, ENT_QUOTES, 'UTF-8'); ?>" target="_blank" rel="noopener">Robotess fork</a>
         &middot;

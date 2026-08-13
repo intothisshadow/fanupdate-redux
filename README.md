@@ -271,10 +271,28 @@ Use **Admin → Account** in the admin panel. The page has three sections:
   required since you are already authenticated.
 - **Change Password** — enter your current password, then the new password
   (minimum 8 characters) and a confirmation. The new bcrypt hash is written to
-  `blog-config.php` automatically and your session stays active.
+  the database (the `admin_password` option row) automatically and your
+  session stays active.
 
-If `blog-config.php` is not writable, the username and password forms display
-the ready-to-paste value so you can update the file manually in a text editor.
+### Lost your password?
+
+`admin/account.php` requires your *current* password, so it can't help if
+you've forgotten it. Instead, upload `reset-password.php` to the same
+directory as `blog-config.php` (it already ships there — see
+[File structure](#file-structure)) and visit it in a browser:
+
+```
+https://yoursite.com/fanupdate/reset-password.php
+```
+
+It works the same way `install.php` does: no login required, protected only
+by the fact that reaching it at all already means you have file access next
+to `blog-config.php`. Enter a new password and it's written straight to the
+`admin_password` option row, same as **Admin → Account** does. The IP rate
+limiter from the login form applies here too (its own lockout store, separate
+from `data/login_attempts/`), and **the file deletes itself automatically on
+success** — same as `install.php`. If auto-delete fails, delete it manually
+via FTP or your hosting file manager right away.
 
 ---
 
@@ -822,6 +840,7 @@ fanupdate/
 ├── version.php              # Single source of truth for version metadata
 ├── functions.php            # Shared helper functions
 ├── install.php              # Installer (auto-deletes on success)
+├── reset-password.php       # Emergency admin password reset (auto-deletes on success)
 ├── process.php              # Comment submission handler
 ├── show-blog.php            # Public blog display (all categories)
 ├── show-cat.php             # Public blog display (single category)
@@ -924,6 +943,6 @@ automatically.
 GNU General Public License v3 or later.  
 See <https://www.gnu.org/licenses/gpl-3.0.html> for details.
 
-Original script by Jenny Ferenc — <http://prism-perfect.net/fanupdate>  
+Original script by Jenny Ferenc  
 PHP 7 port by Ekaterina — <https://scripts.robotess.net>  
 PHP 8.2 Redux by Ariane

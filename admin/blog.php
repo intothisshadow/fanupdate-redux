@@ -418,8 +418,8 @@ if ($showform) {
                 <input type="hidden" name="id[]" value="<?php echo (int) $bulkId; ?>" />
             <?php } ?>
             <div class="primary">
-                <input type="submit" name="action" value="bulk-delete-confirmed" class="delete" data-skip-confirm="1"
-                    title="Permanently delete these entries, accesskey s" accesskey="s" />
+                <button type="submit" name="action" value="bulk-delete-confirmed" class="delete" data-skip-confirm="1"
+                    title="Permanently delete these entries, accesskey s" accesskey="s">Permanently Delete</button>
                 <a href="blog.php" class="button">Cancel</a>
             </div>
         </form>
@@ -478,20 +478,20 @@ if ($showform) {
         if ($fu->db->total_results > 0) { ?>
 
             <div style="display:flex; justify-content:flex-end; margin-bottom:0.75rem;">
-                <input type="submit" name="action" value="bulk-delete" class="delete" data-skip-confirm="1"
-                    title="Delete all checked entries" />
+                <button type="submit" name="action" value="bulk-delete" class="delete" data-skip-confirm="1"
+                    title="Delete all checked entries">Delete Selected</button>
             </div>
 
             <table class="sortable" aria-label="Blog entries">
                 <thead>
                     <tr>
-                        <th scope="col" class="nosort"><input type="checkbox" id="select-all" title="Select all" /></th>
+                        <th scope="col" data-sort-method="none"><input type="checkbox" id="select-all" title="Select all" /></th>
                         <th scope="col">Title</th>
                         <th scope="col">Category</th>
                         <th scope="col">Date</th>
                         <th scope="col">Comments</th>
                         <th scope="col">Public</th>
-                        <th scope="col" class="nosort" colspan="2">Actions</th>
+                        <th scope="col" data-sort-method="none" colspan="2">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -511,7 +511,12 @@ if ($showform) {
                         echo '<td><a href="blog.php?id=' . $post->getID() . '">'
                             . htmlspecialchars($post->getTitle(), ENT_QUOTES, 'UTF-8') . '</a></td>';
                         echo '<td>' . htmlspecialchars($post->getCategoryString(), ENT_QUOTES, 'UTF-8') . '</td>';
-                        echo '<td class="hint small">' . htmlspecialchars($post->getDateFormatted(), ENT_QUOTES, 'UTF-8') . '</td>';
+                        // data-sort: the raw stored UTC datetime (already lexicographically
+                        // sortable) rather than the display text — Tablesort sorts by this
+                        // attribute when present, so column sorting is correct regardless of
+                        // which date_format preset is configured (see docs/CHANGELOG.md).
+                        echo '<td class="hint small" data-sort="' . htmlspecialchars($post->getDate(), ENT_QUOTES, 'UTF-8') . '">'
+                            . htmlspecialchars($post->getDateFormatted(), ENT_QUOTES, 'UTF-8') . '</td>';
                         echo '<td><a href="comment.php?entry=' . $post->getID() . '" title="See comments">'
                             . (int) $row['num_comments'] . '</a></td>';
                         echo '<td>' . $public_badge . '</td>';

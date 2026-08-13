@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 /*****************************************************************************
  * FanUpdate
- * Copyright (c) Jenny Ferenc <jenny@prism-perfect.net>
+ * Copyright (c) Jenny Ferenc
  * Copyright (c) 2020 by Ekaterina (contributor) http://scripts.robotess.net
  *
  * Generates the RSS 2.0 feed of comments, either site-wide or for a single

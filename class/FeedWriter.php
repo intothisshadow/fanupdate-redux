@@ -6,7 +6,7 @@ declare(strict_types=1);
  * Universal Feed Writer
  *
  * Copyright (c) Anis uddin Ahmad <anisniit@gmail.com>
- * Copyright (c) 2008 by Jenny Ferenc (contributor) <jenny@prism-perfect.net>
+ * Copyright (c) 2008 by Jenny Ferenc (contributor)
  * Copyright (c) 2020 by Ekaterina (contributor) http://scripts.robotess.net
  *
  * Generates RSS 2.0 or Atom feeds: channel-level metadata, namespace

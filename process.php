@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 /*****************************************************************************
  * FanUpdate
- * Copyright (c) Jenny Ferenc <jenny@prism-perfect.net>
+ * Copyright (c) Jenny Ferenc
  * Copyright (c) 2020 by Ekaterina (contributor) http://scripts.robotess.net
  *
  * Handles comment submission: spam gates (honeypot, time gate, per-IP rate
@@ -171,7 +171,9 @@ if (isset($_POST['submit_comment'])) {
 
                     session_start();
 
-                    if (!isset($_SESSION['security_code']) || $_POST['captcha'] != $_SESSION['security_code']) {
+                    $submitted_code = strtolower(trim((string) ($_POST['captcha'] ?? '')));
+
+                    if (!isset($_SESSION['security_code']) || !hash_equals((string) $_SESSION['security_code'], $submitted_code)) {
                         $pass_captcha = false;
                         $fu->addErr('The text you entered does not match the captcha image. Please try again.');
                     } else {

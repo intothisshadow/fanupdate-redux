@@ -3,7 +3,7 @@
  *
  * Core utilities shared across all admin pages.
  *
- * Copyright (c) Jenny Ferenc <jenny@prism-perfect.net>
+ * Copyright (c) Jenny Ferenc
  * Copyright (c) 2020 Ekaterina (contributor) http://scripts.robotess.net
  * Copyright (c) 2026 modernised for current browsers
  *
@@ -17,10 +17,14 @@
  *  - Replaced getEventTarget() quirksmode shim with e.target (standard since IE9).
  *  - All var → const / let.
  *  - Eliminated global variable leaks (el, top, input, url, datDate1, etc.).
- *  - css.getElementsByClass() uses querySelectorAll() internally.
+ *  - css.getElementsByClass() uses querySelectorAll() internally (this
+ *    utility object still traces back to Neil Crosby's standardista-
+ *    table-sorting.js, MIT 2006 — see its own docblock below — even though
+ *    the table-sorting code itself has since been replaced; see next line).
  *  - css.addClassToElement() / removeClassFromElement() use classList.
- *  - Standardista table-sorting code preserved verbatim (Neil Crosby, MIT 2006)
- *    except for its own addEvent calls replaced with addEventListener.
+ *  - Standardista's table-sorting code (the actual sort/zebra logic, not
+ *    the css utility object above) replaced with Tablesort — see
+ *    docs/CHANGELOG.md.
  *
  * WYSIWYG toolbar (wysiwygButton()/makeWysiwyg()/formatText()/insertLink())
  * removed: it was shared infrastructure for admin/blog.php's post editor
@@ -262,6 +266,40 @@ window.addEventListener('load', () => {
     });
 });
 
+// ── Date-format preset dropdown ──────────────────────────────────────────────
+
+/**
+ * FP-21 — the 'date_format' option's <select> (admin/options.php's Main list and
+ * install.php's fresh-install form — see FU_DATE_FORMAT_OPTION_KEY in
+ * functions.php) is a preset picker only; it carries no `name` and never
+ * submits. The actual submitted value always comes from the paired text
+ * input named in data-target, which stays hidden — same self-contained
+ * single-control look as the timezone dropdown above, no redundant "here's
+ * what you picked" field shown underneath — unless "Custom..." (value
+ * '__custom__' — must match FU_DATE_FORMAT_CUSTOM_VALUE in functions.php)
+ * is selected, which reveals it for free-text entry. Choosing a preset
+ * copies its value into the input and makes it read-only again.
+ */
+window.addEventListener('load', () => {
+    document.querySelectorAll('.fu-date-format-select').forEach(function (select) {
+        const target = document.getElementById(select.dataset.target);
+        if (!target) {
+            return;
+        }
+        select.addEventListener('change', function () {
+            if (this.value === '__custom__') {
+                target.readOnly = false;
+                target.style.display = '';
+                target.focus();
+            } else {
+                target.value = this.value;
+                target.readOnly = true;
+                target.style.display = 'none';
+            }
+        });
+    });
+});
+
 // ── Date helpers ──────────────────────────────────────────────────────────────
 
 /* strftime for Date, thanks ecmanaut */
@@ -489,118 +527,36 @@ function fuLightboxInit() {
     });
 }
 
-// ── Standardista Table Sorting ────────────────────────────────────────────────
+// ── Sortable admin tables (Tablesort) ────────────────────────────────────────
 /**
- * Written by Neil Crosby.
- * http://www.workingwith.me.uk/articles/scripting/standardista_table_sorting
+ * Replaces the previous hand-maintained Standardista Table Sorting code
+ * (2006, Neil Crosby) with Tablesort (vendored:
+ * assets/vendor/tablesort/tablesort.js, loaded before this file — see
+ * admin/header.php) — see docs/CHANGELOG.md for why (a real date-sorting
+ * bug plus missing aria-sort/keyboard accessibility).
  *
- * Based on Stuart Langridge's "sorttable" code.
- * Copyright (c) 2006 Neil Crosby — MIT licence.
- * (addEvent calls replaced with addEventListener; otherwise preserved verbatim.)
+ * Tablesort itself handles click/Enter-key sort triggers, aria-sort,
+ * role="columnheader", data-sort-method="none" columns, and the data-sort
+ * attribute override each date cell now carries (see admin/blog.php) so
+ * sorting is correct regardless of the configured date_format. It has no
+ * concept of zebra-striping though, so that's the only thing left to wire
+ * up here: row DOM order changes via appendChild during a sort, but each
+ * row's own .odd/.even class doesn't move with it in a way that keeps the
+ * alternation correct, so it's reapplied after every 'afterSort' event.
  */
+window.addEventListener('load', () => {
+    if (typeof Tablesort === 'undefined') { return; }
 
-const standardista = (function () {
+    document.querySelectorAll('table.sortable').forEach(function (table) {
+        new Tablesort(table);
 
-    const SORT_COLUMN_INDEX = 'sortColumnIndex';
-
-    function init() {
-        if (!document.getElementsByTagName) { return; }
-        const tables = document.getElementsByTagName('table');
-        for (let i = 0; i < tables.length; i++) {
-            initTable(tables[i]);
-        }
-    }
-
-    function initTable(table) {
-        if (table.className.search(/\bnosort\b/) !== -1) { return; }
-        const headings = getHeadings(table);
-        if (!headings) { return; }
-        for (let i = 0; i < headings.length; i++) {
-            initHeading(table, headings[i], i);
-        }
-        zebra(table);
-    }
-
-    function getHeadings(table) {
-        if (!table.tHead || !table.tHead.rows || table.tHead.rows.length === 0) { return null; }
-        return table.tHead.rows[0].cells;
-    }
-
-    function initHeading(table, th, column) {
-        if (th.className.search(/\bnosort\b/) !== -1) { return; }
-        const a = document.createElement('a');
-        a.href = '#';
-        a.appendChild(document.createTextNode(th.innerHTML));
-        th.innerHTML = '';
-        th.appendChild(a);
-        a.addEventListener('click', e => {
-            e.preventDefault();
-            sortTable(table, column);
+        table.addEventListener('afterSort', function () {
+            const tbody = table.tBodies[0];
+            if (!tbody) { return; }
+            Array.from(tbody.rows).forEach((row, i) => {
+                row.classList.remove('odd', 'even');
+                row.classList.add(i % 2 === 0 ? 'even' : 'odd');
+            });
         });
-    }
-
-    function sortTable(table, column) {
-        const tbody = table.tBodies[0];
-        const rows  = Array.from(tbody.rows);
-
-        const sortFn = determineSortFunction(rows, column);
-        const dir    = (table[SORT_COLUMN_INDEX] === column) ? -1 : 1;
-
-        rows.sort((a, b) => dir * sortFn(
-            a.cells[column] ? a.cells[column].textContent.trim() : '',
-            b.cells[column] ? b.cells[column].textContent.trim() : ''
-        ));
-
-        rows.forEach(row => tbody.appendChild(row));
-
-        table[SORT_COLUMN_INDEX] = (dir === 1) ? column : -1;
-        zebra(table);
-    }
-
-    function determineSortFunction(rows, column) {
-        for (let i = 0; i < rows.length; i++) {
-            const cell = rows[i].cells[column];
-            if (!cell) { continue; }
-            const text = cell.textContent.trim();
-            if (text === '') { continue; }
-            if (text.match(/^\d\d[\/-]\d\d[\/-]\d\d\d\d$/)) { return sortDate; }
-            if (text.match(/^[£$€¤]/))                       { return sortCurrency; }
-            if (text.match(/^[\d.]+$/))                       { return sortNumeric; }
-            return sortCaseInsensitive;
-        }
-        return sortCaseInsensitive;
-    }
-
-    function sortCaseInsensitive(a, b) {
-        return a.toLowerCase().localeCompare(b.toLowerCase());
-    }
-
-    function sortDate(a, b) {
-        const parseDate = s => {
-            const p = s.split(/[\/-]/);
-            return new Date(p[2], p[1] - 1, p[0]);
-        };
-        return parseDate(a) - parseDate(b);
-    }
-
-    function sortNumeric(a, b) {
-        return parseFloat(a) - parseFloat(b);
-    }
-
-    function sortCurrency(a, b) {
-        return sortNumeric(a.replace(/[^0-9.]/g, ''), b.replace(/[^0-9.]/g, ''));
-    }
-
-    function zebra(table) {
-        const tbody = table.tBodies[0];
-        if (!tbody) { return; }
-        Array.from(tbody.rows).forEach((row, i) => {
-            row.classList.remove('odd', 'even');
-            row.classList.add(i % 2 === 0 ? 'even' : 'odd');
-        });
-    }
-
-    return { init };
-}());
-
-window.addEventListener('load', standardista.init);
+    });
+});

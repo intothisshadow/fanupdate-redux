@@ -4,7 +4,7 @@ declare(strict_types=1);
 /*****************************************************************************
  * FanUpdate — install.php
  *
- * Copyright (c) Jenny Ferenc <jenny@prism-perfect.net>
+ * Copyright (c) Jenny Ferenc
  * Copyright (c) 2020 by Ekaterina (contributor) http://scripts.robotess.net
  *
  * Handles fresh installation and version upgrades: creates database tables
@@ -177,6 +177,21 @@ $setting[6]['optvalue'] = 'M j, Y';
 $setting[6]['optdesc']  = 'PHP date format string. See options here: http://php.net/date';
 $setting[6]['version']  = 2.0;
 
+// FP-19: replaces the legacy fixed-hour 'timezone_offset' with a real IANA
+// timezone identifier, so displayed dates account for daylight saving time
+// automatically. Rendered below as a searchable <select> grouped by region
+// (see the 'timezone' special-case in the $setting render loop), not a
+// plain text field. An existing installation upgrading past this version has
+// its old timezone_offset value migrated automatically — see UpgradeRunner.
+// Placed immediately after date_format (rather than at its original
+// higher $setting[] index — array key order doesn't affect render order,
+// only this physical/insertion position does) since both are date/time
+// settings that read more naturally next to each other.
+$setting[26]['optkey']   = FU_TIMEZONE_OPTION_KEY;
+$setting[26]['optvalue'] = FU_DEFAULT_TIMEZONE;
+$setting[26]['optdesc']  = 'Your local IANA timezone (e.g. Europe/Helsinki). Used to display dates in your local time. Default: UTC';
+$setting[26]['version']  = '2.2b3';
+
 $setting[7]['optkey']   = 'email_new_comments';
 $setting[7]['optvalue'] = 'y';
 $setting[7]['optdesc']  = 'Email you about new comments?';
@@ -311,17 +326,6 @@ $setting[25]['optvalue'] = $fu->getOpt('version');
 $setting[25]['optdesc']  = 'Version of current database schema.';
 $setting[25]['version']  = '2.2b';
 
-// FP-19: replaces the legacy fixed-hour 'timezone_offset' with a real IANA
-// timezone identifier, so displayed dates account for daylight saving time
-// automatically. Rendered below as a searchable <select> grouped by region
-// (see the 'timezone' special-case in the $setting render loop), not a
-// plain text field. An existing installation upgrading past this version has
-// its old timezone_offset value migrated automatically — see UpgradeRunner.
-$setting[26]['optkey']   = FU_TIMEZONE_OPTION_KEY;
-$setting[26]['optvalue'] = FU_DEFAULT_TIMEZONE;
-$setting[26]['optdesc']  = 'Your local IANA timezone (e.g. Europe/Helsinki). Used to display dates in your local time. Default: UTC';
-$setting[26]['version']  = '2.2b3';
-
 $setting[28]['optkey']   = 'ajax_comments';
 $setting[28]['optvalue'] = 'y';
 $setting[28]['optdesc']  = 'Use ajax commenting? Turn off if you have problems.';
@@ -370,6 +374,18 @@ $setting[32]['optkey']   = 'collective_table';
 $setting[32]['optvalue'] = (string) ($fanupdate['collective_table'] ?? 'blog_category');
 $setting[32]['optdesc']  = 'The name of your collective/categories table. Must match the collective_script currently selected — e.g. Fanatically\'s default is "fanatic_listings" (the fanlistings this collective actually owns — NOT "fanatic_categories", which is Fanatically\'s own site-wide list of every category across the whole directory), Enthusiast\'s is "owned". For a standalone installation (collective_script = "none") this is FanUpdate\'s own categories table. Editable in Admin -> Options -> Collective Source.';
 $setting[32]['version']  = '2.2.1b2';
+
+// FP-23: official FanUpdate Redux news feed shown on the Dashboard
+// (NewsFeedService/admin/index.php). A plain URL, not hardcoded — editable
+// here and from Admin -> Options -> Main like every other setting. Blank
+// this out to turn the Dashboard widget off entirely; no separate y/n
+// toggle. An existing installation that never re-runs install.php gets the
+// same default seeded automatically via UpgradeRunner::NEW_DEFAULT_OPTIONS
+// instead.
+$setting[33]['optkey']   = 'news_feed_url';
+$setting[33]['optvalue'] = 'https://coding.unloved-heart.net/update-blog/rss.php?c=4';
+$setting[33]['optdesc']  = 'RSS feed URL shown on the Dashboard as "FanUpdate Redux News". Leave blank to hide the Dashboard widget entirely.';
+$setting[33]['version']  = '2.2.1b2';
 
 // ── check tables don't already exist (fresh install only) ───────────────────
 
@@ -803,7 +819,7 @@ if (!$fu->noErr()) {
         if ($fu->db->AffectedRows() > 0) {
             $fu->addSuccess('Removed obsolete option <strong>_server_tz_offset</strong>.');
         }
-        // Remove defunct prism-perfect.net update-polling keys (removed in Redux 1.8.0).
+        // Remove defunct update-polling keys from the original site (removed in Redux 1.8.0).
         foreach (['_last_update_check', '_last_update_version'] as $_dead_key) {
             $fu->db->Execute(
                 'DELETE FROM ' . $fu->getOpt('options_table') . " WHERE optkey='$_dead_key'",
@@ -1083,7 +1099,7 @@ if (!$fu->noErr()) {
                     $class = (isset($class) && $class === 'even') ? 'odd' : 'even';
                 ?>
                     <div class="option <?php echo $class; ?>">
-                        <p><label for="<?php echo $row['optkey']; ?>">timezone:
+                        <p><label for="<?php echo $row['optkey']; ?>"><?php echo htmlspecialchars(fu_option_label($row['optkey']), ENT_QUOTES, 'UTF-8'); ?>:
                                 <span class="help"><?php echo htmlspecialchars($row['optdesc']); ?></span></label>
                             <select id="timezone" name="value[]">
                                 <?php foreach (fu_timezone_identifiers_grouped() as $region => $zones) { ?>
@@ -1101,6 +1117,38 @@ if (!$fu->noErr()) {
                         </p>
                     </div><!-- END .option -->
         <?php
+
+                } elseif ($row['optkey'] === FU_DATE_FORMAT_OPTION_KEY) {
+
+                    // FP-21: preset dropdown + "Custom" fallback — see functions.php.
+                    // Same "select is purely visual, one real field carries
+                    // value[]" trick as the y/n toggle below — this form's
+                    // key[]/value[] are positional arrays paired up by
+                    // position, so only one field per row may have a name.
+                    $class                    = (isset($class) && $class === 'even') ? 'odd' : 'even';
+                    $isKnownDateFormatPreset  = fu_is_known_date_format_preset((string) $row['optvalue']);
+                ?>
+                    <div class="option <?php echo $class; ?>">
+                        <p><label for="<?php echo $row['optkey']; ?>_select"><?php echo htmlspecialchars(fu_option_label($row['optkey']), ENT_QUOTES, 'UTF-8'); ?>:
+                                <span class="help"><?php echo htmlspecialchars($row['optdesc']); ?></span></label>
+                            <select id="<?php echo $row['optkey']; ?>_select" class="fu-date-format-select"
+                                    data-target="<?php echo $row['optkey']; ?>_value">
+                                <?php foreach (fu_date_format_presets() as $preset) { ?>
+                                <option value="<?php echo htmlspecialchars($preset, ENT_QUOTES, 'UTF-8'); ?>"
+                                        <?php echo ($preset === (string) $row['optvalue']) ? 'selected' : ''; ?>>
+                                    <?php echo htmlspecialchars(fu_date_format_option_label($preset), ENT_QUOTES, 'UTF-8'); ?>
+                                </option>
+                                <?php } ?>
+                                <option value="<?php echo FU_DATE_FORMAT_CUSTOM_VALUE; ?>" <?php echo !$isKnownDateFormatPreset ? 'selected' : ''; ?>>Custom&hellip;</option>
+                            </select>
+                            <input type="text" id="<?php echo $row['optkey']; ?>_value" name="value[]"
+                                   value="<?php echo htmlspecialchars((string) $row['optvalue'], ENT_QUOTES, 'UTF-8'); ?>"
+                                   <?php echo $isKnownDateFormatPreset ? 'readonly' : ''; ?>
+                                   style="margin-top:0.5rem;<?php echo $isKnownDateFormatPreset ? ' display:none;' : ''; ?>" />
+                            <input type="hidden" name="key[]" value="<?php echo $id; ?>" />
+                        </p>
+                    </div><!-- END .option -->
+                <?php
 
                 } elseif (fu_is_yn_option($row['optkey'], $row['optdesc'])) {
 
@@ -1122,7 +1170,7 @@ if (!$fu->noErr()) {
                     <div class="option <?php echo $class; ?>">
                         <div class="option-yn-row">
                             <label class="option-yn-label" for="<?php echo $row['optkey']; ?>">
-                                <?php echo htmlspecialchars($row['optkey']); ?>
+                                <?php echo htmlspecialchars(fu_option_label($row['optkey']), ENT_QUOTES, 'UTF-8'); ?>
                             </label>
                             <label class="fu-toggle" title="<?php echo htmlspecialchars($row['optdesc']); ?>">
                                 <input type="hidden" id="yn_hidden_<?php echo $id; ?>" name="value[]"
@@ -1154,7 +1202,7 @@ if (!$fu->noErr()) {
 
                 ?>
                     <div class="option <?php echo $class; ?>">
-                        <p><label for="<?php echo $row['optkey']; ?>"><?php echo htmlspecialchars($row['optkey']); ?>:
+                        <p><label for="<?php echo $row['optkey']; ?>"><?php echo htmlspecialchars(fu_option_label($row['optkey']), ENT_QUOTES, 'UTF-8'); ?>:
                                 <span class="help"><?php echo htmlspecialchars($row['optdesc']); ?></span></label>
                             <?php if (strpos($row['optkey'], 'template') !== false) { ?>
                                 <textarea id="<?php echo $row['optkey']; ?>" name="value[]" cols="80"
@@ -1178,21 +1226,21 @@ if (!$fu->noErr()) {
 
         <?php if ($version_installed == 0) { ?>
             <div class="option odd">
-                <p><label for="admin_username">admin_username:
+                <p><label for="admin_username">Admin username:
                         <span class="help">Your admin login username.</span></label>
                     <input type="text" id="admin_username" name="admin_username" size="50"
                         maxlength="50" value="<?php echo htmlspecialchars($current_admin_username); ?>" />
                 </p>
             </div>
             <div class="option even">
-                <p><label for="admin_password">admin_password:
+                <p><label for="admin_password">Admin password:
                         <span class="help">Your admin login password. Choose something secure.</span></label>
                     <input type="password" id="admin_password" name="admin_password" size="50"
                         maxlength="100" value="" />
                 </p>
             </div>
             <div class="option odd">
-                <p><label for="admin_password_confirm">admin_password (confirm):
+                <p><label for="admin_password_confirm">Admin password (confirm):
                         <span class="help">Re-enter your password to confirm.</span></label>
                     <input type="password" id="admin_password_confirm" name="admin_password_confirm" size="50"
                         maxlength="100" value="" />

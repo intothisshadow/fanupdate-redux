@@ -1,7 +1,7 @@
 <?php
 /*****************************************************************************
  * FanUpdate
- * Copyright (c) Jenny Ferenc <jenny@prism-perfect.net>
+ * Copyright (c) Jenny Ferenc
  * Copyright (c) 2020 by Ekaterina (contributor) http://scripts.robotess.net
  *
  * Comment CRUD, moderation (approve/pending/spam), and listing/search.

@@ -129,7 +129,14 @@ class UpgradeRunner
      * @var array<string, array{value: string, description: string}>
      */
     private const NEW_DEFAULT_OPTIONS = [
-        // 'example_new_option' => ['value' => 'y', 'description' => 'What this option controls.'],
+        // FP-23: official FanUpdate Redux news feed shown on the Dashboard
+        // (NewsFeedService). Fresh installs get this from install.php's own
+        // $setting[] array instead — this entry only matters for installs
+        // upgrading from before FP-23 that never re-run install.php.
+        'news_feed_url' => [
+            'value'       => 'https://coding.unloved-heart.net/update-blog/rss.php?c=4',
+            'description' => 'RSS feed URL shown on the Dashboard as "FanUpdate Redux News". Leave blank to hide the Dashboard widget entirely.',
+        ],
     ];
 
     public function __construct(

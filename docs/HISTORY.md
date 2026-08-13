@@ -6,6 +6,56 @@ each change, and `PHP Test Suite/TEST_LOG.md` for verified test runs.
 
 ---
 
+## [Redux 2.4.0] — August 13, 2026 — News Feed Widget, Emergency Password Reset & Table Sorting Fix
+
+### FP-20. Fix show-blog.php Pagination Query Bug (Duplicate `entry_id` Column)
+
+- [x] `show-blog.php`'s category-filtered listing (`?c=`) built its entries
+      query as bare `SELECT *` while joined to `blog_catjoin` — both tables
+      have their own `entry_id` column, which broke
+      `SqlConnection::ExecutePaginate()`'s derived-table pagination count
+      query with "Duplicate column name 'entry_id'". Fixed: `SELECT *` →
+      `SELECT b.*`, matching `show-cat.php`'s already-correct pattern.
+
+### FP-21. Date Format Preset Dropdown
+
+- [x] The `date_format` option (Admin → Options → Main, and `install.php`'s
+      fresh-install form) is now a `<select>` of common presets, each
+      labelled with a live example (e.g. `M j, Y (Aug 13, 2026)`), plus a
+      "Custom..." option that unlocks a paired free-text field for anything
+      not on the shortlist.
+
+### FP-22. Emergency Admin Password Reset (Lost Password)
+
+- [x] New `reset-password.php` (project root) — unauthenticated by design
+      (same trust model as `install.php`), rate-limited by IP via
+      `LoginRateLimiter`, auto-deletes itself on success. Handles installs
+      that predate admin credentials moving into the database by switching
+      to an `INSERT` of both username and password. The login form links to
+      it ("Forgot your password?").
+
+### FP-23. Official FanUpdate Redux News Feed on the Dashboard
+
+- [x] New "FanUpdate Redux News" widget (Admin → Dashboard), sourced from a
+      new `news_feed_url` option (Admin → Options → Main, editable, blank
+      hides the widget). New `NewsFeedRepository`/`NewsFeedService`/
+      `NewsFeedFetcher` mirror the Admin Update Manager's cache-first
+      architecture so a slow or unreachable feed never hangs the Dashboard.
+      Removed the old dead `FanUpdate::checkUpdates()` method.
+
+### FP-24. Replace Standardista Table Sorting with Tablesort
+
+- [x] Replaced the vendored Standardista table-sorting code — whose
+      `sortDate()` regex silently mis-sorted ISO-format dates — with
+      Tablesort (github.com/tristen/tablesort, MIT, v5.7.1). Its
+      `data-sort` attribute carries the raw UTC timestamp so sorting is
+      correct regardless of the configured `date_format`. Added
+      `aria-sort` and cache-busting query strings on admin CSS/JS assets as
+      same-day follow-ups. Kept, not removed: the Standardista credit,
+      rescoped to its still-used `css` utility object.
+
+---
+
 ## [Redux 2.3.0] — July 27, 2026
 
 ### 1. Admin Update Manager

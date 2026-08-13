@@ -46,13 +46,9 @@ $disallow = ['admin_password', 'admin_username', 'admin_email', 'version'];
 // fu_is_yn_option() (boolean-toggle detection) lives in functions.php now,
 // shared with install.php's fresh-install form — see FU_YN_OPTION_KEYS.
 
-// ── Helper: human-readable label from an option key ──────────────────────
-// Replaces underscores with spaces and applies sentence case (first word
-// capitalised, rest lowercase). The raw key is still used in hidden inputs
-// and POST processing — only the visible label is affected.
-function fu_option_label(string $key): string {
-    return ucfirst(str_replace('_', ' ', $key));
-}
+// fu_option_label() (human-readable label from an option key, e.g.
+// 'comments_on' -> 'Comments on') now lives in functions.php, shared with
+// install.php's fresh-install form.
 
 // ── Helper: detect this server's actual install directory ────────────────
 // Mirrors the path normalisation install.php applies when it first writes
@@ -178,6 +174,29 @@ if ($storedInstallPath !== '' && $storedInstallPath !== $detectedInstallPath && 
 // ── Load options (exclude templates, admin_email, private keys) ───────────
 $rows = $optionService->listEditableOptions();
 
+// listEditableOptions() sorts alphabetically, which already puts
+// 'date_format' before 'timezone' (d < t) but not necessarily adjacent to
+// it — other options can sort in between. Both are date/time-related and
+// their dropdowns (FU_DATE_FORMAT_OPTION_KEY/FU_TIMEZONE_OPTION_KEY below)
+// read more naturally next to each other, so timezone is moved to
+// immediately follow date_format here; every other option keeps its
+// existing alphabetical position.
+$dateFormatIndex = null;
+$timezoneIndex   = null;
+foreach ($rows as $i => $row) {
+    if ($row['optkey'] === FU_DATE_FORMAT_OPTION_KEY) {
+        $dateFormatIndex = $i;
+    } elseif ($row['optkey'] === FU_TIMEZONE_OPTION_KEY) {
+        $timezoneIndex = $i;
+    }
+}
+if ($dateFormatIndex !== null && $timezoneIndex !== null && $timezoneIndex !== $dateFormatIndex + 1) {
+    $timezoneRow = $rows[$timezoneIndex];
+    array_splice($rows, $timezoneIndex, 1);
+    $dateFormatIndex = array_search(FU_DATE_FORMAT_OPTION_KEY, array_column($rows, 'optkey'), true);
+    array_splice($rows, $dateFormatIndex + 1, 0, [$timezoneRow]);
+}
+
 $fu->getHeader('Options');
 
 ?>
@@ -243,6 +262,30 @@ $fu->reportErrors();
                 </optgroup>
                 <?php } ?>
             </select>
+            <?php if ($safe_desc !== ''): ?>
+            <p class="hint small" style="margin-top:3px;"><?php echo $safe_desc; ?></p>
+            <?php endif; ?>
+
+            <?php elseif ($optkey === FU_DATE_FORMAT_OPTION_KEY):
+                // FP-21: preset dropdown + "Custom" fallback — see functions.php.
+                $isKnownDateFormatPreset = fu_is_known_date_format_preset((string) $row['optvalue']);
+            ?>
+
+            <label for="val_<?php echo $id; ?>_select" style="font-weight:500; color:var(--fu-text); margin-bottom:3px;">
+                <?php echo $display_key; ?>
+            </label>
+            <select id="val_<?php echo $id; ?>_select" class="fu-date-format-select" data-target="val_<?php echo $id; ?>">
+                <?php foreach (fu_date_format_presets() as $preset): ?>
+                <option value="<?php echo htmlspecialchars($preset, ENT_QUOTES, 'UTF-8'); ?>"
+                        <?php echo ($preset === (string) $row['optvalue']) ? 'selected' : ''; ?>>
+                    <?php echo htmlspecialchars(fu_date_format_option_label($preset), ENT_QUOTES, 'UTF-8'); ?>
+                </option>
+                <?php endforeach; ?>
+                <option value="<?php echo FU_DATE_FORMAT_CUSTOM_VALUE; ?>" <?php echo !$isKnownDateFormatPreset ? 'selected' : ''; ?>>Custom&hellip;</option>
+            </select>
+            <input type="text" id="val_<?php echo $id; ?>" name="value[<?php echo $id; ?>]"
+                   value="<?php echo $safe_val; ?>" <?php echo $isKnownDateFormatPreset ? 'readonly' : ''; ?>
+                   style="margin-top:0.5rem;<?php echo $isKnownDateFormatPreset ? ' display:none;' : ''; ?>" />
             <?php if ($safe_desc !== ''): ?>
             <p class="hint small" style="margin-top:3px;"><?php echo $safe_desc; ?></p>
             <?php endif; ?>

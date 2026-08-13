@@ -847,13 +847,16 @@ table caption {
     font-family: var(--fu-font-heading);
 }
 
-/* Sortable table column headers */
-table.sortable th {
+/* Sortable table column headers (Tablesort) */
+table.sortable th:not([data-sort-method="none"]) {
     cursor: pointer;
     user-select: none;
 }
 
-table.sortable th:hover { color: var(--fu-accent); }
+table.sortable th:not([data-sort-method="none"]):hover { color: var(--fu-accent); }
+
+table.sortable th[aria-sort="ascending"]::after  { content: ' \25B2'; }
+table.sortable th[aria-sort="descending"]::after { content: ' \25BC'; }
 
 /* ── Status badges ────────────────────────────────────────────────────────── */
 

@@ -23,21 +23,18 @@ declare(strict_types=1);
 // ── release identity ─────────────────────────────────────────────────────────
 
 /** Human-readable version string displayed in the UI, footer, and RSS feeds. */
-const FU_VERSION      = 'Redux 2.3.0';
+const FU_VERSION      = 'Redux 2.4.0';
 
 /** Database schema version — update only when install.php adds/alters tables. */
 const FU_DB_VERSION   = '2.2.1b2';
 
 /** ISO 8601 release date. */
-const FU_RELEASE_DATE = '2026-07-27';
+const FU_RELEASE_DATE = '2026-08-13';
 
 /** Short release codename (shown on the Dashboard and Credits page). */
 const FU_RELEASE_NAME = '';
 
 // ── project URLs (rarely change) ─────────────────────────────────────────────
-
-/** URL of the original FanUpdate project page by Jenny Ferenc. */
-const FU_URL_ORIGINAL = 'http://prism-perfect.net/fanupdate';
 
 /** URL of the Robotess Fork (Ekaterina's PHP 7 port). */
 const FU_URL_ROBOTESS = 'https://scripts.robotess.net';
@@ -99,31 +96,52 @@ const FU_CONTRIBUTORS = [
         'years'        => '2026',
         'url'          => 'https://www.unloved-heart.net',
         'email'        => null,
-        'contribution' => 'Full PHP 8.2+ compatibility pass: explicit property '
-            . 'declarations, strict return types, utf8_encode() removal, '
-            . 'bcrypt password storage, HMAC session tokens, '
-            . 'account management, version system, credits page, '
-            . 'and GPLv3 licence upgrade.',
+        'contribution' => 'Ongoing PHP 8.2+ refactor and feature development: full PHP '
+            . '8.2+ compatibility pass (explicit property declarations, strict '
+            . 'return types, utf8_encode() removal), the Admin Update Manager, '
+            . 'Categories Support, Fanatically collective-script integration, '
+            . 'the Media/Image Manager, TinyMCE editor integration, database '
+            . 'engine/charset migration (MyISAM to InnoDB, latin1 to utf8mb4), '
+            . 'security hardening (bcrypt passwords, HMAC session tokens, '
+            . 'CSRF protection, emergency password reset), account '
+            . 'management, and the version/credits/GPLv3 licensing system.',
     ],
 ];
 
 // ── third-party library credits ──────────────────────────────────────────────
-// Used by credits.php. Source: original readme.txt by Jenny Ferenc.
+// Used by credits.php. Original entries sourced from readme.txt by Jenny
+// Ferenc; Redux-era additions (Parsedown, TinyMCE, Tablesort) cross-checked
+// against docs/THIRD-PARTY-LICENSES.md, which is the authoritative license
+// record for every vendored dependency — keep both in sync when either
+// changes. The Silk icon set entry was removed (replaced by Tabler Icons,
+// confirmed unused). The Standardista entry is rescoped, not removed —
+// its `css` utility object is still genuinely used even though its
+// table-sorting code (the actual "Standardista Table Sorting" feature) was
+// replaced by Tablesort.
+//
+// The Michel Fortin "PHP Markdown" entry below was WRONGLY removed on
+// 2026-08-13 and has since been restored — it was mistaken for dead code
+// during a Credits-page audit that only checked for callers of doHeaders()/
+// doLists() outside functions.php, missing that wpautop() itself calls both
+// as part of its own pipeline. wpautop() is called by every post/comment
+// render (FanUpdate_Post/FanUpdate_Comment), so the "dead code" removal
+// briefly made every one of those calls fatal until caught. See
+// docs/CHANGELOG.md for the full incident.
 
 const FU_LIBRARIES = [
     [
-        'name'    => 'Standardista Table Sorting',
+        'name'    => 'Standardista (css utility helpers)',
         'author'  => 'Neil Crosby',
         'years'   => '2006',
         'url'     => 'http://www.workingwith.me.uk/articles/scripting/standardista_table_sorting',
-        'used_in' => 'js/standardista-table-sorting.js — sortable admin tables',
+        'used_in' => 'assets/js/fanupdate.js — the `css` class-manipulation utility object (getElementsByClass/addClassToElement/removeClassFromElement), still used across several admin JS files. The table-sorting code itself has been replaced — see the Tablesort entry below.',
     ],
     [
-        'name'    => 'Silk icon set',
-        'author'  => 'Mark James',
-        'years'   => '2006',
-        'url'     => 'http://famfamfam.com/lab/icons/silk/',
-        'used_in' => 'img/ and css/ — admin panel icons',
+        'name'    => 'Tablesort',
+        'author'  => 'Tristen Brown',
+        'years'   => '2013–2024',
+        'url'     => 'https://github.com/tristen/tablesort',
+        'used_in' => 'assets/vendor/tablesort/tablesort.js — sortable admin tables (Entries, Blacklist, Categories, Smilies)',
     ],
     [
         'name'    => 'Text parsing functions (wpautop, make_clickable, wptexturize)',
@@ -137,7 +155,21 @@ const FU_LIBRARIES = [
         'author'  => 'Michel Fortin (based on Markdown by John Gruber)',
         'years'   => '2004–2007',
         'url'     => 'https://michelf.ca/projects/php-markdown/',
-        'used_in' => 'functions.php — Markdown parsing in post bodies',
+        'used_in' => 'functions.php — heading/list Markdown syntax within wpautop(), used by every post/comment body render',
+    ],
+    [
+        'name'    => 'Parsedown',
+        'author'  => 'Emanuil Rusev',
+        'years'   => '2013–2018',
+        'url'     => 'https://parsedown.org',
+        'used_in' => 'class/Parsedown.php — GitHub Flavored Markdown rendering for release notes in Admin → Updates',
+    ],
+    [
+        'name'    => 'TinyMCE',
+        'author'  => 'Tiny Technologies, Inc.',
+        'years'   => '2024',
+        'url'     => 'https://www.tiny.cloud/',
+        'used_in' => 'assets/vendor/tinymce/ — post body editor in Admin → Entries',
     ],
     [
         'name'    => 'CaptchaSecurityImages',

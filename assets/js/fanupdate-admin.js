@@ -6,7 +6,7 @@
  *
  * Requires: fanupdate.js (css, $, addEvent, getEventTarget)
  *
- * Copyright (c) Jenny Ferenc <jenny@prism-perfect.net>
+ * Copyright (c) Jenny Ferenc
  * Copyright (c) 2020 Ekaterina (contributor) http://scripts.robotess.net
  * Copyright (c) 2026 modernised for current browsers
  *
@@ -79,8 +79,11 @@ function themeToggleInit() {
     const link = document.getElementById('fu-theme-css');
     if (!btn || !link) return;
 
-    const BASE  = '../assets/css/style.css';
-    const NIGHT = '../assets/css/style-night.css';
+    // Cache-busting query string (see admin/header.php's fuAssetVersion) must
+    // match exactly, or isNight()'s href comparison below silently breaks.
+    const versionSuffix = typeof fuAssetVersion !== 'undefined' ? '?v=' + fuAssetVersion : '';
+    const BASE  = '../assets/css/style.css' + versionSuffix;
+    const NIGHT = '../assets/css/style-night.css' + versionSuffix;
     const KEY   = 'fu_theme';
 
     const isNight = () => link.getAttribute('href') === NIGHT;

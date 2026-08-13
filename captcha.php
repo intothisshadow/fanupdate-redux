@@ -3,7 +3,7 @@ declare(strict_types=1);
 /*****************************************************************************
  * CaptchaSecurityImages
  * Copyright (c) 2006 by Simon Jarvis
- * Copyright (c) 2007 by Jenny Ferenc (contributor) <jenny@prism-perfect.net>
+ * Copyright (c) 2007 by Jenny Ferenc (contributor)
  * Copyright (c) 2020 by Ekaterina (contributor) http://scripts.robotess.net
  *
  * Generates a CAPTCHA image and stores the expected code in the session.

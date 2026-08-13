@@ -1,7 +1,7 @@
 <?php
 /*****************************************************************************
  * FanUpdate
- * Copyright (c) Jenny Ferenc <jenny@prism-perfect.net>
+ * Copyright (c) Jenny Ferenc
  * Copyright (c) 2020 by Ekaterina (contributor) http://scripts.robotess.net
  *
  * This program is free software: you can redistribute it and/or modify
@@ -35,6 +35,11 @@ require_once('../class/Service/UpdateManager.php');
 require_once('../class/Repository/PrivacyRepositoryInterface.php');
 require_once('../class/Repository/PrivacyRepository.php');
 require_once('../class/Service/InstallPingService.php');
+require_once('../class/Repository/NewsFeedRepositoryInterface.php');
+require_once('../class/Repository/NewsFeedRepository.php');
+require_once('../class/Service/NewsFeedFetcherInterface.php');
+require_once('../class/Service/NewsFeedFetcher.php');
+require_once('../class/Service/NewsFeedService.php');
 
 $fu = FanUpdate::instance();
 $fu->addOptFromDb();
@@ -72,6 +77,25 @@ if (isset($_POST['action']) && $_POST['action'] === 'dismiss_update') {
         header('Location: index.php');
         exit;
     }
+}
+
+// ── FP-23: official FanUpdate Redux news feed ──────────────────────────────
+// Same cache-first/no-network-unless-due pattern as the update check above —
+// refreshIfDue() only makes a live request when the cache is stale (default
+// 1 hour) or missing entirely, and degrades silently to whatever is cached
+// (even if stale) on any fetch failure. news_feed_url is a plain admin-
+// editable option (Admin -> Options -> Main) — see install.php's $setting[]
+// array and UpgradeRunner::NEW_DEFAULT_OPTIONS for how it's seeded. Blank =
+// widget hidden entirely.
+$newsFeedUrl   = (string) $fu->getOpt('news_feed_url');
+$newsFeedItems = [];
+
+if ($newsFeedUrl !== '') {
+    $newsFeedService = new NewsFeedService(
+        new NewsFeedRepository($fu->db, (string) $fu->getOpt('options_table')),
+        new NewsFeedFetcher()
+    );
+    $newsFeedItems = $newsFeedService->refreshIfDue($newsFeedUrl);
 }
 
 // ── Opt-In Anonymous Install Ping (TODO.md "FP-15") ────────────────────────
@@ -205,6 +229,34 @@ $fu->getHeader('Dashboard');
         </ul>
     </div>
 </div>
+
+<?php if ($newsFeedItems !== []) { ?>
+<!-- ── FanUpdate Redux News ─────────────────────────────────────────── -->
+
+<section style="margin-bottom:2rem;">
+    <h3>
+        FanUpdate Redux News
+        <a href="<?php echo htmlspecialchars($newsFeedUrl, ENT_QUOTES, 'UTF-8'); ?>"
+           class="feed" title="RSS feed" target="_blank" rel="noopener">RSS</a>
+    </h3>
+    <ul>
+        <?php foreach (array_slice($newsFeedItems, 0, 5) as $item) {
+            $itemDate      = (string) ($item['date'] ?? '');
+            $itemTimestamp = $itemDate !== '' ? strtotime($itemDate) : false;
+        ?>
+        <li>
+            <a href="<?php echo htmlspecialchars((string) ($item['link'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
+               target="_blank" rel="noopener">
+                <?php echo htmlspecialchars((string) ($item['title'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>
+            </a>
+            <?php if ($itemTimestamp !== false) { ?>
+            <br><span class="hint small"><?php echo htmlspecialchars(date('M j, Y', $itemTimestamp), ENT_QUOTES, 'UTF-8'); ?></span>
+            <?php } ?>
+        </li>
+        <?php } ?>
+    </ul>
+</section>
+<?php } ?>
 
 <!-- ── Three-column dashboard grid ──────────────────────────────────── -->
 

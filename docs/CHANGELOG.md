@@ -7,13 +7,312 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [Redux 2.4.0] — August 13, 2026 — News Feed Widget, Emergency Password Reset & Table Sorting Fix
+
+### Fixed
+
+- **CAPTCHA comparison in `process.php` used loose (`!=`) comparison** between
+  the submitted code and the session-stored code. Since the CAPTCHA alphabet
+  includes digits, an all-digit code could theoretically be matched by a
+  numeric-string variant (e.g. `0234689` == `234689`) due to PHP's
+  numeric-string comparison rules. Switched to `hash_equals()` for a strict,
+  timing-safe comparison, and normalized submitted input with
+  `strtolower(trim())` to match the lowercase-only alphabet (fixes a case
+  where typing the code in uppercase silently failed).
+- **Self-inflicted, same-day: every post/comment render was briefly fatal**
+  ("Call to undefined function `doLists()`"). While auditing Admin →
+  Credits' "Libraries & third-party code" list (see below), the
+  `doHeaders()`/`doLists()`/`outdent()`/`_processListItems()` etc.
+  functions in `functions.php` (the "PHP Markdown (modified subset)",
+  Michel Fortin) were deleted as "confirmed dead code" — that check only
+  verified no file *outside* `functions.php` called them by name. It
+  missed that `wpautop()`, a few lines above them in the same file, calls
+  `doLists()` unconditionally and `doHeaders()` when `$allowHeading` is
+  true — and `wpautop()` is called by `FanUpdate_Post::getBodyFormatted()`/
+  `getTemplate()` and `FanUpdate_Comment::getBodyFormatted()` for every
+  single post/comment display, admin and public alike. The 494-test suite
+  stayed green throughout because nothing in it exercised `wpautop()` at
+  all. Caught and fixed same-day, before release, while reviewing whether
+  the WordPress-derived text functions were worth modernising — restored
+  the deleted functions verbatim, restored the "PHP Markdown" credit in
+  `FU_LIBRARIES` (it was accurate all along), and added
+  `Unit/TextFormattingFunctionsTest.php` (12 tests) so `wpautop()` — and
+  specifically the heading/list code paths that broke — has real
+  regression coverage for the first time.
+
 ### Changed
+
+- **Admin → Credits' "Libraries & third-party code" list (`FU_LIBRARIES`,
+  `version.php`) was significantly out of date** — audited every entry
+  against actual current usage, not just link liveness:
+  - **Removed:** Silk icon set (Mark James) — not present anywhere in the
+    codebase; the admin panel has used Tabler Icons (loaded via CDN in
+    `admin/header.php`) for a while now, uncredited.
+  - **Added:** Parsedown (Emanuil Rusev, MIT) — vendored at
+    `class/Parsedown.php`, used by `class/Service/ReleaseNotesRenderer.php`
+    for GitHub Flavored Markdown release notes in Admin → Updates. Already
+    fully documented in `docs/THIRD-PARTY-LICENSES.md`; simply never made
+    it onto the Credits page.
+  - **Added:** TinyMCE (Tiny Technologies, Inc., GPL-2.0-or-later) —
+    vendored at `assets/vendor/tinymce/`, the post-body editor in Admin →
+    Entries (FP-18). Same situation: documented in
+    `docs/THIRD-PARTY-LICENSES.md`, never added to the Credits page.
+  - Kept (still genuinely used, verified): Standardista *(its `css` utility
+    object only — see the Tablesort follow-up below; the table-sorting
+    code it originally credited has since been replaced)*, WordPress
+    text-parsing functions, PHP Markdown *(briefly and mistakenly removed
+    as "dead" — see the Fixed section above; it's actually used by every
+    post/comment render via `wpautop()`)*, CaptchaSecurityImages, the
+    SqlConnection class lineage, FeedWriter/FeedItem.
+  - Not added: Tabler Icons and Google Fonts (both CDN-loaded, not
+    vendored/license-file-tracked like the entries above) — worth a
+    follow-up decision on whether CDN-only UI dependencies belong on this
+    list at all, rather than adding one without the other.
+  - **Same-day follow-up (TODO.md item "FP-24. Replace Standardista Table
+    Sorting with Tablesort"):** the "is this still used?" audit above led
+    to actually checking Standardista's code, not just its credit —
+    turned up a real bug: `sortDate()`'s regex only matched
+    `dd/mm/yyyy`/`dd-mm-yyyy`, not ISO (`yyyy-mm-dd`), one of the presets
+    FP-21's date-format dropdown offers, so picking it silently broke
+    Admin → Entries' Date column sort (fell through to plain string
+    comparison). Also missing `aria-sort`/keyboard-accessible sort state
+    and a visual indicator. Replaced with **Tablesort**
+    (github.com/tristen/tablesort, Tristen Brown, MIT, v5.7.1) — vendored
+    at `assets/vendor/tablesort/tablesort.js` (exact upstream source,
+    fetched and verified directly, not reconstructed from memory), loaded
+    in `admin/header.php` before `fanupdate.js`. Its `data-sort` attribute
+    is the actual fix for the date bug: `admin/blog.php`'s Date `<td>` now
+    carries `data-sort="<raw stored UTC Y-m-d H:i:s>"`, so sorting is
+    correct regardless of which `date_format` preset is configured — the
+    display-format ambiguity is gone entirely, not just one regex pattern.
+    `class="nosort"` → `data-sort-method="none"` (Tablesort's own marker)
+    on the 2 columns that had it, both in `admin/blog.php` — every other
+    column's sortability is unchanged, a faithful 1:1 translation rather
+    than also auditing which columns *should* be sortable. New
+    `afterSort`-event-driven zebra-restripe adapter in `fanupdate.js`
+    replaces the deleted `standardista` IIFE (confirmed zero other
+    callers before removal) — Tablesort itself has no concept of
+    zebra-striping. `assets/css/style.css`'s sortable-header rules scoped
+    away from `[data-sort-method="none"]` columns, plus a small
+    `aria-sort` arrow indicator. Kept, not removed: the Neil Crosby
+    "Standardista" credit in `FU_LIBRARIES` — rescoped to its `css`
+    utility object (still used across several admin JS files), separate
+    from the new Tablesort entry. New "## Tablesort" section in
+    `docs/THIRD-PARTY-LICENSES.md`, matching the Parsedown/TinyMCE format.
+  - **Same-day follow-up, caught live on deploy:** reported as literal
+    `<input type="checkbox" ...>` markup rendering as visible text on
+    Admin → Entries. Root cause: the admin's browser was still running the
+    *old* cached `fanupdate.js` (containing the just-deleted Standardista
+    code) against the *newly deployed* HTML — its `initHeading()` no
+    longer saw `class="nosort"` on the checkbox-select header (replaced
+    with `data-sort-method="none"`), so it processed that header and hit
+    a pre-existing bug in that dead code
+    (`a.appendChild(document.createTextNode(th.innerHTML))` — stringifies
+    the cell's markup instead of preserving it). A hard refresh fixed it
+    immediately, but the underlying gap — none of `admin/header.php`'s
+    CSS/JS asset tags had cache-busting — meant every future deploy risked
+    the same failure for any admin who doesn't manually clear cache.
+    Fixed: `admin/header.php` now appends `?v=<FU_VERSION>` to
+    `style.css`/`style-night.css`/`tablesort.js`/`fanupdate.js`/
+    `fanupdate-admin.js`. A new `fuAssetVersion` JS global (alongside the
+    existing `fuCsrfToken` one) keeps `fanupdate-admin.js`'s theme-toggle
+    logic in sync — it does an exact string match against the CSS
+    `<link>`'s href to detect the current theme, which would otherwise
+    silently break the moment the href gained a query string.
+  - **Also fixed while on that page:** two submit buttons whose visible
+    text was literally their raw `$_POST['action']` value —
+    `bulk-delete`/`bulk-delete-confirmed` on `admin/blog.php` — read as
+    code slugs rather than words (unlike the page's other action values,
+    which are at least real if lowercase English words). Swapped
+    `<input type="submit">` for `<button type="submit">` for just these
+    two, since a `<button>`'s visible text can differ from its submitted
+    `value` — "Delete Selected"/"Permanently Delete" — with zero changes
+    to the POST-handling dispatch logic (still the same
+    `$_POST['action'] === 'bulk-delete'` checks).
 
 - **`FU_URL_REDUX` (`version.php`) now points to
   `https://coding.unloved-heart.net/scripts/fanupdate-redux`**, replacing the
   previous `https://www.unloved-heart.net` placeholder.
 
+- **Removed every reference to the original, now-defunct `prism-perfect.net`
+  domain except Jenny Ferenc's own credited link in the Contributors
+  section of Admin → Credits** (`FU_CONTRIBUTORS`, `version.php`) —
+  explicitly kept, per direct request. Everywhere else:
+  - The `<jenny@prism-perfect.net>` email dropped from ~27 files' copyright
+    header comments, leaving the `Copyright (c) [year by] Jenny Ferenc
+    [(contributor)]` attribution itself untouched — names stay, the dead
+    mailbox doesn't.
+  - `FU_URL_ORIGINAL` (`'http://prism-perfect.net/fanupdate'`) removed from
+    `version.php` entirely. Its two usages: `FanUpdate::$config['url']`
+    (feeds the Dashboard's "Documentation & FAQs" link and
+    `admin/privacy.php`'s "documentation" link) now points at
+    `FU_URL_REDUX` instead of a dead 2008-era page; `admin/credits.php`'s
+    "Original project" link (in the Version section, separate from Jenny's
+    own Contributors-section entry) is removed outright — no replacement
+    URL exists for it, and Jenny's own credited link already covers
+    original-author attribution.
+  - `install.php`'s comment about removing defunct update-polling keys
+    reworded to drop the bare domain mention while keeping the historical
+    context.
+  - **Same-day follow-up:** removing `admin/credits.php`'s "Original
+    project" link surfaced a related gap — `FU_URL_REDUX` (this project's
+    own canonical URL) was never actually shown on the Credits page at
+    all. Added a "FanUpdate Redux" link (first in the Version section's
+    link row, before "Robotess fork") pointing to it.
+  - **Same-day follow-up:** Ariane's `FU_CONTRIBUTORS` entry (Contributors
+    section, Admin → Credits) still described her work as just "Full PHP
+    8.2+ compatibility pass" — accurate when first written, badly stale
+    given everything shipped since (Admin Update Manager, Categories
+    Support, Fanatically collective-script integration, Media/Image
+    Manager, TinyMCE integration, the InnoDB/utf8mb4 migration, security
+    hardening, and more). Updated to summarize the current, broader scope
+    of ongoing work.
+  - `README.md`'s credits section no longer links the domain (keeps
+    "Original script by Jenny Ferenc" as plain text).
+  - `PHP Test Suite/bootstrap.php` and `phpstan.neon`'s comments (which
+    listed `version.php`'s declared constants by name) updated to drop
+    `FU_URL_ORIGINAL` from that list, matching its removal.
+  - **Deliberately left untouched:** `old-docs/README.md` (and the rest of
+    `old-docs/`) — this directory exists specifically to preserve the
+    original project's own shipped documentation verbatim for attribution
+    (see `build-release.sh`'s packaging notes), so editing its content
+    would work against its stated purpose.
+
 ### Added
+
+- **New "FanUpdate Redux News" widget on the Dashboard (TODO.md item
+  "FP-23. Official FanUpdate Redux News Feed on the Dashboard"),** sourced
+  from a new `news_feed_url` option (Admin → Options → Main) — **not
+  hardcoded**, defaults to
+  `https://coding.unloved-heart.net/update-blog/rss.php?c=4` but fully
+  editable, and blank hides the widget entirely. New
+  `class/Repository/NewsFeedRepository.php` (JSON cache blob under a
+  private `_news_feed_cache` option key) and
+  `class/Service/NewsFeedService.php`/`NewsFeedFetcher.php` mirror the
+  Admin Update Manager's cache-first architecture
+  (`UpdateRepository`/`UpdateManager`) rather than fetching live on every
+  Dashboard load: cached items render immediately, a live fetch only
+  happens once the cache is stale (1 hour default), and any fetch failure
+  (unreachable feed, bad XML, non-2xx status) falls back silently to
+  whatever is cached — the Dashboard, the highest-traffic admin page, must
+  never hang or show an error because an external site is down.
+  `NewsFeedFetcher` is HTTPS-only (rejected outright before any request is
+  attempted), cURL-first with a `file_get_contents()`+stream-context
+  fallback and a short timeout — same safety posture as
+  `class/Update/GitHubUpdateProvider.php`'s request handling, reimplemented
+  generically since that logic is private and GitHub-API-coupled.
+  `news_feed_url` is seeded for fresh installs via `install.php`'s
+  `$setting[]` array and backfilled into existing installs via
+  `UpgradeRunner::NEW_DEFAULT_OPTIONS` (the mechanism that constant exists
+  for — previously empty for this release cycle). Deleted the old dead
+  `FanUpdate::checkUpdates()` method (confirmed unused since the
+  GitHub-based Admin Update Manager shipped — see `docs/HISTORY.md`) rather
+  than leaving two remote-feed-fetching code paths in the codebase; its
+  `<channel><item>`-parsing approach is reused in `NewsFeedFetcher`, fixing
+  two real bugs along the way — fatal `->item(0)->nodeValue` access on any
+  item missing an expected node is now null-safe, and failures are caught
+  as `\Throwable` rather than only `\Exception`.
+  Tests: new `NewsFeedRepositoryTest.php`/`NewsFeedServiceTest.php` (mocked
+  repository/fetcher — no real database or network call); two new
+  `UpgradeRunnerTest.php` cases cover the `news_feed_url` backfill.
+  `admin/index.php`'s own rendering is untested, consistent with every
+  other top-level admin page in this project (see `TEST_LOG.md`).
+  - **Bug fix, same day, caught live before release:** the cache had no
+    idea which feed URL it was fetched from, so changing `news_feed_url`
+    didn't actually take effect until the previous URL's cache naturally
+    expired (up to 1 hour later) — reported live after testing against the
+    real feed URL, first with an empty category (correctly showed nothing)
+    then switching to a populated one (still showed nothing, because the
+    empty result from the first URL was still "fresh"). Fixed: the cache
+    now also stores the `url` it was fetched from
+    (`NewsFeedRepositoryInterface::saveCache()` gained a `$url` parameter);
+    `NewsFeedService::refreshIfDue()` treats a cache belonging to a
+    different URL than the one currently requested as a miss regardless of
+    its age, forcing an immediate live fetch — and, on that fetch failing,
+    returns an empty list rather than surfacing the abandoned URL's stale
+    items (less confusing than silently showing another feed's leftovers).
+    A pre-fix cache (missing the `url` field entirely) is likewise treated
+    as invalid by `NewsFeedRepository::getCache()`, so this self-heals on
+    any installation that already triggered the bug — no manual cache
+    clear-out needed. Tests: `NewsFeedRepositoryTest` gained a
+    missing-`url`-is-invalid case; `NewsFeedServiceTest` gained two cases
+    covering a fresh-but-wrong-URL cache being ignored, both on the
+    live-fetch-succeeds and live-fetch-fails paths.
+
+- **The `date_format` option (Admin → Options → Main) is now a preset
+  dropdown instead of a plain text input (TODO.md item "FP-21. Date Format
+  Preset Dropdown").** Following the same pattern
+  FP-19 used to replace the timezone option's free-text field with a
+  `<select>`. Unlike timezone, there's no fixed enumerable domain of valid
+  PHP `date()` format strings — any string is technically valid, since
+  unrecognised characters just pass through literally — so a curated
+  shortlist of common formats (`fu_date_format_presets()` in
+  `functions.php`, each shown with a live example like `M j, Y (Aug 13,
+  2026)` via the new `fu_date_format_option_label()`) sits alongside a
+  "Custom..." option that unlocks a paired free-text field instead of
+  restricting input outright. Rendered on both `admin/options.php`'s Main
+  list and `install.php`'s fresh-install form — same two call sites as the
+  timezone dropdown, same "the `<select>` is visual-only and the real
+  submitted value comes from a paired input" trick `install.php`'s y/n
+  toggle already used, needed there because that form's `key[]`/`value[]`
+  are positional arrays. New `.fu-date-format-select` handler in
+  `assets/js/fanupdate.js` keeps the paired text input in sync (copies the
+  selected preset in and makes it read-only; "Custom" unlocks it). No
+  database migration needed — `date_format` was always a plain string
+  option, so every existing value (preset or not) still displays and works
+  correctly via the "Custom" fallback if it doesn't match a preset.
+  - **Same-day follow-up, matching timezone's look more closely:** the
+    paired text input is now hidden (not just read-only) whenever a known
+    preset is selected — same self-contained single-control appearance as
+    the timezone `<select>`, no redundant "here's what you picked" field
+    shown underneath. Only reveals itself for "Custom" entry. Also:
+    `timezone` is now rendered immediately after `date_format` on both
+    `admin/options.php`'s Main list (which otherwise sorts purely
+    alphabetically — other option keys could land between the two) and
+    `install.php`'s fresh-install form (moved `$setting[26]`'s definition
+    to sit physically right after `$setting[6]`'s — array key order
+    doesn't affect render order, only this insertion/source position
+    does), since both are date/time settings that read more naturally
+    next to each other.
+  Tests: new `DateFormatFunctionsTest.php` covers the new `functions.php`
+  helpers (`fu_date_format_presets()`, `fu_date_format_example()`,
+  `fu_date_format_option_label()`, `fu_is_known_date_format_preset()`);
+  the rendering branches themselves are untested for the same reason
+  `admin/*.php`/`install.php` generally are throughout this project (see
+  `TEST_LOG.md`).
+
+- **New `reset-password.php` — emergency admin password reset with no login
+  required (TODO.md item "FP-22. Emergency Admin Password Reset (Lost
+  Password)").** `admin/account.php`'s password change requires the *current*
+  password, so there was previously no way to recover a lost admin password
+  short of hand-writing a bcrypt hash and running a manual `UPDATE` query
+  (still documented in `docs/TROUBLESHOOTING.md` as a fallback). The login
+  form had no link to anything of the kind either. The new script follows
+  `install.php`'s exact trust model and lifecycle: unauthenticated by design
+  (reaching it at all already requires file access next to
+  `blog-config.php`), rate-limited by IP via `LoginRateLimiter` (own lockout
+  store, separate from the login form's), and auto-deletes itself on
+  success. The login form now links to it ("Forgot your password?").
+  On any install where `admin_username`/`admin_password` rows already exist,
+  reuses `AccountRepository::updatePasswordHash()` — the same code path
+  `admin/account.php` uses — so there's exactly one place that writes the
+  `admin_password` option row.
+  - **Bug fix, same day, caught live before release:** an install that
+    predates admin credentials moving into the database (see "Admin
+    credentials moved from `blog-config.php` into the database" further
+    down this file) has no `admin_password` row at all yet.
+    `AccountRepository::updatePasswordHash()` is a plain `UPDATE`, which
+    matches zero rows in that case — the page reported success, deleted
+    itself, and changed nothing, with no error at any point. Fixed: the
+    script now checks `SELECT COUNT(*) ... WHERE optkey = 'admin_password'`
+    up front (a direct query, not `getOpt()`, so a row that exists with an
+    empty `optvalue` — silently skipped by `addOptFromDb()` — still counts
+    as present) and switches to an `INSERT` of both `admin_username` and
+    `admin_password` when the row is missing, asking for a username in that
+    case since there may be no existing one to keep. No PHPUnit coverage for
+    this branch specifically — it's top-level script logic in
+    `reset-password.php` itself, same as `install.php`/`admin/*.php`
+    throughout this project, as established repeatedly in `TEST_LOG.md`.
 
 - **README's Templates section now documents wrapping `entry_template` in a
   container `<div>` so each post can get its own card in host-page CSS.**
@@ -26,6 +325,60 @@ All notable changes to this project are documented here.
   `/updates` embed.
 
 ### Fixed
+
+- **`install.php`'s fresh-install form and its `$setting[]`-driven option
+  fields (timezone, date format, every y/n toggle, every plain-text/
+  textarea option, plus the `admin_username`/`admin_password`/
+  `admin_password (confirm)` credential fields) showed raw option keys
+  like `comments_on` and `date_format` as their visible labels**, instead
+  of the friendlier "Comments on"/"Date format" styling
+  `admin/options.php`'s Main list already got a few weeks back. Root
+  cause: `fu_option_label()` (`ucfirst(str_replace('_', ' ', $key))`) only
+  ever lived in `admin/options.php` — `install.php` never had access to
+  it. Fixed by moving `fu_option_label()` into `functions.php` (removed
+  from `admin/options.php`, which now uses the shared copy — same move
+  `fu_is_yn_option()` made earlier) and applying it to every visible label
+  in `install.php`'s render loop; the hardcoded `admin_username:`/
+  `admin_password:`/`admin_password (confirm):` labels (not derived from
+  a loop, so `fu_option_label()` doesn't apply) were hand-corrected to
+  `Admin username:`/`Admin password:`/`Admin password (confirm):`
+  directly. `id`/`name`/`for` attributes are untouched — only visible text
+  changed. No test added for `fu_option_label()` itself, consistent with
+  `fu_is_yn_option()` (an equally simple helper) also having none.
+  - **Same-day follow-up:** `reset-password.php`'s submit button and
+    `admin/account.php`'s three submit buttons (Username/Email/Password)
+    had the identical problem one level down — the button's `value`
+    attribute (its visible text) doubled as the internal action identifier
+    checked in PHP, so the buttons literally read `reset_password`/
+    `update_username`/`update_email`/`update_password`. Fixed by
+    decoupling: each button's own `name` (e.g. `name="reset_password"`,
+    checked via `isset($_POST['reset_password'])`) now carries the
+    semantics — matching `install.php`'s own convention
+    (`isset($_POST['fresh_install'])`) — freeing `value` to be a plain
+    human label ("Reset Password", "Save Username", "Save Email", "Save
+    Password"). `admin/account.php`'s POST handler was restructured
+    slightly (a `match(true)` picking `$accountAction` from which button
+    was pressed) since its three forms previously shared one generic
+    `name="action"` field.
+
+- **Admin sessions on one FanUpdate Redux install could silently log out
+  admins on a *different* install on the same domain, and vice versa —
+  reported live as "session keeps expiring" while actively using the admin
+  panel.** Root cause: `FanUpdate::setAuthCookie()`/`ensureSession()`
+  hardcoded every cookie (`fu_username`, `fu_token`, the `fu_session` CSRF
+  cookie) to `path=/`. Two or more separate FanUpdate Redux installs living
+  in different subdirectories of the same domain (e.g.
+  `example.com/fanupdate-redux/demo/` and `example.com/update-blog/` — a
+  normal shared-hosting layout) therefore all shared the exact same three
+  cookie slots: logging into one instantly overwrote the cookie the other
+  depended on. Fixed with a new `FanUpdate::cookiePath()`, derived from the
+  stored `install_url` option (falls back to the previous hardcoded `/`
+  when `install_url` isn't set yet, e.g. `install.php`'s very first page
+  load, so behaviour is unchanged for that edge case). See
+  `docs/TROUBLESHOOTING.md`'s new "I keep getting logged out while actively
+  using the admin panel" entry — includes a note that an admin who already
+  has an old `path=/` cookie in their browser may need to log out/in once
+  (or clear cookies) for the new scoped cookie to fully take over.
 
 - **`show-blog.php`'s category-filtered listing (`?c=`) threw "Duplicate
   column name 'entry_id'" instead of rendering (TODO.md item "FP-20. Fix

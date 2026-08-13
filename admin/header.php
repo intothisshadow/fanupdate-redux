@@ -2,7 +2,7 @@
 declare(strict_types=1);
 /*****************************************************************************
  * FanUpdate
- * Copyright (c) Jenny Ferenc <jenny@prism-perfect.net>
+ * Copyright (c) Jenny Ferenc
  * Copyright (c) 2020 by Ekaterina (contributor) http://scripts.robotess.net
  *
  * This program is free software: you can redistribute it and/or modify
@@ -38,6 +38,15 @@ declare(strict_types=1);
  * (install.php) no prefix is needed at all.
  ******************************************************************************/
 $fuAssetPrefix = (dirname((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === __DIR__) ? '../' : '';
+
+// Cache-busting query string for every vendored/own CSS+JS asset below,
+// so a version bump forces browsers to fetch fresh copies instead of
+// serving a stale cached file against newly-deployed HTML/PHP — exactly
+// the failure mode that caused FP-24's Tablesort rollout to render a
+// raw <input> tag as literal text in one admin's browser until they
+// manually hard-refreshed (old cached fanupdate.js running old
+// Standardista logic against the new markup).
+$fuAssetVersion = urlencode(FU_VERSION);
 ?><!DOCTYPE html>
 <html lang="en">
 
@@ -59,7 +68,7 @@ $fuAssetPrefix = (dirname((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === __DI
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=Playfair+Display:ital,wght@0,500;1,400&display=swap" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css" />
-    <link rel="stylesheet" id="fu-theme-css" href="<?php echo $fuAssetPrefix; ?>assets/css/style.css" />
+    <link rel="stylesheet" id="fu-theme-css" href="<?php echo $fuAssetPrefix; ?>assets/css/style.css?v=<?php echo $fuAssetVersion; ?>" />
     <link rel="shortcut icon" href="<?php echo $fuAssetPrefix; ?>favicon.ico" />
 
     <?php /* Apply saved theme before first paint to avoid flash of wrong theme */ ?>
@@ -67,14 +76,17 @@ $fuAssetPrefix = (dirname((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === __DI
     (function () {
         var saved = localStorage.getItem('fu_theme');
         if (saved === 'night') {
-            document.getElementById('fu-theme-css').href = '<?php echo $fuAssetPrefix; ?>assets/css/style-night.css';
+            document.getElementById('fu-theme-css').href = '<?php echo $fuAssetPrefix; ?>assets/css/style-night.css?v=<?php echo $fuAssetVersion; ?>';
         }
     }());
     </script>
 
-    <script src="<?php echo $fuAssetPrefix; ?>assets/js/fanupdate.js"></script>
+    <script src="<?php echo $fuAssetPrefix; ?>assets/vendor/tablesort/tablesort.js?v=<?php echo $fuAssetVersion; ?>"></script>
+    <script src="<?php echo $fuAssetPrefix; ?>assets/js/fanupdate.js?v=<?php echo $fuAssetVersion; ?>"></script>
     <script>const fuCsrfToken = <?php echo json_encode($this->generateCsrfToken(), JSON_THROW_ON_ERROR); ?>;</script>
-    <script src="<?php echo $fuAssetPrefix; ?>assets/js/fanupdate-admin.js"></script>
+    <?php /* Shared with fanupdate-admin.js's theme toggle — must match the ?v= query string on the style.css/style-night.css <link> tags above, or its exact-string href comparison breaks. */ ?>
+    <script>const fuAssetVersion = <?php echo json_encode($fuAssetVersion, JSON_THROW_ON_ERROR); ?>;</script>
+    <script src="<?php echo $fuAssetPrefix; ?>assets/js/fanupdate-admin.js?v=<?php echo $fuAssetVersion; ?>"></script>
 
 </head>
 

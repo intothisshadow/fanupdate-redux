@@ -4,7 +4,7 @@
  * SqlConnection Class for MySQL databases
  *
  * Copyright (c) Jay Pipes http://www.jpipes.com/
- * Copyright (c) 2008 by Jenny Ferenc (contributor) <jenny@prism-perfect.net>
+ * Copyright (c) 2008 by Jenny Ferenc (contributor)
  * Copyright (c) 2020 by Ekaterina (contributor) http://scripts.robotess.net
  * Copyright (c) 2026 by Ariane (contributor)
  *

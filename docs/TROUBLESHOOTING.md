@@ -124,6 +124,28 @@ INSERT INTO blog_options (optkey, optvalue, optdesc) VALUES
 Generate the bcrypt hash with:
 `php -r "echo password_hash('your-password', PASSWORD_BCRYPT);"`
 
+### I forgot my admin password
+
+This is a different situation from the one above — you have working
+credentials, you just don't remember the password. Rather than generating a
+bcrypt hash by hand and running an `UPDATE` query yourself, upload
+`reset-password.php` (ships alongside `install.php` at the project root) and
+visit it in a browser — no login needed. It updates the same
+`admin_password` option row and deletes itself automatically on success, the
+same as `install.php`. See the README's "Lost your password?" section for
+details. There's a login-page link to it ("Forgot your password?") so you
+don't need to remember the URL either.
+
+If `reset-password.php` reports success but the new password still doesn't
+work and `blog-config.php` doesn't contain a password either, your
+installation likely predates admin credentials moving into the database
+(see the CHANGELOG's "Admin credentials moved from `blog-config.php` into
+the database" entry) — it never had an `admin_username`/`admin_password` row
+at all. Current versions of `reset-password.php` detect this and show an
+extra **Admin username** field on the form instead of silently doing
+nothing; if you're on an older copy of the file, re-download it from the
+project and try again.
+
 ### After a fresh install, I get logged out the instant I click anything
 
 Fixed — this was caused by `install.php`'s credential-writing regex never
@@ -153,6 +175,33 @@ will not send them over plain HTTP. If your admin panel URL begins with `http://
 rather than `https://`, the cookies will never arrive and every page load will
 show the login form. The fix is to ensure the site runs on HTTPS and access the
 admin panel via `https://`.
+
+### I keep getting logged out while actively using the admin panel
+
+If you run more than one FanUpdate Redux install on the **same domain**
+(e.g. `example.com/fanupdate-redux/demo/` and `example.com/update-blog/` —
+a normal shared-hosting layout), and you have both admin panels open at
+once or switch between them, logging into one can immediately log the
+other one out, and vice versa. This looks exactly like a session randomly
+expiring, but it isn't — it's cookie scoping.
+
+Before Redux 2.3.0's cookie-path fix, the `fu_username`/`fu_token`/
+`fu_session` cookies were all scoped to `path=/` (the whole domain)
+regardless of which subdirectory the install actually lived in. Since
+browsers store one cookie per (domain, path, name), every install on that
+domain shared the exact same three cookie slots — logging into one
+overwrote the cookie the other install's login state depended on. Fixed by
+scoping each cookie to the install's own subdirectory
+(`FanUpdate::cookiePath()`, derived from the `install_url` option) instead
+of hardcoding `/`.
+
+If you're on Redux 2.3.0+ and still see this: check that `install_url`
+(Admin → Options → Main) is actually set to this specific install's own
+URL, not a shared/incorrect value — an install that never had `install_url`
+set correctly falls back to the old `path=/` behaviour. You may also need
+to log out and back in once (or clear cookies) after upgrading, since a
+leftover `path=/` cookie from before the fix can coexist with the new
+scoped one in your browser until it naturally expires.
 
 ### `blog_category` table doesn't exist — categories page is empty
 

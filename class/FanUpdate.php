@@ -2,7 +2,7 @@
 
 /*****************************************************************************
  * FanUpdate
- * Copyright (c) Jenny Ferenc <jenny@prism-perfect.net>
+ * Copyright (c) Jenny Ferenc
  * Copyright (c) 2020 by Ekaterina (contributor) http://scripts.robotess.net
  * Copyright (c) 2026 by Ariane (contributor)
  *
@@ -80,7 +80,7 @@ class FanUpdate
 
     private array $config = [
         'version' => FU_VERSION,
-        'url'     => FU_URL_ORIGINAL,
+        'url'     => FU_URL_REDUX,
         'newUrl'  => FU_URL_ROBOTESS,
     ];
 
@@ -158,6 +158,45 @@ class FanUpdate
     // ── CSRF protection ─────────────────────────────────────────────────────
 
     /**
+     * Path scope for the CSRF session cookie and the HMAC auth cookies
+     * (fu_session/fu_username/fu_token) — derived from the stored
+     * install_url option rather than hardcoded to '/'. Two or more
+     * separate FanUpdate Redux installs living on the SAME domain but in
+     * different subdirectories is a normal, supported shared-hosting
+     * layout (e.g. install_url = ".../fanupdate-redux/demo" and
+     * ".../update-blog"). A hardcoded '/' path means every install on that
+     * domain shares one browser cookie per name — logging into one
+     * silently overwrites the identically-named cookie the other install
+     * relies on, and vice versa, which looks exactly like a session
+     * randomly expiring while actively using either admin panel (reported
+     * live: coding.unloved-heart.net/fanupdate-redux/demo/ and
+     * coding.unloved-heart.net/update-blog/). Falls back to '/' when
+     * install_url isn't set yet (e.g. install.php's very first page load,
+     * before any options exist) — matches the previous hardcoded value,
+     * so behaviour is unchanged until an install actually has a real
+     * install_url to scope to.
+     *
+     * Note: an admin who already has an old root-path ('/') cookie from
+     * before this fix will end up with two same-named cookies (root and
+     * scoped) until the old one expires or they clear cookies — the new
+     * scoped cookie takes effect on their next login either way.
+     */
+    private function cookiePath(): string
+    {
+        $installUrl = (string) $this->getOpt('install_url');
+        if ($installUrl === '') {
+            return '/';
+        }
+
+        $path = parse_url($installUrl, PHP_URL_PATH);
+        if (!is_string($path) || $path === '') {
+            return '/';
+        }
+
+        return rtrim($path, '/') . '/';
+    }
+
+    /**
      * Start (or resume) the PHP session used to store the CSRF token.
      *
      * This is intentionally separate from the HMAC auth cookies
@@ -183,7 +222,7 @@ class FanUpdate
 
         session_set_cookie_params([
             'lifetime' => 0,
-            'path'     => '/',
+            'path'     => $this->cookiePath(),
             'secure'   => true,
             'httponly' => true,
             'samesite' => 'Strict',
@@ -502,65 +541,6 @@ class FanUpdate
         return count($this->errors) === 0;
     }
 
-    // ── update check ────────────────────────────────────────────────────────
-
-    public function checkUpdates(): void
-    {
-        $updatesFeedUrl = 'https://scripts.robotess.net/projects/fanupdate/atom.xml';
-        $posts          = '';
-
-        try {
-            $doc     = new DOMDocument();
-            libxml_use_internal_errors(true);
-            $success = $doc->load($updatesFeedUrl);
-            libxml_clear_errors();
-            libxml_use_internal_errors(false);
-            if (!$success) {
-                throw new \RuntimeException('Was not able to retrieve updates from remote server');
-            }
-
-            $domChannel = $doc->getElementsByTagName('channel');
-            if ($domChannel->length !== 1) {
-                echo '<p class="success">Feed is empty</p>';
-                return;
-            }
-
-            if ($domChannel->item(0)->getElementsByTagName('item')->length === 0) {
-                echo '<p class="success">Feed is empty</p>';
-                return;
-            }
-
-            /** @var DOMElement $node */
-            foreach ($domChannel->item(0)->getElementsByTagName('item') as $node) {
-                $title       = $node->getElementsByTagName('title')->item(0)->nodeValue;
-                $link        = $node->getElementsByTagName('link')->item(0)->nodeValue;
-                $pubdate     = $node->getElementsByTagName('pubDate')->item(0)->nodeValue;
-                $description = $node->getElementsByTagName('description')->item(0)->nodeValue;
-
-                $timestamp = strtotime($pubdate);
-                $daylong   = date('l', $timestamp);
-                $monlong   = date('F', $timestamp);
-                $yyyy      = date('Y', $timestamp);
-                $dth       = date('jS', $timestamp);
-                $min       = date('i', $timestamp);
-                $_24hh     = date('H', $timestamp);
-
-                $posts .= '<li><a href="' . htmlspecialchars($link) . '" target="_blank">'
-                    . htmlspecialchars($title) . '</a><br>'
-                    . $daylong . ', ' . $dth . ' ' . $monlong . ' ' . $yyyy . ', ' . $_24hh . ':' . $min
-                    . '<br>' . htmlspecialchars($description) . '</li>' . "\n";
-            }
-        } catch (\Exception $e) {
-            echo '<p class="error">Was not able to connect to feed: '
-                . htmlspecialchars($e->getMessage()) . '</p>';
-            return;
-        }
-
-        if ($posts !== '') {
-            echo '<h3>Project RSS</h3><ul>' . $posts . '</ul>';
-        }
-    }
-
     public function reportErrors(string $err = ''): void
     {
         if ($err !== '') {
@@ -737,12 +717,14 @@ class FanUpdate
      *  secure   = true   — never sent over plain HTTP
      *  httponly = true   — inaccessible to JavaScript (XSS mitigation)
      *  samesite = Strict — not sent on cross-site requests (CSRF mitigation)
+     *  path     = cookiePath() — scoped to this install's own subdirectory
+     *             rather than the whole domain; see that method's docblock.
      */
     private function setAuthCookie(string $name, string $value, int $expire): void
     {
         setcookie($name, $value, [
             'expires'  => $expire,
-            'path'     => '/',
+            'path'     => $this->cookiePath(),
             'secure'   => true,
             'httponly' => true,
             'samesite' => 'Strict',
@@ -854,6 +836,8 @@ class FanUpdate
                         <label for="remember_me" class="checkbox">Remember?</label>
                     </span>
                 </p>
+                <?php /* FP-22 — reset-password.php */ ?>
+                <p class="hint small"><a href="../reset-password.php" tabindex="5">Forgot your password?</a></p>
             </form>
             <script type="text/javascript">
                 document.getElementById('username')?.focus();

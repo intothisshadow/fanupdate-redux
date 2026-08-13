@@ -3,7 +3,7 @@
 /*****************************************************************************
  * FanUpdate — FanUpdate_Comment
  *
- * Copyright (c) Jenny Ferenc <jenny@prism-perfect.net>
+ * Copyright (c) Jenny Ferenc
  * Copyright (c) 2020 by Ekaterina (contributor) http://scripts.robotess.net
  * Copyright (c) 2026 refactored for PHP 8.2+ compatibility
  *

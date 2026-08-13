@@ -1,10 +1,11 @@
 # Third-Party Licenses
 
 FanUpdate Redux is licensed under the GNU GPL v3 (see `LICENSE.md`). It vendors
-a small number of third-party libraries directly into `class/` rather than via
-Composer, since the production application assumes no CLI/Composer access on
-typical shared hosting (see `CLAUDE.md`). This file records their own licenses,
-as required by each.
+a small number of third-party libraries directly (into `class/` for PHP,
+`assets/vendor/` for JavaScript) rather than via Composer/npm, since the
+production application assumes no CLI/Composer/npm access on typical shared
+hosting (see `CLAUDE.md`). This file records their own licenses, as required
+by each.
 
 ---
 
@@ -95,3 +96,40 @@ from TinyMCE's own.
 - **Version:** 3.2.6 (as bundled by TinyMCE 7.9.3 — see
   `assets/vendor/tinymce/notices.txt`)
 - **License:** MPL-2.0 OR Apache-2.0 (dual-licensed; either applies)
+
+---
+
+## Tablesort
+
+- **File:** `assets/vendor/tablesort/tablesort.js`
+- **Version:** 5.7.1 (unmodified)
+- **Source:** https://github.com/tristen/tablesort
+- **Used for:** Sortable admin tables — Admin → Entries, Blacklist,
+  Categories, Smilies (`assets/js/fanupdate.js`'s `table.sortable` init
+  block). Replaces the previous hand-maintained Standardista Table Sorting
+  code (2006, Neil Crosby) — see `docs/CHANGELOG.md`.
+- **License:** MIT (upstream's license file is named `LICENCE`, British
+  spelling)
+
+> The MIT License (MIT)
+>
+> Copyright (c) Tristen Brown
+>
+> Permission is hereby granted, free of charge, to any person obtaining
+> a copy of this software and associated documentation files (the
+> "Software"), to deal in the Software without restriction, including
+> without limitation the rights to use, copy, modify, merge, publish,
+> distribute, sublicense, and/or sell copies of the Software, and to
+> permit persons to whom the Software is furnished to do so, subject to
+> the following conditions:
+>
+> The above copyright notice and this permission notice shall be
+> included in all copies or substantial portions of the Software.
+>
+> THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+> EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+> MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+> NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+> LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+> OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+> WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

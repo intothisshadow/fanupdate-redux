@@ -4,7 +4,7 @@
  * Wires up "select all" behaviour for the entry list's bulk-delete form.
  * Requires: fanupdate.js (highlightChecked)
  *
- * Copyright (c) Jenny Ferenc <jenny@prism-perfect.net>
+ * Copyright (c) Jenny Ferenc
  * Copyright (c) 2020 Ekaterina (contributor) http://scripts.robotess.net
  * Copyright (c) 2026 modernised for current browsers
  *

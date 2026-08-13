@@ -7,7 +7,7 @@
  * Requires: fanupdate.js (css, $, addEvent, getEventTarget,
  *           insertAfter, highlightChecked)
  *
- * Copyright (c) Jenny Ferenc <jenny@prism-perfect.net>
+ * Copyright (c) Jenny Ferenc
  * Copyright (c) 2020 Ekaterina (contributor) http://scripts.robotess.net
  * Copyright (c) 2026 modernised for current browsers
  *

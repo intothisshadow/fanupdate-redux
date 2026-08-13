@@ -35,50 +35,54 @@ $showNav = true;
 // POST handler — username, email, password
 // ─────────────────────────────────────────────────────────────────────────────
 
-if (isset($_POST['action']) && !$fu->verifyCsrfOrFail()) {
+$accountAction = match (true) {
+    isset($_POST['update_username']) => 'update_username',
+    isset($_POST['update_email'])    => 'update_email',
+    isset($_POST['update_password']) => 'update_password',
+    default                          => null,
+};
+
+if ($accountAction !== null && !$fu->verifyCsrfOrFail()) {
     // CSRF check failed — error already queued; skip processing the action.
-} elseif (isset($_POST['action'])) {
+} elseif ($accountAction === 'update_username') {
 
-    if ($_POST['action'] === 'update_username') {
+    $new_username = isset($_POST['new_username']) ? clean_input($_POST['new_username']) : '';
 
-        $new_username = isset($_POST['new_username']) ? clean_input($_POST['new_username']) : '';
+    if (!preg_match('/^[A-Za-z0-9_]+$/', $new_username)) {
+        $fu->addErr('Username may only contain letters, numbers, and underscores.');
+    } elseif ($new_username === '') {
+        $fu->addErr('Username cannot be empty.');
+    } else {
+        $accountService->updateUsername($new_username);
+        $fu->addSuccess('Username updated to <strong>' . htmlspecialchars($new_username, ENT_QUOTES, 'UTF-8') . '</strong>.');
+    }
 
-        if (!preg_match('/^[A-Za-z0-9_]+$/', $new_username)) {
-            $fu->addErr('Username may only contain letters, numbers, and underscores.');
-        } elseif ($new_username === '') {
-            $fu->addErr('Username cannot be empty.');
-        } else {
-            $accountService->updateUsername($new_username);
-            $fu->addSuccess('Username updated to <strong>' . htmlspecialchars($new_username, ENT_QUOTES, 'UTF-8') . '</strong>.');
-        }
+} elseif ($accountAction === 'update_email') {
 
-    } elseif ($_POST['action'] === 'update_email') {
+    $new_email = isset($_POST['new_email']) ? clean_input($_POST['new_email']) : '';
 
-        $new_email = isset($_POST['new_email']) ? clean_input($_POST['new_email']) : '';
+    if (!filter_var($new_email, FILTER_VALIDATE_EMAIL)) {
+        $fu->addErr('Please enter a valid email address.');
+    } else {
+        $accountService->updateEmail($new_email);
+        $fu->addSuccess('Email updated to <strong>' . htmlspecialchars($new_email, ENT_QUOTES, 'UTF-8') . '</strong>.');
+    }
 
-        if (!filter_var($new_email, FILTER_VALIDATE_EMAIL)) {
-            $fu->addErr('Please enter a valid email address.');
-        } else {
-            $accountService->updateEmail($new_email);
-            $fu->addSuccess('Email updated to <strong>' . htmlspecialchars($new_email, ENT_QUOTES, 'UTF-8') . '</strong>.');
-        }
+} elseif ($accountAction === 'update_password') {
 
-    } elseif ($_POST['action'] === 'update_password') {
+    $current_pw = isset($_POST['current_password']) ? $_POST['current_password'] : '';
+    $new_pw     = isset($_POST['new_password'])      ? $_POST['new_password']      : '';
+    $confirm_pw = isset($_POST['confirm_password'])  ? $_POST['confirm_password']  : '';
 
-        $current_pw = isset($_POST['current_password']) ? $_POST['current_password'] : '';
-        $new_pw     = isset($_POST['new_password'])      ? $_POST['new_password']      : '';
-        $confirm_pw = isset($_POST['confirm_password'])  ? $_POST['confirm_password']  : '';
-
-        if (!$accountService->verifyCurrentPassword($current_pw)) {
-            $fu->addErr('Current password is incorrect.');
-        } elseif ($new_pw !== $confirm_pw) {
-            $fu->addErr('New passwords do not match.');
-        } elseif (mb_strlen($new_pw) < 8) {
-            $fu->addErr('New password must be at least 8 characters.');
-        } else {
-            $accountService->updatePassword($new_pw);
-            $fu->addSuccess('Password updated.');
-        }
+    if (!$accountService->verifyCurrentPassword($current_pw)) {
+        $fu->addErr('Current password is incorrect.');
+    } elseif ($new_pw !== $confirm_pw) {
+        $fu->addErr('New passwords do not match.');
+    } elseif (mb_strlen($new_pw) < 8) {
+        $fu->addErr('New password must be at least 8 characters.');
+    } else {
+        $accountService->updatePassword($new_pw);
+        $fu->addSuccess('Password updated.');
     }
 }
 
@@ -111,7 +115,7 @@ $fu->reportErrors();
             <p><label for="new_username">New username</label>
             <input type="text" id="new_username" name="new_username"
                    maxlength="50" autocomplete="username" /></p>
-            <input type="submit" name="action" value="update_username" class="update"
+            <input type="submit" name="update_username" value="Save Username" class="update"
                    title="Save username" />
         </fieldset>
     </form>
@@ -127,7 +131,7 @@ $fu->reportErrors();
             <p><label for="new_email">New email</label>
             <input type="email" id="new_email" name="new_email"
                    maxlength="200" autocomplete="email" /></p>
-            <input type="submit" name="action" value="update_email" class="update"
+            <input type="submit" name="update_email" value="Save Email" class="update"
                    title="Save email" />
         </fieldset>
     </form>
@@ -146,7 +150,7 @@ $fu->reportErrors();
             <p><label for="confirm_password">Confirm new password</label>
             <input type="password" id="confirm_password" name="confirm_password"
                    autocomplete="new-password" /></p>
-            <input type="submit" name="action" value="update_password" class="update"
+            <input type="submit" name="update_password" value="Save Password" class="update"
                    title="Save password" />
         </fieldset>
     </form>

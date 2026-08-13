@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 /*****************************************************************************
  * FanUpdate
- * Copyright (c) Jenny Ferenc <jenny@prism-perfect.net>
+ * Copyright (c) Jenny Ferenc
  * Copyright (c) 2020 by Ekaterina (contributor) http://scripts.robotess.net
  *
  * Shared utility functions: input sanitization/validation, text parsing and
@@ -63,6 +63,24 @@ const FU_YN_OPTION_KEYS = [
 function fu_is_yn_option(string $optkey, string $desc): bool
 {
     return in_array($optkey, FU_YN_OPTION_KEYS, true) || stripos($desc, 'y or n') !== false;
+}
+
+/**
+ * Human-readable label from a raw option key, e.g. 'comments_on' ->
+ * 'Comments on'. Replaces underscores with spaces and capitalises the
+ * first character — every option key is already lowercase snake_case, so
+ * that alone produces sentence case with no further lowercasing needed.
+ * The raw key is still used in hidden inputs, `id`/`name`/`for` attributes,
+ * and POST processing — only the visible label text is affected.
+ *
+ * Originally admin/options.php-only; shared here so install.php's
+ * fresh-install form (previously showing raw keys like `comments_on`
+ * and `date_format` as its visible labels) can use the same helper
+ * instead of a second, drifting copy.
+ */
+function fu_option_label(string $key): string
+{
+    return ucfirst(str_replace('_', ' ', $key));
 }
 
 // _____________________________________________ TIMEZONE OPTION
@@ -183,6 +201,73 @@ function fu_migrate_legacy_timezone_offset(float $offsetHours): string
     $rounded = (int) round($offsetHours);
 
     return FU_LEGACY_OFFSET_TIMEZONE_MAP[$rounded] ?? FU_DEFAULT_TIMEZONE;
+}
+
+// _____________________________________________ DATE FORMAT OPTION
+//
+// FP-21 — the 'date_format' option previously rendered as a plain text input — a
+// raw PHP date() format string (e.g. 'M j, Y') with no indication of what
+// the syntax actually produces. Shared by admin/options.php's Main list and
+// install.php's fresh-install form, which both render this key as a
+// <select> of common presets (each labelled with a live example) plus a
+// "Custom..." option that unlocks a paired free-text input. Unlike
+// FU_TIMEZONE_OPTION_KEY, there is no fixed enumerable domain of valid
+// date() format strings — any string is technically valid, since
+// unrecognised characters are simply echoed literally — so this key still
+// allows free-text entry via the "Custom" fallback rather than restricting
+// input to only the curated list below.
+
+/** The option key that renders as a date-format preset dropdown instead of a plain text field. */
+const FU_DATE_FORMAT_OPTION_KEY = 'date_format';
+
+/** Sentinel <select> value that unlocks the free-text "Custom" input. */
+const FU_DATE_FORMAT_CUSTOM_VALUE = '__custom__';
+
+/**
+ * Curated shortlist of common PHP date() format strings for the date_format
+ * dropdown. Deliberately not exhaustive — anything not in this list still
+ * works fine via the "Custom" fallback; this just covers the formats most
+ * admins actually want without needing to know date() syntax at all.
+ *
+ * @return array<int, string>
+ */
+function fu_date_format_presets(): array
+{
+    return [
+        'M j, Y',
+        'F j, Y',
+        'l, F j, Y',
+        'Y-m-d',
+        'm/d/Y',
+        'd/m/Y',
+        'd.m.Y',
+        'j F Y',
+        'M j, Y g:i A',
+        'Y-m-d H:i',
+    ];
+}
+
+/**
+ * Live example of what $format looks like right now, e.g. 'M j, Y' ->
+ * 'Aug 13, 2026'. Every string is a technically-valid date() format
+ * (unrecognised characters pass through literally), so this never fails —
+ * it exists purely as a dropdown-option preview aid.
+ */
+function fu_date_format_example(string $format): string
+{
+    return (new DateTime())->format($format);
+}
+
+/** Dropdown option label combining the raw format string with a live example. */
+function fu_date_format_option_label(string $format): string
+{
+    return $format . ' (' . fu_date_format_example($format) . ')';
+}
+
+/** Whether $format is one of the curated presets fu_date_format_presets() returns. */
+function fu_is_known_date_format_preset(string $format): bool
+{
+    return in_array($format, fu_date_format_presets(), true);
 }
 
 // _____________________________________________ ERROR REPORTING
@@ -619,10 +704,22 @@ function wpautop(string $pee, bool $br = true, bool $allowHeading = false): stri
     return make_clickable(wptexturize($pee));
 }
 
-
 // ── PHP Markdown (modified subset) ──────────────────────────────────────────
 // Copyright (c) 2004-2007 Michel Fortin, based on Markdown by John Gruber.
 // BSD licence — see original file header for full terms.
+//
+// Restored 2026-08-13: previously deleted as "confirmed dead code" during a
+// Credits-page audit, on the mistaken belief that nothing called it — that
+// check only verified no file OUTSIDE functions.php referenced doHeaders()/
+// doLists() by name. It missed that wpautop() itself (a few lines above,
+// lines ~661/664) calls both directly as part of its own pipeline, and
+// wpautop() is very much alive — FanUpdate_Post::getBodyFormatted()/
+// getTemplate() and FanUpdate_Comment::getBodyFormatted() all call it for
+// every post/comment render, admin and public alike. Deleting this made
+// every single one of those calls fatal ("Call to undefined function
+// doLists()") until caught and restored here. The credit for this code in
+// version.php's FU_LIBRARIES ("PHP Markdown", Michel Fortin) was correct all
+// along and has been restored too — it was never actually dead.
 
 $tab_width  = 4;
 $list_level = 0;

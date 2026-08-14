@@ -37,9 +37,12 @@ interface BlogRepositoryInterface
 
     /**
      * The blog table has no cat_id column — category membership lives in
-     * the catjoin table. Returns null when the entry has no category.
+     * the catjoin table. An entry may belong to any number of categories
+     * (including none), so this returns every linked cat_id.
+     *
+     * @return int[]
      */
-    public function findCategoryId(int $entryId): ?int;
+    public function findCategoryIds(int $entryId): array;
 
     /**
      * @param array{title:string,body:string,is_public:int,comments_on:int,date:string} $data

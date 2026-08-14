@@ -33,8 +33,8 @@ class BlogService
     }
 
     /**
-     * @param array{title:string,body:string,cat:int,is_public:int,comments_on:int,date:string} $clean
-     * @return int The new entry's ID, or 0 if the insert failed or the
+     * @param array{title:string,body:string,cat:int[],is_public:int,comments_on:int,date:string} $clean
+     * @return int The new entry's ID, or 0 if the insert failed or any
      *             category link could not be established.
      */
     public function createEntry(array $clean): int
@@ -48,9 +48,11 @@ class BlogService
             return 0;
         }
 
-        if ($clean['cat'] > 0 && !$this->entries->setCategory($entryId, $clean['cat'])) {
-            $this->entries->rollBack();
-            return 0;
+        foreach ($clean['cat'] as $catId) {
+            if (!$this->entries->setCategory($entryId, $catId)) {
+                $this->entries->rollBack();
+                return 0;
+            }
         }
 
         $this->entries->commit();
@@ -59,7 +61,7 @@ class BlogService
     }
 
     /**
-     * @param array{title:string,body:string,cat:int,is_public:int,comments_on:int,date:string} $clean
+     * @param array{title:string,body:string,cat:int[],is_public:int,comments_on:int,date:string} $clean
      */
     public function updateEntry(int $entryId, array $clean): bool
     {
@@ -70,18 +72,20 @@ class BlogService
             return false;
         }
 
-        // The category link is always fully replaced (clear then
-        // re-insert) rather than diffed — an entry has at most one
-        // category today, and this matches the original
-        // admin/blog.php behaviour exactly.
+        // Category links are always fully replaced (clear then re-insert)
+        // rather than diffed — simpler than computing an add/remove delta,
+        // and an entry has few enough categories that this is never a
+        // performance concern.
         if (!$this->entries->clearCategory($entryId)) {
             $this->entries->rollBack();
             return false;
         }
 
-        if ($clean['cat'] > 0 && !$this->entries->setCategory($entryId, $clean['cat'])) {
-            $this->entries->rollBack();
-            return false;
+        foreach ($clean['cat'] as $catId) {
+            if (!$this->entries->setCategory($entryId, $catId)) {
+                $this->entries->rollBack();
+                return false;
+            }
         }
 
         $this->entries->commit();
@@ -105,7 +109,8 @@ class BlogService
 
     /**
      * @return array<string, mixed>|null Entry row merged with its resolved
-     *         'cat_id' key, or null when the entry doesn't exist.
+     *         'cat_ids' key (int[], possibly empty), or null when the entry
+     *         doesn't exist.
      */
     public function getEntryForEdit(int $entryId): ?array
     {
@@ -114,10 +119,7 @@ class BlogService
             return null;
         }
 
-        $catId = $this->entries->findCategoryId($entryId);
-        if ($catId !== null) {
-            $entry['cat_id'] = $catId;
-        }
+        $entry['cat_ids'] = $this->entries->findCategoryIds($entryId);
 
         return $entry;
     }

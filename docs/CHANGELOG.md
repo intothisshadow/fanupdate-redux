@@ -7,6 +7,28 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [Redux 2.4.1] — August 14, 2026 — Multi-Category Selection Fix
+
+### Fixed
+
+- **Blog entries could only be assigned one category, breaking multi-category
+  tagging under the Fanatically integration (and any other collective-source
+  setup).** An earlier admin-UI modernization pass replaced the original
+  checkbox-list category picker in `admin/blog.php` with a single `<select>`,
+  and narrowed `$_POST['cat']` handling and the whole
+  `BlogService`/`BlogRepository` write path down to one `cat_id` per entry —
+  even though the underlying `catjoin` table was always a proper many-to-many
+  join and the display side (`FanUpdate_Post::getCatFromDb()`/
+  `getCategoryString()`/`getCategoryLinks()`) never stopped supporting
+  multiple categories. Restored the checkbox-list picker (`ul#categories`,
+  reusing the existing `select_all`/`catlist` markup and
+  `assets/js/select-all.js`'s "Select All/None" helper, which was already
+  wired up for exactly this but unused since the regression), changed
+  `BlogRepositoryInterface::findCategoryId(): ?int` to
+  `findCategoryIds(): int[]`, and updated `BlogService::createEntry()`/
+  `updateEntry()`/`getEntryForEdit()` to write/read every selected category
+  instead of just the first one.
+
 ## [Redux 2.4.0] — August 13, 2026 — News Feed Widget, Emergency Password Reset & Table Sorting Fix
 
 ### Fixed

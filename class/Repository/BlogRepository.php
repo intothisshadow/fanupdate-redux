@@ -49,17 +49,21 @@ class BlogRepository implements BlogRepositoryInterface
         return $row === false ? null : $row;
     }
 
-    public function findCategoryId(int $entryId): ?int
+    public function findCategoryIds(int $entryId): array
     {
         $this->db->Execute(
-            'SELECT cat_id FROM ' . $this->catjoinTable . ' WHERE entry_id = ? LIMIT 1',
+            'SELECT cat_id FROM ' . $this->catjoinTable . ' WHERE entry_id = ?',
             'Could not execute query.',
             [$entryId]
         );
-        $row = $this->db->ReadRecord();
+
+        $catIds = [];
+        while ($row = $this->db->ReadRecord()) {
+            $catIds[] = (int) $row['cat_id'];
+        }
         $this->db->FreeResult();
 
-        return $row === false ? null : (int) $row['cat_id'];
+        return $catIds;
     }
 
     public function insert(array $data): int

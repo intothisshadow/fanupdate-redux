@@ -229,6 +229,18 @@ fail if the file is not writable by the web server process. Delete it manually
 via FTP or your hosting file manager. The warning will disappear on the next
 login once the file is gone.
 
+**If you just updated *to* Redux 2.4.0 via the Admin Update Manager** and
+`install.php` is still there despite normal file permissions, this is
+expected and not a bug: `InstallManager` deleting `install.php` after an
+Admin Update Manager install is itself new in 2.4.0 (see `CHANGELOG.md`).
+The code that actually performs an update is whichever version was live
+*before* the update runs — so updating 2.3.0 → 2.4.0 executes 2.3.0's
+`InstallManager`, which doesn't have this step at all. The fix only takes
+effect starting with your *next* update (2.4.0 → whatever follows), which
+will delete `install.php` automatically. For this one transition, just
+delete `install.php` manually as described above — no different from any
+other version's occasional deletion failure.
+
 ### `div#fanupdate` and its content break out of their container
 
 This was a bug in `show-cat.php` present in Redux 1.5.1 and earlier. The guard

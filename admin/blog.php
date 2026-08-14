@@ -93,7 +93,15 @@ if (isset($_POST['action']) && !$fu->verifyCsrfOrFail()) {
     // clean_input() without this flag calls strip_tags(), which silently strips every
     // <a>, <img>, <strong>, etc. on save, breaking the WYSIWYG output.
     $clean['body']       = isset($_POST['body'])        ? clean_input($_POST['body'], true)       : '';
-    $clean['cat']        = isset($_POST['cat'])         ? (int) $_POST['cat']               : 0;
+    // Category is a checkbox list (name="cat[]") — an entry may belong to
+    // any number of categories, including none.
+    $clean['cat']        = [];
+    if (isset($_POST['cat']) && is_array($_POST['cat'])) {
+        $clean['cat'] = array_values(array_unique(array_filter(
+            array_map('intval', $_POST['cat']),
+            static fn (int $v): bool => $v > 0
+        )));
+    }
     $clean['is_public']    = isset($_POST['is_public'])     ? (int) $_POST['is_public']         : 0;
     $clean['comments_on'] = isset($_POST['comments_on'])   ? (int) $_POST['comments_on']       : 0;
     // 'id' is scalar for single-entry actions (add/update/delete/preview) and an
@@ -263,16 +271,19 @@ if ($showform) {
                 <fieldset>
                     <legend>Settings</legend>
 
-                    <p><label for="cat">Category</label>
-                        <select name="cat" id="cat">
+                    <fieldset>
+                        <legend>Category</legend>
+                        <?php
+                        // Determine the currently checked categories:
+                        // - On POST (preview/retry): $clean['cat'] is set (int[])
+                        // - On edit (GET ?id=N): $clean['cat_ids'] is resolved from catjoin
+                        // - On new (GET ?action=new): neither is set → none checked
+                        $selected_cats = array_map('intval', $clean['cat'] ?? $clean['cat_ids'] ?? []);
+                        ?>
+                        <ul id="categories" class="catlist select_all">
                             <?php
-                            // Determine the currently selected category:
-                            // - On POST (preview/retry): $clean['cat'] is set
-                            // - On edit (GET ?id=N): $clean['cat_id'] is the DB column
-                            // - On new (GET ?action=new): neither is set → 0
-                            $selected_cat = (int) ($clean['cat'] ?? $clean['cat_id'] ?? 0);
                             foreach ($categoryService->listForDropdown() as $cat_row) {
-                                $sel = ($selected_cat === $cat_row['cid']) ? ' selected' : '';
+                                $checked = in_array($cat_row['cid'], $selected_cats, true) ? ' checked' : '';
                                 $label = $cat_row['cname'];
                                 if ($standaloneTable !== null) {
                                     // Hybrid mode: distinguish source in the label.
@@ -280,13 +291,13 @@ if ($showform) {
                                         ? ' (Standalone)'
                                         : ' (Collective)';
                                 }
-                                echo '<option value="' . $cat_row['cid'] . '"' . $sel . '>'
+                                echo '<li><label><input type="checkbox" name="cat[]" value="' . $cat_row['cid'] . '"' . $checked . ' /> '
                                     . htmlspecialchars($label, ENT_QUOTES, 'UTF-8')
-                                    . '</option>';
+                                    . '</label></li>';
                             }
                             ?>
-                        </select>
-                    </p>
+                        </ul>
+                    </fieldset>
 
                     <p><label for="date">Date</label>
                         <input type="text" id="date" name="date"

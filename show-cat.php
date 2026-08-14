@@ -96,10 +96,10 @@ if (!isset($cat_id) || !is_numeric($cat_id)) {
                     echo "</ul>\n";
                 }
                 echo '<h3>' . $year . "</h3>\n";
-                echo "<ul>\n";
+                echo "<ul class=\"fu-archive-list\">\n";
             }
 
-            echo '<li><span class="date">' . $post->getDateFormatted() . ':</span> <a href="' . $post->getUrl() . '">' . $post->getTitle() . "</a></li>\n";
+            echo '<li class="fu-archive-item"><span class="date">' . $post->getDateFormatted() . ':</span> <a href="' . $post->getUrl() . '">' . $post->getTitle() . "</a></li>\n";
 
             $lastyear = $year;
 

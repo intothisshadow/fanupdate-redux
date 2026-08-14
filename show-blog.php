@@ -38,7 +38,7 @@ declare(strict_types=1);
 
         ?>
         <h2>Month Archives</h2>
-        <ul>
+        <ul class="fu-archive-list">
             <?php
 
             $query = "SELECT DATE_FORMAT( added, '%M %Y' ) AS get_month,
@@ -51,7 +51,7 @@ GROUP BY get_monthx ORDER BY get_monthx DESC';
             $fu->db->Execute($query);
 
             while ($row = $fu->db->ReadRecord()) {
-                echo '<li><a href="' . $fu->getCleanSelf() . '?m=' . $row['get_monthx'] . '">' . $row['get_month'] . '</a> (' . $row['num_entry'] . ")</li>\n";
+                echo '<li class="fu-archive-item"><a href="' . $fu->getCleanSelf() . '?m=' . $row['get_monthx'] . '">' . $row['get_month'] . '</a> <span class="fu-archive-count">(' . $row['num_entry'] . ")</span></li>\n";
             }
             $fu->db->FreeResult();
 
@@ -59,7 +59,7 @@ GROUP BY get_monthx ORDER BY get_monthx DESC';
         </ul>
 
         <h2>Category Archives</h2>
-        <ul>
+        <ul class="fu-archive-list">
             <?php
 
             $query = 'SELECT j.cat_id, c.' . $fu->getOpt('col_subj') . ' AS cat_name, COUNT(b.entry_id) AS num_entry
@@ -78,7 +78,7 @@ ORDER BY c.' . $fu->getOpt('col_subj') . ' ASC';
                     $row['cat_name'] = 'Whole Collective';
                 }
 
-                echo '<li><a href="' . $fu->getCleanSelf() . '?c=' . $row['cat_id'] . '">' . $row['cat_name'] . '</a> (' . $row['num_entry'] . ")</li>\n";
+                echo '<li class="fu-archive-item"><a href="' . $fu->getCleanSelf() . '?c=' . $row['cat_id'] . '">' . $row['cat_name'] . '</a> <span class="fu-archive-count">(' . $row['num_entry'] . ")</span></li>\n";
             }
 
             $fu->db->FreeResult();

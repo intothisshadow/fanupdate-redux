@@ -312,11 +312,8 @@ All templates are editable from **Admin → Options → Templates**.
 | `{{comment_link}}` | Link to the comments section |
 | `{{body}}` | Full entry text |
 
-The default entry template has no wrapper element around a post — `{{title}}`,
-the catfile line, and `{{body}}` are printed one after another directly into
-`div#fanupdate`. That's enough to style titles, dates, and body text on their
-own, but if you want each entry to sit in its own card (background, border,
-shadow) in your site's CSS, wrap the template in a container `<div>`:
+The default entry template wraps each post in `<div class="fu-entry">`, so
+every entry sits in its own container inside `div#fanupdate` out of the box:
 
 ```html
 <div class="fu-entry">
@@ -326,11 +323,13 @@ shadow) in your site's CSS, wrap the template in a container `<div>`:
 </div>
 ```
 
-Paste that into **Admin → Options → Templates**'s `entry_template` field in
-place of the default, then add a `.fu-entry { ... }` rule to your site's CSS
-(alongside the `div#fanupdate`/`p.catfile`/etc. rules from **Admin →
-Category → Get Code**'s CSS starter). No PHP changes needed either way —
-`entry_template` accepts raw HTML.
+Style `#fanupdate .fu-entry { ... }` in your site's CSS to give each entry a
+card look (background, border, shadow) — see the `.fu-entry` rule in
+**Admin → Category → Get Code**'s CSS starter. If you'd rather posts flow
+directly into `div#fanupdate` with no wrapper, replace `entry_template` in
+**Admin → Options → Templates** with the three lines above minus the
+`<div class="fu-entry">`/`</div>` wrapper. No PHP changes needed either
+way — `entry_template` accepts raw HTML.
 
 ### Comment template variables
 
@@ -341,6 +340,25 @@ Category → Get Code**'s CSS starter). No PHP changes needed either way —
 | `{{gravatar}}` | Commenter's Gravatar image |
 | `{{date}}` | Formatted comment date |
 | `{{body}}` | Comment text |
+
+Unlike `entry_template`, the comment wrapper isn't part of `comment_template`
+and can't be customized away — every comment is always printed inside
+`<div id="comment{{id}}" class="comment fu-comment">...</div>`. Style
+`#fanupdate .fu-comment { ... }` in your site's CSS (the recommended
+selector, following the `fu-` prefix also used by `fu-entry` and
+`fu-lightbox`); the older `.comment` class is kept on the same element
+permanently for sites whose CSS already targets it.
+
+### Archives (`?view=archive`)
+
+The Month/Category Archives lists on `show-blog.php` and the per-category
+year-grouped listing on `show-cat.php` aren't templates either — same as the
+comment wrapper, this markup is hardcoded and always present. Each `<ul>`
+carries `class="fu-archive-list"`, each `<li>` carries
+`class="fu-archive-item"`, and (on `show-blog.php`'s two lists only —
+`show-cat.php`'s year listing has no count) the `"(N)"` entry count is
+wrapped in `<span class="fu-archive-count">`. Style `#fanupdate
+.fu-archive-list`/`.fu-archive-item`/`.fu-archive-count` in your site's CSS.
 
 ### Comment form template variables
 

@@ -7,6 +7,59 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [Redux 2.5.0] — August 14, 2026 — `fu-` Naming Convention for Entries, Comments & Archives
+
+### Changed
+
+- **The default `entry_template` now wraps each post in
+  `<div class="fu-entry">...</div>`** instead of printing `{{title}}`, the
+  catfile line, and `{{body}}` directly into `div#fanupdate` with no
+  container. This gives every install a hook for styling entries as
+  individual cards (background, border, shadow) without having to hand-edit
+  the template first. Updated in all three places the default lives:
+  `FanUpdate::__construct()` (in-memory fallback), `FanUpdate_Post::printPost()`
+  (empty-string fallback), and `install.php`'s seeded `entry_template` row for
+  fresh installs. Added a matching `#fanupdate .fu-entry {}` starter rule to
+  the CSS snippet on **Admin → Category → Get Code**, and updated the
+  README's "Templates" section accordingly.
+- **FP-25: existing installations are migrated to the new `.fu-entry`
+  wrapper automatically, without ever touching a genuinely customized
+  template.** `UpgradeRunner` gained an entry_template migration
+  (`entryTemplateMigrationPending()`/`migrateLegacyEntryTemplateWrapper()`),
+  following the same independent-of-`_db_version` pattern as the FP-19
+  timezone migration: it runs whenever the stored `entry_template` option is
+  byte-for-byte identical to the pre-FP-25 stock default, and does nothing
+  otherwise — any admin edit, however small, permanently exempts that
+  installation from the automatic swap. Detected on every admin page load
+  via the existing pending-upgrades banner and applied the same way as the
+  schema/collective-script/timezone migrations (Admin Update Manager's
+  post-install step, or Dashboard's "Run Upgrades" action) — no new UI or
+  separate mechanism needed.
+- **`FanUpdate_Comment::printComment()`'s per-comment wrapper now also
+  carries a `fu-comment` class**, following the same `fu-` prefix
+  convention as `fu-entry`/`fu-lightbox`: `<div id="comment{{id}}"
+  class="comment fu-comment">`. Unlike `entry_template`, this wrapper is
+  hardcoded (not part of `comment_template`) and prints unconditionally on
+  every installation immediately after updating — so, unlike the
+  `entry_template` change above, the original `comment` class is kept on
+  the same element permanently rather than migrated away, and no
+  `UpgradeRunner` migration is needed or possible here. Added a matching
+  `#fanupdate .fu-comment {}` starter rule (alongside the existing
+  `div.comment` rules) to the CSS snippet on **Admin → Category → Get
+  Code**, and updated the README's "Comment template variables" section.
+- **The Archives view (`?view=archive`) now carries `fu-` prefixed classes
+  too**, extending the same naming convention to the one remaining page
+  that had none: `show-blog.php`'s Month/Category Archives lists and
+  `show-cat.php`'s per-category year-grouped listing. Each `<ul>` gets
+  `class="fu-archive-list"`, each `<li>` gets `class="fu-archive-item"`,
+  and `show-blog.php`'s two lists additionally wrap their `"(N)"` entry
+  count in `<span class="fu-archive-count">`. Like the comment wrapper,
+  this markup is hardcoded rather than template-driven, so these classes
+  are purely additive — no existing selector is renamed or removed, and no
+  `UpgradeRunner` migration applies. Added matching (empty) starter rules
+  to **Admin → Category → Get Code**'s CSS snippet and a new "Archives"
+  subsection to the README.
+
 ## [Redux 2.4.1] — August 14, 2026 — Multi-Category Selection Fix
 
 ### Fixed

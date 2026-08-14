@@ -69,6 +69,21 @@ declare(strict_types=1);
  * been a real, editable option since Redux 2.2b3), so the migration reads
  * it straight from the repository instead.
  *
+ * The FP-25 entry_template `.fu-entry` wrapper migration
+ * (entryTemplateMigrationPending()/migrateLegacyEntryTemplateWrapper())
+ * follows the timezone migration's no-constructor-value pattern too: every
+ * existing installation's `entry_template` option row already holds
+ * self::OLD_DEFAULT_ENTRY_TEMPLATE (install.php seeded it verbatim, and
+ * FanUpdate::__construct()/FanUpdate_Post::printPost() used the identical
+ * string as their in-code fallback, before this migration shipped — see
+ * TODO.md's FP-25). The gate is a plain string-equality check against that
+ * exact stock value: an installation whose entry_template has ever been
+ * edited — even by one character — no longer matches, so this never
+ * clobbers a real customization the way a version-gated backfill might.
+ * Once migrated, the row holds self::NEW_DEFAULT_ENTRY_TEMPLATE and the
+ * equality check permanently fails on that installation, same idempotency
+ * guarantee as every other migration here.
+ *
  * Why this matters architecturally: InstallManager::installUpdate() copies
  * a new release's files onto disk, but PHP has no way to "hot reload"
  * already-`require`d classes mid-request — the currently running process
@@ -139,6 +154,36 @@ class UpgradeRunner
         ],
     ];
 
+    /**
+     * FP-25: the stock entry_template value every installation had before
+     * this migration shipped — verbatim from install.php's pre-FP-25
+     * $setting[14]['optvalue'] (and the identical in-code fallback in
+     * FanUpdate::__construct()/FanUpdate_Post::printPost()). Used only for
+     * the exact string-equality check in entryTemplateMigrationPending() —
+     * never written anywhere.
+     */
+    private const OLD_DEFAULT_ENTRY_TEMPLATE =
+        '<h2><a href="{{url}}" title="permanent link to this post">{{title}}</a></h2>
+
+<p class="catfile">Posted {{date}}. Filed under {{category}}. {{comment_link}}</p>
+
+{{body}}';
+
+    /**
+     * FP-25: the new default, wrapping each post in `<div class="fu-entry">`
+     * for per-entry card styling — see class/FanUpdate.php's/
+     * class/FanUpdate_Post.php's matching in-code fallback and
+     * install.php's matching fresh-install seed.
+     */
+    private const NEW_DEFAULT_ENTRY_TEMPLATE =
+        '<div class="fu-entry">
+<h2><a href="{{url}}" title="permanent link to this post">{{title}}</a></h2>
+
+<p class="catfile">Posted {{date}}. Filed under {{category}}. {{comment_link}}</p>
+
+{{body}}
+</div>';
+
     public function __construct(
         private readonly UpgradeRepositoryInterface $repository,
         private readonly ?SchemaMigrator $schemaMigrator = null,
@@ -177,6 +222,10 @@ class UpgradeRunner
             return true;
         }
 
+        if ($this->entryTemplateMigrationPending()) {
+            return true;
+        }
+
         return $this->schemaMigrator !== null && $this->schemaMigrator->hasPendingSchemaChanges();
     }
 
@@ -202,8 +251,9 @@ class UpgradeRunner
         $collectiveScriptPending = $this->collectiveScriptMigrationPending();
         $collectiveTablePending  = $this->collectiveTableMigrationPending();
         $timezonePending         = $this->timezoneMigrationPending();
+        $entryTemplatePending    = $this->entryTemplateMigrationPending();
 
-        if (!$versionBehind && !$schemaPending && !$collectiveScriptPending && !$collectiveTablePending && !$timezonePending) {
+        if (!$versionBehind && !$schemaPending && !$collectiveScriptPending && !$collectiveTablePending && !$timezonePending && !$entryTemplatePending) {
             return new UpgradeResult($installedVersion ?? $targetVersion, $targetVersion, [], gmdate('c'));
         }
 
@@ -225,6 +275,10 @@ class UpgradeRunner
 
         if ($timezonePending) {
             $messages[] = $this->migrateLegacyTimezoneOffset();
+        }
+
+        if ($entryTemplatePending) {
+            $messages[] = $this->migrateLegacyEntryTemplateWrapper();
         }
 
         if ($versionBehind) {
@@ -366,6 +420,41 @@ class UpgradeRunner
 
         return 'Migrated legacy timezone_offset to timezone "' . $migrated . '". '
             . 'Please review Admin -> Options and adjust it if this guess isn\'t exactly right for your location.';
+    }
+
+    /**
+     * FP-25: whether entry_template still holds the exact stock value it
+     * shipped with before this migration existed. False for any
+     * installation that has ever saved a different entry_template — through
+     * Admin -> Options -> Templates, a fresh install already seeded with
+     * the new default by a current install.php, or a previous run of this
+     * same migration — so this is safe to leave permanently enabled rather
+     * than gating it behind `_db_version`.
+     */
+    private function entryTemplateMigrationPending(): bool
+    {
+        return $this->repository->getOptionValue('entry_template') === self::OLD_DEFAULT_ENTRY_TEMPLATE;
+    }
+
+    /**
+     * One-time swap of the stock entry_template for the `.fu-entry`-wrapped
+     * version. Only ever runs when entryTemplateMigrationPending() is true,
+     * i.e. the stored value is still byte-for-byte the old stock default —
+     * see that method's docblock for why a real customization can never be
+     * matched here.
+     */
+    private function migrateLegacyEntryTemplateWrapper(): string
+    {
+        $this->repository->setOptionValue(
+            'entry_template',
+            self::NEW_DEFAULT_ENTRY_TEMPLATE,
+            'See readme.txt for template variables.'
+        );
+
+        return 'Updated entry_template to wrap each post in <div class="fu-entry"> for per-entry '
+            . 'card styling (Admin -> Category -> Get Code\'s CSS starter now includes a matching '
+            . '#fanupdate .fu-entry rule). Your entry_template was still the stock default, so this '
+            . 'was applied automatically — a customized entry_template is never touched by this migration.';
     }
 
     private function normalizedInstalledVersion(): ?string

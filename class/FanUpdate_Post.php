@@ -277,9 +277,11 @@ class FanUpdate_Post
 
         if ($template === '') {
             $template =
-                '<h2><a href="{{url}}" title="permanent link to this post">{{title}}</a></h2>' . "\n"
+                '<div class="fu-entry">' . "\n"
+                . '<h2><a href="{{url}}" title="permanent link to this post">{{title}}</a></h2>' . "\n"
                 . '<p class="catfile">Posted {{date}}. Filed under {{category}}. {{comment_link}}</p>' . "\n"
-                . '{{body}}';
+                . '{{body}}' . "\n"
+                . '</div>';
         }
 
         $template = str_replace('{{id}}', (string) $this->getID(), $template);

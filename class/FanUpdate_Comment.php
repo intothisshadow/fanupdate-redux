@@ -245,7 +245,12 @@ class FanUpdate_Comment
         $template = str_replace('{{date}}', $this->getDateFormatted(), $template);
         $template = str_replace('{{body}}', $this->getBodyFormatted(), $template);
 
-        echo '<div id="comment' . $this->getID() . '" class="comment">' . "\n";
+        // "fu-comment" follows the fu- prefix convention used elsewhere
+        // (fu-entry, fu-lightbox); "comment" is kept alongside it
+        // permanently for backward compatibility — unlike entry_template,
+        // this wrapper isn't DB-configurable, so every existing skin's
+        // `div.comment`/`.comment` CSS must keep matching forever.
+        echo '<div id="comment' . $this->getID() . '" class="comment fu-comment">' . "\n";
         echo $template . "\n";
         echo "</div>\n";
     }

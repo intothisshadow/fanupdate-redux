@@ -126,9 +126,11 @@ class FanUpdate
         $this->_clean_self = clean_input($_SERVER['PHP_SELF']);
 
         $this->_cfg['entry_template'] =
-            '<h2><a href="{{url}}" title="permanent link to this post">{{title}}</a></h2>' . "\n"
+            '<div class="fu-entry">' . "\n"
+            . '<h2><a href="{{url}}" title="permanent link to this post">{{title}}</a></h2>' . "\n"
             . '<p class="catfile">Posted {{date}}. Filed under {{category}}. {{comment_link}}</p>' . "\n"
-            . '{{body}}';
+            . '{{body}}' . "\n"
+            . '</div>';
 
         $this->_cfg['comment_template'] =
             '{{gravatar}}' . "\n"

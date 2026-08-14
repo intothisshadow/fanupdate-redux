@@ -228,11 +228,13 @@ $setting[13]['optdesc']  = 'Highest allowable Gravatar image rating: G, PG, R, X
 $setting[13]['version']  = 2.0;
 
 $setting[14]['optkey']   = 'entry_template';
-$setting[14]['optvalue'] = '<h2><a href="{{url}}" title="permanent link to this post">{{title}}</a></h2>
+$setting[14]['optvalue'] = '<div class="fu-entry">
+<h2><a href="{{url}}" title="permanent link to this post">{{title}}</a></h2>
 
 <p class="catfile">Posted {{date}}. Filed under {{category}}. {{comment_link}}</p>
 
-{{body}}';
+{{body}}
+</div>';
 $setting[14]['optdesc']  = 'See readme.txt for template variables.';
 $setting[14]['version']  = 2.0;
 

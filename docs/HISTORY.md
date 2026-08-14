@@ -6,6 +6,53 @@ each change, and `PHP Test Suite/TEST_LOG.md` for verified test runs.
 
 ---
 
+## [Redux 2.5.0] — August 14, 2026 — `fu-` Naming Convention for Entries, Comments & Archives
+
+### `fu-entry` Default Entry Wrapper
+
+- [x] The default `entry_template` now wraps each post in
+      `<div class="fu-entry">...</div>` instead of printing the title,
+      catfile line, and body directly into `div#fanupdate` with no
+      container — updated in `FanUpdate::__construct()`,
+      `FanUpdate_Post::printPost()`, and `install.php`'s fresh-install seed.
+      Added a matching `#fanupdate .fu-entry {}` starter rule to the
+      **Admin → Category → Get Code** CSS snippet.
+
+### FP-25. Existing Installs Don't Get the New `.fu-entry` Wrapper
+
+- [x] Implemented as an `UpgradeRunner` migration
+      (`entryTemplateMigrationPending()`/`migrateLegacyEntryTemplateWrapper()`),
+      following the FP-19 timezone migration's pattern: no
+      constructor-injected legacy value, gated on a plain string-equality
+      check between the stored `entry_template` option and the exact
+      pre-FP-25 stock default. Any installation whose `entry_template` has
+      ever been edited — even by one character — is never touched. Detected
+      on every admin page load via the existing pending-upgrades banner,
+      applied via the same "Run Upgrades" path as the schema/
+      collective-script/timezone migrations.
+
+### `fu-comment` Naming Convention
+
+- [x] `FanUpdate_Comment::printComment()`'s always-present per-comment
+      wrapper now also carries a `fu-comment` class:
+      `<div id="comment{{id}}" class="comment fu-comment">`. Unlike
+      `entry_template`, this wrapper is hardcoded, not part of
+      `comment_template` — so the original `comment` class is kept
+      permanently rather than migrated away, and no `UpgradeRunner`
+      migration applies here.
+
+### Archives (`?view=archive`) `fu-` Classes
+
+- [x] Extended the same naming convention to the one remaining page that
+      had none: `show-blog.php`'s Month/Category Archives lists and
+      `show-cat.php`'s per-category year-grouped listing now carry
+      `fu-archive-list` (each `<ul>`), `fu-archive-item` (each `<li>`), and
+      (on `show-blog.php`'s two lists only) `fu-archive-count` around the
+      `"(N)"` entry count. Hardcoded markup, purely additive — no existing
+      selector renamed or removed.
+
+---
+
 ## [Redux 2.4.0] — August 13, 2026 — News Feed Widget, Emergency Password Reset & Table Sorting Fix
 
 ### FP-20. Fix show-blog.php Pagination Query Bug (Duplicate `entry_id` Column)

@@ -104,6 +104,13 @@ require_once('<?php echo htmlspecialchars((string) $fu->getOpt('install_path'), 
 
 div#fanupdate {}
 
+/* Each post — the default entry_template wraps {{title}}/{{catfile}}/
+   {{body}} in <div class="fu-entry">...</div>, so this rule styles every
+   entry as its own card by default. If you've customised entry_template
+   (Admin -> Options -> Templates) to drop the wrapper, this rule simply
+   matches nothing. */
+#fanupdate .fu-entry {}
+
 h2 {}
 h3 {}
 p {}
@@ -114,6 +121,17 @@ p.catfile {padding: 0 0 0 3em;}
 
 /* Entry date in the category archive listing (show-cat.php). */
 span.date {}
+
+/*	====	Archives (?view=archive)	====	*/
+
+/* The Month/Category Archives lists (show-blog.php) and the per-category
+   year-grouped listing (show-cat.php) all use these three fu- prefixed
+   classes: fu-archive-list on each <ul>, fu-archive-item on each <li>,
+   and fu-archive-count around the "(N)" entry-count shown on show-blog.php's
+   two lists only (show-cat.php's year listing has no count to wrap). */
+#fanupdate .fu-archive-list {}
+#fanupdate .fu-archive-item {}
+#fanupdate .fu-archive-count {}
 
 /*	====	Images	====	*/
 
@@ -167,6 +185,14 @@ a.fu-lightbox.fu-img-center {
 /*	====	Comments	====	*/
 
 div#comments {}
+
+/* Each comment is always wrapped in <div id="comment{{id}}"
+   class="comment fu-comment">...</div> — both classes are always present,
+   regardless of comment_template. #fanupdate .fu-comment follows the fu-
+   prefix used elsewhere (fu-entry, fu-lightbox) and is the recommended
+   selector for new styling; div.comment is kept below for sites already
+   using it. */
+#fanupdate .fu-comment {}
 
 div.comment {
 	clear: both;

@@ -6,6 +6,24 @@ each change, and `PHP Test Suite/TEST_LOG.md` for verified test runs.
 
 ---
 
+## [Redux 2.5.1] — August 14, 2026 — Fix FP-25 Migration Never Matching Real Installs
+
+### FP-25 Migration CRLF Fix
+
+- [x] `UpgradeRunner::entryTemplateMigrationPending()` compared the stored
+      `entry_template` option against an LF-only constant with raw `===`.
+      `install.php`'s interactive install form round-trips every
+      `*template*` default through a `<textarea>` the browser submits back
+      with CRLF line endings, so real installations' stored value never
+      byte-matched — the migration silently never ran on any
+      interactively-installed site. Discovered live on a production
+      install that updated to 2.5.0 but showed no pending-upgrades banner
+      and kept the old unwrapped template. Fixed with a new
+      `normalizeTemplateWhitespace()` helper (CRLF/CR → LF, trim) applied
+      to both sides of the comparison before matching.
+
+---
+
 ## [Redux 2.5.0] — August 14, 2026 — `fu-` Naming Convention for Entries, Comments & Archives
 
 ### `fu-entry` Default Entry Wrapper

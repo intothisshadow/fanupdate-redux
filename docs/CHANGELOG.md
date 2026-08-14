@@ -7,6 +7,29 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [Redux 2.5.1] — August 14, 2026 — Fix FP-25 Migration Never Matching Real Installs
+
+### Fixed
+
+- **The FP-25 `entry_template` `.fu-entry` wrapper migration (shipped in
+  2.5.0) never actually ran on real installations**, discovered live on a
+  production site that updated to 2.5.0 through the Admin Update Manager
+  yet showed no pending-upgrades banner and kept its old, unwrapped
+  `entry_template`. Root cause: `install.php`'s interactive install form
+  renders every `*template*` option's default value into a `<textarea>`
+  for the admin to review before it's actually written to the database
+  (`install.php`'s `<textarea name="value[]">` around the option-review
+  screen) — and browsers normalize textarea content to CRLF (`\r\n`) line
+  endings on submit, regardless of the LF (`\n`) the server originally
+  sent. `UpgradeRunner`'s `entryTemplateMigrationPending()` compared the
+  stored value against an LF-only constant with raw `===`, so it silently
+  never matched on any interactively-installed site — which is most real
+  installs, not an edge case. Fixed by comparing after a new
+  `normalizeTemplateWhitespace()` helper (collapses CRLF/CR to LF, trims)
+  is applied to both sides; the migration still writes the canonical
+  LF-based new default, only the comparison is whitespace-tolerant. 2 new
+  regression tests reproduce the exact CRLF-stock-default scenario.
+
 ## [Redux 2.5.0] — August 14, 2026 — `fu-` Naming Convention for Entries, Comments & Archives
 
 ### Changed

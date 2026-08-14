@@ -430,10 +430,40 @@ class UpgradeRunner
      * the new default by a current install.php, or a previous run of this
      * same migration — so this is safe to leave permanently enabled rather
      * than gating it behind `_db_version`.
+     *
+     * Compares after normalizeTemplateWhitespace() rather than raw ===:
+     * install.php's own interactive form (admin/get-code.php... no,
+     * install.php's option-review screen — see its `<textarea
+     * name="value[]">` for every `*template*` option key) round-trips the
+     * default value through the browser as part of every interactive
+     * install, and browsers normalise textarea content to CRLF line
+     * endings on submit regardless of how the server originally rendered
+     * it (install.php's own PHP source, and this class's constants below,
+     * use plain LF). A raw === comparison against LF-only constants would
+     * silently never match on virtually any real interactively-installed
+     * site — discovered live on a production installation that updated to
+     * the version shipping this migration but never received it, despite
+     * never having customized entry_template at all.
      */
     private function entryTemplateMigrationPending(): bool
     {
-        return $this->repository->getOptionValue('entry_template') === self::OLD_DEFAULT_ENTRY_TEMPLATE;
+        $stored = $this->repository->getOptionValue('entry_template');
+
+        return $stored !== null
+            && self::normalizeTemplateWhitespace($stored) === self::normalizeTemplateWhitespace(self::OLD_DEFAULT_ENTRY_TEMPLATE);
+    }
+
+    /**
+     * Collapses CRLF/CR line endings to LF and trims leading/trailing
+     * whitespace, so entryTemplateMigrationPending()'s comparison is
+     * resilient to the line-ending normalization described in that
+     * method's docblock — without weakening the check into anything that
+     * would match genuinely different content. Only whitespace shape is
+     * normalized; the actual markup/text must still match exactly.
+     */
+    private static function normalizeTemplateWhitespace(string $value): string
+    {
+        return trim(str_replace(["\r\n", "\r"], "\n", $value));
     }
 
     /**

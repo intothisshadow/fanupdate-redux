@@ -106,7 +106,6 @@ class CaptchaSecurityImages
         // output captcha image to browser
         header('Content-Type: image/jpeg');
         imagejpeg($image);
-        imagedestroy($image);
     }
 
     public function generateCode(int $characters): string

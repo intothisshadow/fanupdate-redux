@@ -402,6 +402,136 @@ class UpdateManager
             return ['ok' => false, 'error' => 'No verified download is ready to install. Download the release first.'];
         }
 
+        $result = $this->performInstall($downloadedPath, $downloadedVersion);
+
+        if ($result['ok']) {
+            $this->downloadManager?->cleanup($downloadedPath);
+
+            $state = $this->repository->getState();
+            unset(
+                $state['downloadedVersion'],
+                $state['downloadedPath'],
+                $state['downloadedSize'],
+                $state['downloadedSha256'],
+                $state['downloadedChecksumVerified'],
+                $state['downloadedAt'],
+            );
+            $state['lastInstall'] = [
+                'version'              => $result['version'],
+                'fileCount'            => $result['fileCount'],
+                'installedAt'          => $result['installedAt'],
+                'removedFileCount'     => $result['removedFileCount'],
+                'installScriptRemoved' => $result['installScriptRemoved'],
+            ];
+            $this->repository->saveState($state);
+        }
+
+        unset($result['installedAt']);
+
+        return $result;
+    }
+
+    /**
+     * Install an administrator-uploaded release ZIP over the live
+     * installation — the manual-upload counterpart to
+     * installLatestRelease() for a server that can't reach the configured
+     * update provider, or to install a specific build that isn't published
+     * as a release at all (FP-33). Runs through the exact same backup +
+     * install + auto-rollback-on-failure pipeline via performInstall(); the
+     * only difference from installLatestRelease() is where the ZIP and its
+     * target version come from — here, the uploaded file itself, rather
+     * than a previously downloaded-and-cached release.
+     *
+     * $uploadedTmpPath is expected to be the PHP-assigned temporary path of
+     * an already-validated upload (see admin/update.php's 'upload_install'
+     * handler, which checks $_FILES error codes and is_uploaded_file()
+     * before calling this) — this method does not re-validate that it came
+     * from a genuine HTTP upload, only that it is a well-formed FanUpdate
+     * Redux release archive.
+     *
+     * Never throws — failures are captured into the returned array as an
+     * error, the same pattern as installLatestRelease() and every other
+     * public method here.
+     *
+     * @return array{ok: bool, error?: string, version?: string, fileCount?: int, removedFileCount?: int, installScriptRemoved?: bool}
+     */
+    public function installUploadedRelease(string $uploadedTmpPath): array
+    {
+        if ($this->installManager === null) {
+            return ['ok' => false, 'error' => 'The install manager is not available.'];
+        }
+
+        if ($this->backupManager === null) {
+            return ['ok' => false, 'error' => 'The backup manager is not available.'];
+        }
+
+        if ($this->downloadManager === null) {
+            return ['ok' => false, 'error' => 'The download manager is not available.'];
+        }
+
+        if (!is_file($uploadedTmpPath)) {
+            return ['ok' => false, 'error' => 'The uploaded file could not be found.'];
+        }
+
+        $version = $this->detectUploadedZipVersion($uploadedTmpPath);
+        if ($version === null) {
+            return [
+                'ok'    => false,
+                'error' => 'Could not determine the version of the uploaded package '
+                    . '(the archive is not a valid ZIP, or is missing version.php with a readable FU_VERSION).',
+            ];
+        }
+
+        try {
+            $downloadResult = $this->downloadManager->acceptUploadedFile($uploadedTmpPath, $version);
+        } catch (\Throwable $e) {
+            return ['ok' => false, 'error' => 'The uploaded file was rejected: ' . $e->getMessage()];
+        }
+
+        $result = $this->performInstall($downloadResult->filePath, $version);
+
+        if ($result['ok']) {
+            $this->downloadManager->cleanup($downloadResult->filePath);
+
+            $state                 = $this->repository->getState();
+            $state['lastInstall']  = [
+                'version'              => $result['version'],
+                'fileCount'            => $result['fileCount'],
+                'installedAt'          => $result['installedAt'],
+                'removedFileCount'     => $result['removedFileCount'],
+                'installScriptRemoved' => $result['installScriptRemoved'],
+            ];
+            $this->repository->saveState($state);
+        } else {
+            // The install failed (and any auto-rollback already ran inside
+            // performInstall()) — the staged upload copy is no longer
+            // useful, same reasoning as the success path's cleanup above.
+            $this->downloadManager->cleanup($downloadResult->filePath);
+        }
+
+        unset($result['installedAt']);
+
+        return $result;
+    }
+
+    /**
+     * Shared backup + install + auto-rollback-on-failure pipeline used by
+     * both installLatestRelease() (a provider-downloaded ZIP) and
+     * installUploadedRelease() (FP-33, an administrator-uploaded ZIP) — the
+     * only difference between the two callers is where $zipPath and
+     * $version come from; everything from here on (backup safety net,
+     * InstallManager invocation, logging, automatic rollback on failure) is
+     * identical regardless of source.
+     *
+     * Never throws — failures are captured into the returned array as an
+     * error, same as every other public method here. Does not persist
+     * state or clean up $zipPath itself — callers do that with the version
+     * of "success" that makes sense for their own cached state shape.
+     *
+     * @return array{ok: bool, error?: string, version?: string, fileCount?: int, installedAt?: string, removedFileCount?: int, installScriptRemoved?: bool}
+     */
+    private function performInstall(string $zipPath, string $version): array
+    {
         try {
             $backupResult = $this->backupManager->createBackup($this->installedVersion);
         } catch (\Throwable $e) {
@@ -413,27 +543,7 @@ class UpdateManager
                 $this->reportProgress($message, $step, $total);
             };
 
-            $result = $this->installManager->installUpdate($downloadedPath, $downloadedVersion, $onProgress);
-
-            $this->downloadManager?->cleanup($downloadedPath);
-
-            unset(
-                $state['downloadedVersion'],
-                $state['downloadedPath'],
-                $state['downloadedSize'],
-                $state['downloadedSha256'],
-                $state['downloadedChecksumVerified'],
-                $state['downloadedAt'],
-            );
-            $state['lastInstall'] = [
-                'version'              => $result->version,
-                'fileCount'            => $result->fileCount,
-                'installedAt'          => $result->installedAt,
-                'removedFileCount'     => $result->removedFileCount,
-                'installScriptRemoved' => $result->installScriptRemoved,
-            ];
-
-            $this->repository->saveState($state);
+            $result = $this->installManager->installUpdate($zipPath, $version, $onProgress);
 
             $this->logEvent(
                 'install',
@@ -447,6 +557,7 @@ class UpdateManager
                 'ok'                    => true,
                 'version'               => $result->version,
                 'fileCount'             => $result->fileCount,
+                'installedAt'           => $result->installedAt,
                 'removedFileCount'      => $result->removedFileCount,
                 'installScriptRemoved'  => $result->installScriptRemoved,
             ];
@@ -466,7 +577,7 @@ class UpdateManager
                     };
                     $this->rollbackManager->rollbackTo($backupResult->filePath, $this->installedVersion, $rollbackProgress);
                     $message .= ' The previous version was automatically restored from backup.';
-                    $this->logEvent('rollback', 'ok', 'Automatically restored version ' . $this->installedVersion . ' after a failed install of ' . $downloadedVersion . '.');
+                    $this->logEvent('rollback', 'ok', 'Automatically restored version ' . $this->installedVersion . ' after a failed install of ' . $version . '.');
                 } catch (\Throwable $rollbackException) {
                     $message .= ' Automatic rollback ALSO failed (' . $rollbackException->getMessage()
                         . ') — manual recovery is needed; see the Backups section.';
@@ -478,6 +589,74 @@ class UpdateManager
 
             return ['ok' => false, 'error' => $message];
         }
+    }
+
+    /**
+     * Locate version.php inside an uploaded ZIP (root level, or one level
+     * down inside a single wrapping directory — mirrors
+     * InstallManager::extractAndValidate()'s own wrapper-stripping, so a
+     * GitHub auto-generated source ZIP uploaded manually is detected
+     * identically to one downloaded automatically) and parse FU_VERSION out
+     * of it, normalized the same way the installed version is. Returns null
+     * on any failure (not a valid ZIP, no version.php found, or FU_VERSION
+     * not parseable) rather than throwing — installUploadedRelease() turns
+     * that into a single user-facing error message.
+     */
+    private function detectUploadedZipVersion(string $zipPath): ?string
+    {
+        if (!class_exists(\ZipArchive::class)) {
+            return null;
+        }
+
+        $zip = new \ZipArchive();
+        if ($zip->open($zipPath, \ZipArchive::RDONLY) !== true) {
+            return null;
+        }
+
+        $versionEntry = null;
+        $wrapperCandidates = [];
+
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $name = $zip->getNameIndex($i);
+            if ($name === false) {
+                continue;
+            }
+
+            if ($name === 'version.php') {
+                $versionEntry = $name;
+                break;
+            }
+
+            // A single-level-deep version.php ("wrapper/version.php") is a
+            // candidate for the GitHub-auto-zip single-wrapping-directory
+            // case; only actually used below if no root-level version.php
+            // was found at all.
+            if (str_ends_with($name, '/version.php') && substr_count(rtrim($name, '/'), '/') === 1) {
+                $wrapperCandidates[] = $name;
+            }
+        }
+
+        if ($versionEntry === null && count($wrapperCandidates) === 1) {
+            $versionEntry = $wrapperCandidates[0];
+        }
+
+        if ($versionEntry === null) {
+            $zip->close();
+            return null;
+        }
+
+        $contents = $zip->getFromName($versionEntry);
+        $zip->close();
+
+        if ($contents === false) {
+            return null;
+        }
+
+        if (!preg_match("/const\\s+FU_VERSION\\s*=\\s*'([^']*)'/", $contents, $m)) {
+            return null;
+        }
+
+        return self::normalizeVersion($m[1]);
     }
 
     /**

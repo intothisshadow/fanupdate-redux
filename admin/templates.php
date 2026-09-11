@@ -116,8 +116,8 @@ $fu->reportErrors();
     <?php } ?>
 
     <p>
-        <input type="submit" name="action" value="update" class="update"
-               title="Save all templates, accesskey s" accesskey="s" />
+        <button type="submit" name="action" value="update" class="update"
+               title="Save all templates, accesskey s" accesskey="s">Update</button>
     </p>
 </form>
 

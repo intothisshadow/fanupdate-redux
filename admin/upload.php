@@ -267,11 +267,7 @@ if ($src_img !== false) {
             'image/webp' => imagewebp($dst_img, $thumb_path, 85),
             default      => false,
         };
-
-        imagedestroy($dst_img);
     }
-
-    imagedestroy($src_img);
 }
 
 // If GD thumbnail generation failed for any reason, fall back to copying the

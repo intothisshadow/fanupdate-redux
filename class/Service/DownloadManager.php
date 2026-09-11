@@ -8,6 +8,10 @@ declare(strict_types=1);
  * Downloads a release's ZIP asset over HTTPS into a temporary directory,
  * validates it, and reports the result as a DownloadResult. Part of the
  * Admin Update Manager's Phase 4 (Download Manager) — see TODO.md.
+ * acceptUploadedFile() (FP-33) covers the same "get a validated release ZIP
+ * into the temp directory" job for an administrator-uploaded file instead
+ * of a provider download — everything downstream (InstallManager, the
+ * DownloadResult shape) treats the two identically.
  *
  * Runs entirely in PHP with no shell/Composer/Git dependency, per the
  * shared-hosting assumptions in TODO.md's "Update System Assumptions". Uses
@@ -149,6 +153,61 @@ class DownloadManager
             size: $actualSize,
             sha256: $actualSha256,
             checksumVerified: $checksumVerified,
+        );
+    }
+
+    /**
+     * Accept an administrator-uploaded release ZIP into the managed temp
+     * directory — the manual-upload counterpart to download() (FP-33).
+     * Moves $uploadedTmpPath into $this->tempDir using the same
+     * "release-<version>-<random>.zip" naming download() uses, confirms ZIP
+     * integrity via the same isValidZip() check, and computes its SHA-256.
+     * There is no HTTPS/host allow-list to check (the file is already local)
+     * and no expected size/checksum to verify against (an upload has no
+     * provider metadata to compare with) — those are download()'s concerns,
+     * not this method's.
+     *
+     * @throws \RuntimeException if the source file is missing, it can't be
+     *         moved into the temp directory, or it isn't a valid ZIP.
+     */
+    public function acceptUploadedFile(string $uploadedTmpPath, string $version): DownloadResult
+    {
+        if (!is_file($uploadedTmpPath)) {
+            throw new \RuntimeException('The uploaded file could not be found.');
+        }
+
+        if (!is_dir($this->tempDir) && !mkdir($this->tempDir, 0755, true) && !is_dir($this->tempDir)) {
+            throw new \RuntimeException('Could not create the update temporary directory.');
+        }
+
+        $safeVersion = (string) preg_replace('/[^-_.0-9a-zA-Z]/', '', $version);
+        $destPath    = $this->tempDir . '/release-' . $safeVersion . '-' . bin2hex(random_bytes(4)) . '.zip';
+
+        // rename() is preferred (atomic, no double disk I/O) but can fail
+        // across filesystem/mount boundaries — PHP's upload tmp dir is not
+        // guaranteed to share a filesystem with $this->tempDir on every
+        // host. Same copy+unlink fallback InstallManager's own move-like
+        // operations use elsewhere in this codebase.
+        if (!@rename($uploadedTmpPath, $destPath)) {
+            if (!@copy($uploadedTmpPath, $destPath)) {
+                throw new \RuntimeException('Could not store the uploaded file. Check permissions on the update temp directory.');
+            }
+            @unlink($uploadedTmpPath);
+        }
+
+        if (!$this->isValidZip($destPath)) {
+            $this->cleanup($destPath);
+            throw new \RuntimeException('The uploaded file is not a valid ZIP archive.');
+        }
+
+        $actualSize = filesize($destPath);
+        $sha256     = hash_file('sha256', $destPath);
+
+        return new DownloadResult(
+            filePath: $destPath,
+            size: $actualSize !== false ? $actualSize : 0,
+            sha256: $sha256 !== false ? $sha256 : '',
+            checksumVerified: false, // no published checksum exists to verify an upload against
         );
     }
 

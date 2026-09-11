@@ -100,8 +100,9 @@ function fuTinyEnsureUploadInput() {
     if (_fuTinyUploadInput) { return; }
 
     _fuTinyUploadInput = document.createElement('input');
-    _fuTinyUploadInput.type   = 'file';
-    _fuTinyUploadInput.accept = 'image/jpeg,image/png,image/gif,image/webp';
+    _fuTinyUploadInput.type     = 'file';
+    _fuTinyUploadInput.accept   = 'image/jpeg,image/png,image/gif,image/webp';
+    _fuTinyUploadInput.multiple = true;
     _fuTinyUploadInput.style.cssText = 'position:absolute;left:-9999px;width:1px;height:1px;';
     _fuTinyUploadInput.setAttribute('aria-hidden', 'true');
     _fuTinyUploadInput.setAttribute('tabindex', '-1');
@@ -258,46 +259,77 @@ function fuTinyLoadMediaPage(page) {
 
 /**
  * fuTinyUploadImage — called when the file input fires a 'change' event.
- * POSTs to admin/upload.php and handles the JSON response.
+ * POSTs each selected file to admin/upload.php sequentially (FP-26 — not
+ * parallel, to avoid hammering shared hosting with concurrent uploads and
+ * to keep upload order == insertion order predictable), inserting each one
+ * into the editor as soon as its own upload completes. A per-file failure
+ * doesn't abort the remaining queue; failures are collected and reported
+ * as one end-of-batch summary instead of one alert() per failure.
  */
-function fuTinyUploadImage(e, uploadBtn) {
-    const file = e.target.files[0];
-    if (!file) { return; }
+async function fuTinyUploadImage(e, uploadBtn) {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) { return; }
 
-    // Reset the input so the same file can be re-selected after an error.
+    // Reset the input so the same file(s) can be re-selected after an error.
     e.target.value = '';
 
+    const spinnerSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/></svg> ';
+
     const savedHTML = uploadBtn.innerHTML;
-    uploadBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/></svg> Uploading&hellip;';
     uploadBtn.style.pointerEvents = 'none';
+
+    const setBusyLabel = (current, total) => {
+        uploadBtn.innerHTML = spinnerSvg + 'Uploading' + (total > 1 ? ' ' + current + ' of ' + total : '') + '…';
+    };
 
     const restore = () => {
         uploadBtn.innerHTML = savedHTML;
         uploadBtn.style.pointerEvents = '';
     };
 
-    const fd = new FormData();
-    fd.append('image', file);
-    fd.append('csrf_token', typeof fuCsrfToken !== 'undefined' ? fuCsrfToken : '');
+    let successCount = 0;
+    const failures = [];
 
-    fetch('upload.php', { method: 'POST', body: fd })
-        .then(r => {
+    for (let i = 0; i < files.length; i++) {
+        setBusyLabel(i + 1, files.length);
+
+        const fd = new FormData();
+        fd.append('image', files[i]);
+        fd.append('csrf_token', typeof fuCsrfToken !== 'undefined' ? fuCsrfToken : '');
+
+        try {
+            const r = await fetch('upload.php', { method: 'POST', body: fd });
             if (!r.ok) { throw new Error('Server error ' + r.status); }
-            return r.json();
-        })
-        .then(data => {
-            restore();
+            const data = await r.json();
+
             if (data.ok) {
+                // Insert immediately, in selection order — insertContent()
+                // moves the caret after the inserted content, so sequential
+                // inserts land in the right order without extra
+                // cursor-tracking logic.
                 fuTinyInsertImage(_fuTinyEditor, data.url, data.thumb);
-                fuTinyCloseImageModal();
+                successCount++;
             } else {
-                alert('Upload failed: ' + (data.error || 'Unknown error.'));
+                failures.push(files[i].name + ' (' + (data.error || 'Unknown error.') + ')');
             }
-        })
-        .catch(err => {
-            restore();
-            alert('Upload error: ' + err.message);
-        });
+        } catch (err) {
+            failures.push(files[i].name + ' (' + err.message + ')');
+        }
+    }
+
+    restore();
+
+    if (failures.length > 0) {
+        alert(successCount + ' of ' + files.length + ' uploaded. Failed: ' + failures.join(', '));
+    }
+
+    // Close only after the whole batch finishes, not after the first file —
+    // and only when at least one image actually made it into the editor,
+    // matching the single-file behaviour of never closing on a bare
+    // failure (so the admin can see the error and retry from an open modal).
+    if (successCount > 0) {
+        fuTinyCloseImageModal();
+    }
 }
 
 /**

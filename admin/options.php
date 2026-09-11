@@ -342,8 +342,8 @@ $fu->reportErrors();
     <?php } ?>
 
     <p style="margin-top:1.5rem;">
-        <input type="submit" name="action" value="update" class="update"
-               title="Save all options, accesskey s" accesskey="s" />
+        <button type="submit" name="action" value="update" class="update"
+               title="Save all options, accesskey s" accesskey="s">Update</button>
     </p>
 </form>
 

@@ -710,6 +710,32 @@ class FanUpdate
         return is_file(rtrim($installPath, '/') . '/.fu-maintenance');
     }
 
+    // ── asset cache-busting ─────────────────────────────────────────────────
+
+    /**
+     * Append a `?v=<mtime>` cache-buster to an assets/ URL so editing a
+     * shipped JS/CSS file (e.g. assets/js/fanupdate.js) invalidates it
+     * immediately, instead of waiting out .htaccess's
+     * `Cache-Control: public, max-age=604800` on every browser that already
+     * fetched the old copy. $relativePath is relative to install_path
+     * (e.g. 'assets/js/fanupdate.js'). Falls back to no query string if the
+     * file can't be stat'd (e.g. unusual install_path config) — same
+     * long-cached behavior as before this existed, not a regression.
+     */
+    private function assetUrl(string $baseUrl, string $relativePath): string
+    {
+        $installPath = (string) ($this->getOpt('install_path') ?: '');
+        if ($installPath === '') {
+            $installPath = dirname(__DIR__);
+        }
+
+        $mtime = @filemtime(rtrim($installPath, '/') . '/' . ltrim($relativePath, '/'));
+
+        return $mtime !== false
+            ? $baseUrl . '?v=' . $mtime
+            : $baseUrl;
+    }
+
     // ── cookie helper ────────────────────────────────────────────────────────
 
     /**
@@ -832,7 +858,7 @@ class FanUpdate
                     <input type="password" id="password" name="password" size="20" tabindex="2" />
                 </p>
                 <p id="loginButton">
-                    <input type="submit" name="action" value="login" class="submit" tabindex="4" />
+                    <button type="submit" name="action" value="login" class="submit" tabindex="4">Login</button>
                     <span>
                         <input type="checkbox" id="remember_me" name="remember_me" value="1" tabindex="3" />
                         <label for="remember_me" class="checkbox">Remember?</label>
@@ -1053,7 +1079,7 @@ class FanUpdate
                             'UTF-8'
                         );
                         echo '<script>const fu_url = \'' . $fu_url . '\';</script>' . "\n";
-                        echo '<script src="' . $js_url . '/fanupdate.js"></script>' . "\n";
+                        echo '<script src="' . $this->assetUrl($js_url . '/fanupdate.js', 'assets/js/fanupdate.js') . '"></script>' . "\n";
                         echo '<script src="' . $js_url . '/fanupdate-comment-submit.js"></script>' . "\n";
                         echo '<script>submitCmtInit();</script>' . "\n";
 
@@ -1105,7 +1131,7 @@ class FanUpdate
             // On single-post pages fanupdate.js is already emitted by the
             // comment-form block above, so we only emit it here on list pages.
             if (!$single_page) {
-                echo '<script src="' . $js_base . '/fanupdate.js"></script>' . "\n";
+                echo '<script src="' . $this->assetUrl($js_base . '/fanupdate.js', 'assets/js/fanupdate.js') . '"></script>' . "\n";
             }
             $_lb_script_emitted = true;
         }

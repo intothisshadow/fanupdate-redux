@@ -299,14 +299,14 @@ if ($showform) {
             <fieldset id="action">
                 <legend>Action</legend>
                 <div class="primary">
-                    <input type="submit" name="action" value="preview" class="button" title="Preview changes" />
+                    <button type="submit" name="action" value="preview" class="button" title="Preview changes">Preview</button>
                 </div>
                 <div class="secondary">
                     <?php if (isset($clean['comment_id'])) { ?>
-                    <input type="submit" name="action" value="update" class="update" title="Save changes, accesskey s" accesskey="s" />
-                    <input type="submit" name="action" value="delete" class="delete" title="Delete comment, accesskey x" accesskey="x" />
+                    <button type="submit" name="action" value="update" class="update" title="Save changes, accesskey s" accesskey="s">Update</button>
+                    <button type="submit" name="action" value="delete" class="delete" title="Delete comment, accesskey x" accesskey="x">Delete</button>
                     <?php } else { ?>
-                    <input type="submit" name="action" value="add" class="add" title="Add comment, accesskey s" accesskey="s" />
+                    <button type="submit" name="action" value="add" class="add" title="Add comment, accesskey s" accesskey="s">Add</button>
                     <?php } ?>
                 </div>
             </fieldset>
@@ -334,8 +334,8 @@ if ($showform) {
         <?php echo $fu->csrfField(); ?>
         <input type="hidden" name="id" value="<?php echo $confirmDeleteId; ?>" />
         <div class="primary">
-            <input type="submit" name="action" value="delete" class="delete" data-skip-confirm="1"
-                title="Permanently delete this comment, accesskey s" accesskey="s" />
+            <button type="submit" name="action" value="delete" class="delete" data-skip-confirm="1"
+                title="Permanently delete this comment, accesskey s" accesskey="s">Delete</button>
             <a href="comment.php" class="button">Cancel</a>
         </div>
     </form>

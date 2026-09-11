@@ -39,8 +39,12 @@
  *  - fuLightboxInit(): scans document for <a class="fu-lightbox"> elements and
  *    wires a click handler that opens a full-screen overlay displaying the
  *    linked full-size image. The overlay (#fu-lightbox-overlay) is created once
- *    and reused. Keyboard: Escape closes; click outside the image closes.
- *    Self-contained scoped styles are injected into <head> on first call so the
+ *    and reused. Keyboard: Escape closes; click outside the image closes;
+ *    Left/Right arrow keys step to the previous/next image when the clicked
+ *    image's nearest .fu-entry ancestor contains more than one fu-lightbox
+ *    link (Prev/Next buttons do the same, hidden entirely for single-image
+ *    entries). Self-contained scoped styles are injected into <head> on first
+ *    call so the
  *    lightbox works on public pages without the admin stylesheet being loaded.
  *    Called by FanUpdate::printBlog() via an inline <script> after posts are
  *    rendered, mirroring the pattern used for the comment form scripts.
@@ -369,6 +373,12 @@ function dateDiff(date1, date2) {
  * Closing the lightbox:
  *  - Click anywhere on the dark backdrop (outside the image)
  *  - Press Escape
+ *
+ * Prev/Next navigation: images sharing a .fu-entry ancestor (falls back to
+ * every fu-lightbox link on the page if there's no .fu-entry ancestor) form
+ * a group; Prev/Next buttons and Left/Right arrow keys step through it. No
+ * wrap-around — Prev is a no-op at the first image, Next at the last. Groups
+ * of one show no navigation at all.
  */
 function fuLightboxInit() {
 
@@ -424,6 +434,46 @@ function fuLightboxInit() {
             '#fu-lightbox-close:hover {',
             '  background: rgba(255,255,255,0.22);',
             '}',
+            '#fu-lightbox-prev, #fu-lightbox-next {',
+            '  position: fixed;',
+            '  top: 50%;',
+            '  transform: translateY(-50%);',
+            '  width: 44px;',
+            '  height: 44px;',
+            '  border-radius: 50%;',
+            '  background: rgba(255,255,255,0.12);',
+            '  border: 1px solid rgba(255,255,255,0.22);',
+            '  color: #fff;',
+            '  font-size: 26px;',
+            '  line-height: 42px;',
+            '  text-align: center;',
+            '  cursor: pointer;',
+            '  user-select: none;',
+            '  transition: background 0.15s, opacity 0.15s;',
+            '}',
+            '#fu-lightbox-prev { left: 20px; }',
+            '#fu-lightbox-next { right: 20px; }',
+            '#fu-lightbox-prev:hover, #fu-lightbox-next:hover {',
+            '  background: rgba(255,255,255,0.22);',
+            '}',
+            '#fu-lightbox-prev[aria-disabled="true"], #fu-lightbox-next[aria-disabled="true"] {',
+            '  opacity: 0.3;',
+            '  cursor: default;',
+            '  pointer-events: none;',
+            '}',
+            '#fu-lightbox-counter {',
+            '  position: fixed;',
+            '  bottom: 20px;',
+            '  left: 50%;',
+            '  transform: translateX(-50%);',
+            '  color: rgba(255,255,255,0.85);',
+            '  font-size: 13px;',
+            '  letter-spacing: 0.04em;',
+            '  background: rgba(0,0,0,0.35);',
+            '  padding: 4px 12px;',
+            '  border-radius: 999px;',
+            '  pointer-events: none;',
+            '}',
             'a.fu-lightbox img {',
             '  cursor: zoom-in;',
             '  transition: opacity 0.15s;',
@@ -433,6 +483,60 @@ function fuLightboxInit() {
             '}',
         ].join('\n');
         document.head.appendChild(style);
+    }
+
+    // ── Prev/Next navigation helpers ──────────────────────────────────────────
+    // Re-look-up elements by id each time rather than closing over them, so
+    // these work correctly whether called from this invocation of
+    // fuLightboxInit() or a later one (the overlay is created once and reused
+    // across calls — see the doc comment above).
+
+    function fuLbUpdateImage() {
+        const ov = document.getElementById('fu-lightbox-overlay');
+        const group = ov._group;
+        const index = ov._index;
+        const link = group[index];
+        const imgEl = document.getElementById('fu-lightbox-img');
+        const prevBtn = document.getElementById('fu-lightbox-prev');
+        const nextBtn = document.getElementById('fu-lightbox-next');
+        const counterEl = document.getElementById('fu-lightbox-counter');
+
+        const fullUrl = link.getAttribute('href');
+        const linkImg = link.querySelector('img');
+        const altText = linkImg ? linkImg.getAttribute('alt') : '';
+
+        imgEl.src = fullUrl;
+        imgEl.alt = altText || '';
+        ov._triggerLink = link;
+
+        const multi = group.length > 1;
+        prevBtn.style.display = multi ? '' : 'none';
+        nextBtn.style.display = multi ? '' : 'none';
+        counterEl.style.display = multi ? '' : 'none';
+
+        if (!multi) { return; }
+
+        counterEl.textContent = (index + 1) + ' / ' + group.length;
+
+        const atFirst = index === 0;
+        const atLast = index === group.length - 1;
+        prevBtn.setAttribute('aria-disabled', String(atFirst));
+        nextBtn.setAttribute('aria-disabled', String(atLast));
+
+        // Preload the adjacent images so stepping feels instant instead of
+        // showing a flash of the loading state on a slow connection.
+        if (group[index - 1]) { new Image().src = group[index - 1].getAttribute('href'); }
+        if (group[index + 1]) { new Image().src = group[index + 1].getAttribute('href'); }
+    }
+
+    function fuLbStep(delta) {
+        const ov = document.getElementById('fu-lightbox-overlay');
+        if (!ov || !ov._group) { return; }
+        const newIndex = ov._index + delta;
+        // No wrap-around: Prev is a no-op at the first image, Next at the last.
+        if (newIndex < 0 || newIndex >= ov._group.length) { return; }
+        ov._index = newIndex;
+        fuLbUpdateImage();
     }
 
     // ── create overlay once ───────────────────────────────────────────────────
@@ -457,13 +561,49 @@ function fuLightboxInit() {
         closeBtn.setAttribute('tabindex', '0');
         closeBtn.innerHTML = '&times;';
 
+        // Prev/Next only become visible (see fuLbUpdateImage()) when the
+        // clicked image's .fu-entry contains more than one fu-lightbox link —
+        // hidden by default so single-image entries show no navigation.
+        const prevBtn = document.createElement('span');
+        prevBtn.id = 'fu-lightbox-prev';
+        prevBtn.style.display = 'none';
+        prevBtn.setAttribute('aria-label', 'Previous image');
+        prevBtn.setAttribute('role', 'button');
+        prevBtn.setAttribute('tabindex', '0');
+        prevBtn.innerHTML = '&#8249;';
+
+        const nextBtn = document.createElement('span');
+        nextBtn.id = 'fu-lightbox-next';
+        nextBtn.style.display = 'none';
+        nextBtn.setAttribute('aria-label', 'Next image');
+        nextBtn.setAttribute('role', 'button');
+        nextBtn.setAttribute('tabindex', '0');
+        nextBtn.innerHTML = '&#8250;';
+
+        const counter = document.createElement('span');
+        counter.id = 'fu-lightbox-counter';
+        counter.style.display = 'none';
+        counter.setAttribute('aria-hidden', 'true');
+
         const img = document.createElement('img');
         img.alt = '';
         img.id  = 'fu-lightbox-img';
 
         overlay.appendChild(closeBtn);
+        overlay.appendChild(prevBtn);
+        overlay.appendChild(nextBtn);
+        overlay.appendChild(counter);
         overlay.appendChild(img);
         document.body.appendChild(overlay);
+
+        prevBtn.addEventListener('click', function (e) { e.stopPropagation(); fuLbStep(-1); });
+        nextBtn.addEventListener('click', function (e) { e.stopPropagation(); fuLbStep(1); });
+        prevBtn.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fuLbStep(-1); }
+        });
+        nextBtn.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fuLbStep(1); }
+        });
 
         // ── close handlers ────────────────────────────────────────────────────
 
@@ -474,6 +614,19 @@ function fuLightboxInit() {
                 overlay.style.display = 'none';
                 img.src = '';
                 img.alt = '';
+
+                // Undo the scroll lock applied in the click handler below and
+                // restore the page to where it was scrolled to. behavior:
+                // 'instant' overrides any scroll-behavior: smooth set on
+                // html/body by the skin — without it, a smooth-scroll skin
+                // would visibly animate back to y instead of snapping there,
+                // since scrollTo() otherwise inherits that CSS property.
+                const y = -parseInt(document.body.style.top || '0', 10);
+                document.body.style.position = '';
+                document.body.style.top = '';
+                document.body.style.width = '';
+                window.scrollTo({ top: y, left: 0, behavior: 'instant' });
+
                 if (overlay._triggerLink) {
                     overlay._triggerLink.focus();
                     overlay._triggerLink = null;
@@ -491,15 +644,18 @@ function fuLightboxInit() {
         });
 
         document.addEventListener('keydown', function (e) {
-            if (e.key === 'Escape' && overlay.classList.contains('fu-lb-visible')) {
+            if (!overlay.classList.contains('fu-lb-visible')) { return; }
+            if (e.key === 'Escape') {
                 fuLbClose();
+            } else if (e.key === 'ArrowLeft') {
+                fuLbStep(-1);
+            } else if (e.key === 'ArrowRight') {
+                fuLbStep(1);
             }
         });
 
         img.addEventListener('click', function (e) { e.stopPropagation(); });
     }
-
-    const lbImg = document.getElementById('fu-lightbox-img');
 
     // ── wire each fu-lightbox link ────────────────────────────────────────────
 
@@ -510,12 +666,32 @@ function fuLightboxInit() {
         link.addEventListener('click', function (e) {
             e.preventDefault();
 
-            const fullUrl = link.getAttribute('href');
-            const altText = link.querySelector('img') ? link.querySelector('img').getAttribute('alt') : '';
+            // Group images by nearest ancestor .fu-entry so Prev/Next only
+            // steps through images belonging to the same blog post — falls
+            // back to every fu-lightbox link on the page when there's no
+            // .fu-entry ancestor (a template that doesn't use printBlog()'s
+            // wrapper), so the feature still works rather than silently
+            // doing nothing.
+            const entry = link.closest('.fu-entry');
+            const group = entry
+                ? Array.from(entry.querySelectorAll('a.fu-lightbox'))
+                : Array.from(document.querySelectorAll('a.fu-lightbox'));
+            const index = group.indexOf(link);
 
-            overlay._triggerLink = link;
-            lbImg.src = fullUrl;
-            lbImg.alt = altText || '';
+            overlay._group = group;
+            overlay._index = index === -1 ? 0 : index;
+
+            fuLbUpdateImage();
+
+            // Lock body scroll while the overlay is open. On long pages this
+            // also sidesteps a mobile-browser quirk where a scrollable
+            // document behind a position:fixed overlay lets the layout
+            // viewport used to size that overlay drift out of sync with the
+            // visual viewport, leaving the centered image rendered off-screen.
+            const scrollY = window.scrollY;
+            document.body.style.position = 'fixed';
+            document.body.style.top = `-${scrollY}px`;
+            document.body.style.width = '100%';
 
             overlay.style.display = 'flex';
             // Force a reflow so the transition runs from opacity:0.

@@ -7,6 +7,142 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- **Multiple image upload in the WYSIWYG "Insert Image" modal (FP-26)** —
+  the "Upload New" tab's "Choose File…" button now accepts selecting
+  several images at once (`<input type="file" multiple>`), uploading them
+  to `admin/upload.php` one at a time (not in parallel, to avoid
+  hammering shared hosting) and inserting each into the editor as soon as
+  its own upload finishes, in selection order. The busy label shows
+  "Uploading N of M…" for a multi-file batch (unchanged plain
+  "Uploading…" for a single file). A per-file failure doesn't abort the
+  rest of the batch — failures are collected and reported as one
+  end-of-batch summary alert instead of one alert per failure; the modal
+  stays open on a total failure (nothing succeeded) but closes once at
+  least one image made it in, matching the previous single-file
+  behavior's "never close on a bare failure" rule. No `admin/upload.php`
+  changes — it still accepts exactly one file per POST, `fanupdate-tinymce.js`
+  just calls it once per selected file now instead of once total.
+  Drag-and-drop/paste into the editor body already supported multiple
+  images before this (TinyMCE's own `images_upload_handler` contract) —
+  this was specifically about the "Choose File…" button path.
+
+- **"View" link on each entry in Admin → Entries (FP-32)** — every published
+  row in the Entries table now links out to its real front-end page
+  (`$post->getUrl()`, opened in a new tab), so an admin can jump straight
+  from the admin listing to see how a post actually looks live, without
+  hand-building the URL. Draft rows show no View link — `show-blog.php`'s
+  queries are all scoped `WHERE is_public > 0`, so a draft's URL would just
+  render an empty page rather than anything meaningful. The Actions column
+  header's `colspan` was bumped from 2 to 3 to fit the new cell.
+
+- **Manual ZIP upload option in the Admin Update Manager (FP-33)** — **Admin
+  → Updates** now has an "Install from uploaded ZIP" section, always shown
+  regardless of GitHub update-check status, for a server that can't reach
+  GitHub over outbound HTTPS or to install a build that isn't published as
+  a release. The uploaded file is validated the same way a GitHub-fetched
+  release is (`InstallManager`'s existing `version.php`/`index.php`/
+  `admin/`/`class/` checks), with its target version auto-detected from the
+  archive's own `version.php` (root level, or one level down inside a
+  single wrapping directory — so a GitHub auto-generated source ZIP
+  uploaded manually is handled the same as one downloaded automatically),
+  and installed through the exact same backup-first,
+  automatic-rollback-on-failure pipeline the GitHub-download flow already
+  uses — a failed install restores the pre-install backup automatically,
+  same as before. `class/Service/UpdateManager.php`'s
+  `installLatestRelease()` had its backup/install/rollback/logging logic
+  extracted into a shared private `performInstall()`, now used by both the
+  existing GitHub-download flow and the new
+  `installUploadedRelease()`, so there's one pipeline instead of two
+  near-duplicate copies. `class/Service/DownloadManager.php` gained
+  `acceptUploadedFile()`, the upload counterpart to `download()` — stages
+  the file into the same managed temp directory with the same naming
+  convention and ZIP-integrity check, minus the HTTPS/host/
+  expected-checksum steps that only apply to a network fetch.
+
+- **Prev/Next navigation in the frontend lightbox** — when a post contains
+  more than one `<a class="fu-lightbox">` image, opening one now groups it
+  with every other `fu-lightbox` image inside the same `.fu-entry` (DOM
+  order), and shows Prev/Next buttons plus a "N / total" counter; Left/Right
+  arrow keys do the same while the overlay is open. Grouping falls back to
+  every `fu-lightbox` link on the page when the clicked link has no
+  `.fu-entry` ancestor, so the feature still works on templates that don't
+  use `printBlog()`'s wrapper. No wrap-around (Prev disabled at the first
+  image, Next at the last), and posts with only one image show no
+  navigation at all — no behavior change for the existing single-image
+  case. Adjacent images are preloaded via `new Image()` on every step so
+  navigation feels instant. `fuLightboxInit()`'s initial-open code path and
+  the new Prev/Next path both funnel through one shared `fuLbUpdateImage()`
+  helper in `assets/js/fanupdate.js`, so focus-return-on-close
+  (`overlay._triggerLink`) always tracks whichever image is currently
+  displayed, not just the originally-clicked one. Audited all seven
+  downstream skins listed in `CLAUDE.md`'s "Downstream Skins" section for
+  CSS that positions `#fu-lightbox-overlay`'s children by DOM-order
+  assumption (e.g. `:nth-child`) — none exist, so no skin updates were
+  needed; the new buttons/counter are `position: fixed`, not flex/grid
+  siblings, so their insertion into the DOM doesn't affect layout either
+  way.
+
+### Fixed
+
+- `captcha.php` and `admin/upload.php`: removed three dead `imagedestroy()`
+  calls, which have had no effect since PHP 8.0 (`GdImage` is a
+  garbage-collected object) and started emitting an `E_DEPRECATED` warning
+  under PHP 8.5.
+
+- **`fu-lightbox`'s close handler could visibly animate the scroll-position
+  restore instead of snapping back instantly**, on any downstream skin
+  setting `scroll-behavior: smooth` on `html`/`body` — `fuLbClose()` in
+  `assets/js/fanupdate.js` called `window.scrollTo(0, y)` with no explicit
+  `behavior`, so it silently inherited the skin's CSS scroll-behavior. Now
+  calls `window.scrollTo({ top: y, left: 0, behavior: 'instant' })`, whose
+  explicit JS option always overrides the CSS property regardless of skin.
+
+- **`show-cat.php` post title links pointed back at the category page
+  instead of the configured Blog page**, making clicking a post title on a
+  category listing reload the same category page with the post's `?id=`
+  appended rather than taking the visitor to the real single-post view
+  (Options -> "Blog page"). Root cause: `FanUpdate::printBlog()` (shared by
+  `show-blog.php` and `show-cat.php`) built each `FanUpdate_Post` without
+  passing an explicit permalink base, so it fell back to the current page's
+  own URL — correct on `show-blog.php` itself, wrong everywhere else it's
+  embedded. `printBlog()` now passes the `blog_page` option explicitly,
+  matching every other `FanUpdate_Post`/`FanUpdate_Comment` call site
+  (`rss.php`, `rss-comments.php`, `admin/index.php`, `admin/blog.php`,
+  `admin/comment.php`).
+
+### Changed
+
+- Supported PHP range widened to include PHP 8.5, alongside the existing
+  8.2–8.4 support. PHP 8.4 remains the primary development target.
+
+- **Consistent Sentence-case button labels across the admin panel
+  (FP-28)** — every `<input type="submit" name="action" value="…">`
+  button previously displayed its raw lowercase action token verbatim
+  (`add`, `update`, `delete`, `preview`, `check`, `login`,
+  `confirm-delete-orphan`), inconsistent with every `<button>`/
+  `<a class="button">` elsewhere in the admin panel, which are already
+  Sentence case ("Cancel", "Get code", "Install now", etc.). All 25
+  instances across `class/FanUpdate.php` (the login form) and 11
+  `admin/*.php` files converted to `<button type="submit" name="action"
+  value="…">Label</button>` — the `value` (and therefore every
+  `$_POST['action']` comparison reading it back) is completely unchanged,
+  since a `<button>`'s visible text is independent of its `value`
+  attribute; only the tag changed and a Sentence-case label was added as
+  inner content. No CSS/JS changes needed: `assets/css/style.css`/
+  `style-night.css` already style bare `button` and the semantic classes
+  (`.add`/`.update`/`.edit`/`.submit`/`.delete`) alongside every
+  `input[type="submit"].*` rule, and `confirmDeleteInit()` in
+  `assets/js/fanupdate-admin.js` already selects by class
+  (`css.getElementsByClass(document, 'delete', '*')`), not by tag.
+
+- **Added `.fu-nav-link`/`.fu-cat-link`/`.fu-comment-count-link`/
+  `.fu-credit-link` to `admin/get-code.php`'s CSS starter snippet and
+  documented all four in a new "Nav, category, comment-count, and credit
+  links" section of `README.md`**, closing the documentation gap left by
+  the CSS-hook-class work these four selectors were added for.
+
 ## [Redux 2.5.1] — August 14, 2026 — Fix FP-25 Migration Never Matching Real Installs
 
 ### Fixed

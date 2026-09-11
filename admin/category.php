@@ -214,9 +214,9 @@ if (!$showform && $orphanedCategoryIds !== []) { ?>
     <form action="category.php" method="post" style="display:inline-block;margin-right:0.5rem;">
         <?php echo $fu->csrfField(); ?>
         <input type="hidden" name="orphan_cat_id" value="<?php echo (int) $orphanCatId; ?>" />
-        <input type="submit" name="action" value="confirm-delete-orphan" class="delete"
+        <button type="submit" name="action" value="confirm-delete-orphan" class="delete"
                title="Confirm removing category #<?php echo (int) $orphanCatId; ?>"
-               onclick="return confirm('Remove FanUpdate settings for category #<?php echo (int) $orphanCatId; ?>? This cannot be undone.');" />
+               onclick="return confirm('Remove FanUpdate settings for category #<?php echo (int) $orphanCatId; ?>? This cannot be undone.');">Confirm delete</button>
         <span class="hint">Category #<?php echo (int) $orphanCatId; ?></span>
     </form>
     <?php } ?>
@@ -291,17 +291,17 @@ if (!$showform && $orphanedCategoryIds !== []) { ?>
                 <div class="primary">
                     <?php if (isset($clean['cat_id'])) { ?>
                     <input type="hidden" name="cat_id" value="<?php echo (int) $clean['cat_id']; ?>" />
-                    <input type="submit" name="action" value="update" class="update"
-                           title="Save changes, accesskey s" accesskey="s" />
+                    <button type="submit" name="action" value="update" class="update"
+                           title="Save changes, accesskey s" accesskey="s">Update</button>
                     <?php } else { ?>
-                    <input type="submit" name="action" value="add" class="add"
-                           title="Add category, accesskey s" accesskey="s" />
+                    <button type="submit" name="action" value="add" class="add"
+                           title="Add category, accesskey s" accesskey="s">Add</button>
                     <?php } ?>
                 </div>
                 <?php if (isset($clean['cat_id']) && $isStandaloneCategory) { ?>
                 <div class="secondary">
-                    <input type="submit" name="action" value="delete" class="delete"
-                           title="Delete this category, accesskey x" accesskey="x" />
+                    <button type="submit" name="action" value="delete" class="delete"
+                           title="Delete this category, accesskey x" accesskey="x">Delete</button>
                 </div>
                 <?php } ?>
             </fieldset>
@@ -356,8 +356,8 @@ if (!$showform && $orphanedCategoryIds !== []) { ?>
                         . '<form action="category.php" method="post" style="display:inline;">'
                         . $fu->csrfField()
                         . '<input type="hidden" name="cat_id" value="' . $rowCatId . '" />'
-                        . '<input type="submit" name="action" value="delete" class="delete"'
-                        . ' title="Delete ' . htmlspecialchars((string) $row['cname'], ENT_QUOTES, 'UTF-8') . '" />'
+                        . '<button type="submit" name="action" value="delete" class="delete"'
+                        . ' title="Delete ' . htmlspecialchars((string) $row['cname'], ENT_QUOTES, 'UTF-8') . '">Delete</button>'
                         . '</form></td>';
                 } else {
                     echo '<td class="form hint">read-only</td>';

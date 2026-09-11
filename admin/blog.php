@@ -322,15 +322,15 @@ if ($showform) {
                 <fieldset id="action">
                     <legend>Action</legend>
                     <div class="primary">
-                        <input type="submit" name="action" value="preview" class="button"
-                            title="Preview entry, accesskey p" accesskey="p" />
+                        <button type="submit" name="action" value="preview" class="button"
+                            title="Preview entry, accesskey p" accesskey="p">Preview</button>
                         <?php if ($entry_id > 0) { ?>
                             <input type="hidden" name="id" value="<?php echo $entry_id; ?>" />
-                            <input type="submit" name="action" value="update" class="update"
-                                title="Save changes, accesskey s" accesskey="s" />
+                            <button type="submit" name="action" value="update" class="update"
+                                title="Save changes, accesskey s" accesskey="s">Update</button>
                         <?php } else { ?>
-                            <input type="submit" name="action" value="add" class="add"
-                                title="Add entry, accesskey s" accesskey="s" />
+                            <button type="submit" name="action" value="add" class="add"
+                                title="Add entry, accesskey s" accesskey="s">Add</button>
                         <?php } ?>
                     </div>
                     <?php if ($entry_id > 0) { ?>
@@ -394,8 +394,8 @@ if ($showform) {
             <?php echo $fu->csrfField(); ?>
             <input type="hidden" name="id" value="<?php echo $confirmDeleteId; ?>" />
             <div class="primary">
-                <input type="submit" name="action" value="delete" class="delete" data-skip-confirm="1"
-                    title="Permanently delete this entry, accesskey s" accesskey="s" />
+                <button type="submit" name="action" value="delete" class="delete" data-skip-confirm="1"
+                    title="Permanently delete this entry, accesskey s" accesskey="s">Delete</button>
                 <a href="blog.php" class="button">Cancel</a>
             </div>
         </form>
@@ -502,7 +502,7 @@ if ($showform) {
                         <th scope="col">Date</th>
                         <th scope="col">Comments</th>
                         <th scope="col">Public</th>
-                        <th scope="col" data-sort-method="none" colspan="2">Actions</th>
+                        <th scope="col" data-sort-method="none" colspan="3">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -531,6 +531,15 @@ if ($showform) {
                         echo '<td><a href="comment.php?entry=' . $post->getID() . '" title="See comments">'
                             . (int) $row['num_comments'] . '</a></td>';
                         echo '<td>' . $public_badge . '</td>';
+                        // Drafts have no meaningful front-end page to view —
+                        // show-blog.php's WHERE is_public > 0 excludes them
+                        // entirely, so their id would just render an empty
+                        // page rather than a real 404. Cell is left empty
+                        // (not omitted) to keep every row's column count
+                        // matching the header's colspan="3" Actions group.
+                        echo '<td class="form">' . ($post->isPublic()
+                            ? '<a href="' . htmlspecialchars($post->getUrl(), ENT_QUOTES, 'UTF-8') . '" class="button" target="_blank" rel="noopener noreferrer" title="View \'' . htmlspecialchars($post->getTitle(), ENT_QUOTES, 'UTF-8') . '\' on the live site">View</a>'
+                            : '') . '</td>';
                         echo '<td class="form"><a href="blog.php?id=' . $post->getID() . '" class="edit button">Edit</a></td>';
                         echo '<td class="form">'
                             . '<a href="blog.php?action=confirm-delete&id=' . $post->getID() . '" class="delete button" data-skip-confirm="1"'

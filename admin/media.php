@@ -166,8 +166,8 @@ if ($confirmDeleteId > 0 && $confirmDeleteDto !== null) {
             <?php echo $fu->csrfField(); ?>
             <input type="hidden" name="id" value="<?php echo $confirmDeleteId; ?>" />
             <div class="primary">
-                <input type="submit" name="action" value="delete" class="delete" data-skip-confirm="1"
-                       title="Permanently delete this image, accesskey s" accesskey="s" />
+                <button type="submit" name="action" value="delete" class="delete" data-skip-confirm="1"
+                       title="Permanently delete this image, accesskey s" accesskey="s">Delete</button>
                 <a href="media.php" class="button">Cancel</a>
             </div>
         </form>

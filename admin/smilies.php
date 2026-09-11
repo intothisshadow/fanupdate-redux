@@ -114,8 +114,8 @@ $fu->reportErrors();
                accesskey="n" style="width:auto;" />
         &nbsp;=&nbsp;
         <?php $fu->printSmileyImgDropdown('image'); ?>
-        <input type="submit" name="action" value="add" class="add"
-               title="Add smiley, accesskey s" accesskey="s" />
+        <button type="submit" name="action" value="add" class="add"
+               title="Add smiley, accesskey s" accesskey="s">Add</button>
     </p>
 </form>
 
@@ -168,8 +168,8 @@ if (count($smilies) > 0) { ?>
 
     <p style="margin-top:1rem; display:flex; gap:8px;">
         <?php echo $fu->csrfField(); ?>
-        <input type="submit" name="action" value="update" class="update" title="Save changes, accesskey s" accesskey="s" />
-        <input type="submit" name="action" value="delete" class="delete" title="Delete selected smilies, accesskey x" accesskey="x" />
+        <button type="submit" name="action" value="update" class="update" title="Save changes, accesskey s" accesskey="s">Update</button>
+        <button type="submit" name="action" value="delete" class="delete" title="Delete selected smilies, accesskey x" accesskey="x">Delete</button>
     </p>
 
 </form>

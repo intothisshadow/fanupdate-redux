@@ -263,7 +263,7 @@ class FanUpdate_Post
             if ($name === '') {
                 $name = 'Whole Collective';
             }
-            $links[] = '<a href="' . $base . '?c=' . $id . '">' . $name . '</a>';
+            $links[] = '<a class="fu-cat-link" href="' . $base . '?c=' . $id . '">' . $name . '</a>';
         }
 
         return implode(', ', $links);
@@ -293,7 +293,7 @@ class FanUpdate_Post
         if ($this->commentsOn()) {
             $num      = (int) ($this->params['num_comments'] ?? 0);
             $label    = $num === 1 ? '1 comment' : $num . ' comments';
-            $cmt_link = '<a href="' . htmlspecialchars($this->getCommentsUrl()) . '">' . $label . '</a>';
+            $cmt_link = '<a class="fu-comment-count-link" href="' . htmlspecialchars($this->getCommentsUrl()) . '">' . $label . '</a>';
         } else {
             $cmt_link = 'Comments off';
         }

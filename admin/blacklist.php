@@ -100,8 +100,8 @@ $fu->reportErrors();
         <input type="text" id="badword" name="badword" size="20" maxlength="50"
                value="<?php echo htmlspecialchars((string) ($clean['badword'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
                accesskey="n" style="width:auto;" />
-        <input type="submit" name="action" value="add" class="add"
-               title="Blacklist this word, accesskey s" accesskey="s" />
+        <button type="submit" name="action" value="add" class="add"
+               title="Blacklist this word, accesskey s" accesskey="s">Add</button>
     </p>
 </form>
 
@@ -139,8 +139,8 @@ if (count($words) > 0) { ?>
 
     <p style="margin-top:1rem;">
         <?php echo $fu->csrfField(); ?>
-        <input type="submit" name="action" value="delete" class="delete"
-               title="Delete selected words" />
+        <button type="submit" name="action" value="delete" class="delete"
+               title="Delete selected words">Delete</button>
     </p>
 
 </form>

@@ -11,11 +11,15 @@
  * protected temporary directory, create/manage backups of the current
  * installation, install a downloaded release over the live site (with an
  * automatic rollback attempt if the install itself fails, and a
- * non-interactive post-install database migration step), can restore any
- * listed backup manually, run any pending database updates on demand (for
- * installations updated by manual file upload rather than a GitHub
- * release — TODO.md item "10. Admin-Panel Database Update Runner"), and
- * shows a System Status panel (PHP version, ZIP/cURL availability, file
+ * non-interactive post-install database migration step), can install a
+ * release ZIP an admin uploads directly instead — FP-33, useful when this
+ * server can't reach GitHub, or to install a build that isn't published as
+ * a release — through the exact same validated backup/install/rollback
+ * pipeline, can restore any listed backup manually, run any pending
+ * database updates on demand (for installations updated by replacing files
+ * over FTP by hand, rather than through either install flow above —
+ * TODO.md item "10. Admin-Panel Database Update Runner"), and shows a
+ * System Status panel (PHP version, ZIP/cURL availability, file
  * permissions, disk space, temp directory writability). No SSH/Composer/
  * Git/shell commands are used or assumed; every step runs entirely in PHP.
  ******************************************************************************/
@@ -271,6 +275,51 @@ if ($action === 'check') {
         }
 
         $fu->addErr('Install failed: ' . htmlspecialchars((string) $result['error'], ENT_QUOTES, 'UTF-8'));
+    }
+} elseif ($action === 'upload_install') {
+    // FP-33 — install a release ZIP the admin uploaded directly, for a
+    // server that can't reach the configured update provider, or to
+    // install a specific build that isn't published as a release at all.
+    // Same $_FILES validation pattern admin/upload.php uses for image
+    // uploads (error-code mapping, is_uploaded_file() check) before
+    // handing off to UpdateManager::installUploadedRelease(), which runs
+    // the exact same backup/install/auto-rollback pipeline
+    // installLatestRelease() does.
+    if (!$fu->verifyCsrfOrFail()) {
+        // Invalid/missing CSRF token — error already queued.
+    } elseif (!isset($_FILES['update_zip']) || $_FILES['update_zip']['error'] === UPLOAD_ERR_NO_FILE) {
+        $fu->addErr('Please choose a ZIP file to upload.');
+    } elseif ($_FILES['update_zip']['error'] !== UPLOAD_ERR_OK) {
+        $upload_err_map = [
+            UPLOAD_ERR_INI_SIZE   => 'The uploaded file is larger than this server allows (upload_max_filesize).',
+            UPLOAD_ERR_FORM_SIZE  => 'The uploaded file is larger than this server allows.',
+            UPLOAD_ERR_PARTIAL    => 'The file was only partially uploaded. Please try again.',
+            UPLOAD_ERR_NO_TMP_DIR => 'The server has no temporary folder configured for uploads.',
+            UPLOAD_ERR_CANT_WRITE => 'The server could not write the uploaded file to disk.',
+            UPLOAD_ERR_EXTENSION  => 'A server extension stopped the file upload.',
+        ];
+        $fu->addErr($upload_err_map[$_FILES['update_zip']['error']] ?? 'The file upload failed. Please try again.');
+    } elseif (!is_uploaded_file($_FILES['update_zip']['tmp_name'])) {
+        $fu->addErr('The file upload failed. Please try again.');
+    } else {
+        $result = $updateManager->installUploadedRelease($_FILES['update_zip']['tmp_name']);
+
+        if ($result['ok']) {
+            // Same redirect InstallManager's provider-download path uses —
+            // a fresh request is required so the post-install DB-migration
+            // step (?action=run-upgrades) runs against the just-installed
+            // files, not the ones already loaded into this request.
+            header(
+                'Location: update.php?action=run-upgrades'
+                . '&installed_version=' . rawurlencode((string) $result['version'])
+                . '&installed_files=' . (int) $result['fileCount']
+                . '&removed_files=' . (int) ($result['removedFileCount'] ?? 0)
+                . '&install_script_removed=' . ((!empty($result['installScriptRemoved'])) ? '1' : '0')
+            );
+            exit;
+        }
+
+        $fu->addErr('Install from uploaded ZIP failed: ' . htmlspecialchars((string) $result['error'], ENT_QUOTES, 'UTF-8'));
     }
 } elseif ($action === 'disable_maintenance') {
     if (!$fu->verifyCsrfOrFail()) {
@@ -753,8 +802,90 @@ if ($upgradeRunner->hasPendingUpgrades(FU_VERSION)) {
 
 <form action="update.php" method="post" style="margin-bottom:2rem;">
     <?php echo $fu->csrfField(); ?>
-    <input type="submit" name="action" value="check" class="update" title="Check GitHub for a newer release, accesskey s" accesskey="s" />
+    <button type="submit" name="action" value="check" class="update" title="Check GitHub for a newer release, accesskey s" accesskey="s">Check</button>
 </form>
+
+<!-- ── Install from Uploaded ZIP (FP-33) ─────────────────────────────────── -->
+<!-- Always shown, independent of the GitHub check above — a server may not
+     be able to reach GitHub at all, or an admin may want to install a
+     specific build that was never published as a release. Runs through the
+     exact same backup/install/auto-rollback pipeline as the GitHub-fetched
+     "Install now" flow further down this page. -->
+
+<div class="page-header">
+    <h2>Install from uploaded ZIP</h2>
+</div>
+
+<fieldset style="margin-bottom:2rem;">
+    <legend>Manual install</legend>
+    <p class="hint small" style="margin-bottom:1rem;">
+        Install or reinstall FanUpdate Redux from a release ZIP file you upload directly &mdash;
+        useful if this server can't reach GitHub over outbound HTTPS, or to install a build that
+        isn't published as a GitHub release. The uploaded package is validated the same way a
+        GitHub-fetched release is (it must contain <code>version.php</code>, <code>index.php</code>,
+        and the <code>admin/</code>/<code>class/</code> directories), and a backup of the current
+        installation is created automatically before anything is replaced &mdash; if the install
+        itself fails, that backup is automatically restored, the same as the GitHub-based flow below.
+    </p>
+
+    <form action="update.php" method="post" enctype="multipart/form-data" id="fu-upload-install-form">
+        <?php echo $fu->csrfField(); ?>
+        <input type="hidden" name="action" value="upload_install" />
+
+        <p>
+            <label for="update_zip" style="display:block; font-weight:500; color:var(--fu-text); margin-bottom:3px;">Release ZIP file</label>
+            <input type="file" id="update_zip" name="update_zip" accept=".zip" required />
+        </p>
+
+        <p class="hint small">
+            <label class="checkbox">
+                <input type="checkbox" id="fu-upload-confirm-chk" required />
+                I understand that this will replace application files. A backup is created
+                automatically first, but I have confirmed this ZIP is a genuine FanUpdate Redux
+                release package.
+            </label>
+        </p>
+
+        <input type="submit" class="update" value="Upload &amp; install" />
+
+        <div id="fu-upload-progress-panel" style="display:none; margin-top:1.5rem;">
+            <p id="fu-upload-progress-message" class="hint small">Starting install…</p>
+            <div style="background:var(--fu-border); border-radius:var(--fu-radius); overflow:hidden; height:0.75rem;">
+                <div id="fu-upload-progress-bar" style="background:var(--fu-accent, #4a90d9); height:100%; width:0%; transition:width 0.4s ease;"></div>
+            </div>
+            <p class="hint small" style="margin-top:0.5rem;">This page will refresh automatically once the install finishes.</p>
+        </div>
+        <script>
+        (function () {
+            var form = document.getElementById('fu-upload-install-form');
+            if (!form) return;
+            form.addEventListener('submit', function () {
+                var panel = document.getElementById('fu-upload-progress-panel');
+                var msg   = document.getElementById('fu-upload-progress-message');
+                var bar   = document.getElementById('fu-upload-progress-bar');
+                var btn   = form.querySelector('input[type="submit"]');
+                if (btn) { btn.disabled = true; btn.value = 'Uploading & installing…'; }
+                if (panel) { panel.style.display = 'block'; }
+                // Same polling endpoint the install/rollback confirmation pages
+                // use — installUploadedRelease() reports progress through the
+                // same cached-state mechanism, via the shared performInstall().
+                setInterval(function () {
+                    fetch('update.php?action=install-progress', { cache: 'no-store' })
+                        .then(function (r) { return r.json(); })
+                        .then(function (data) {
+                            if (!data || !data.message) return;
+                            if (msg) { msg.textContent = data.message + '…'; }
+                            if (bar && data.total) {
+                                bar.style.width = Math.round((data.step / data.total) * 100) + '%';
+                            }
+                        })
+                        .catch(function () { /* ignore transient poll failures */ });
+                }, 800);
+            });
+        })();
+        </script>
+    </form>
+</fieldset>
 
 <?php if ($summary['status'] === 'ok') { ?>
 

@@ -108,8 +108,16 @@ div#fanupdate {}
    {{body}} in <div class="fu-entry">...</div>, so this rule styles every
    entry as its own card by default. If you've customised entry_template
    (Admin -> Options -> Templates) to drop the wrapper, this rule simply
-   matches nothing. */
-#fanupdate .fu-entry {}
+   matches nothing.
+
+   overflow-wrap keeps long unbroken strings in post bodies (raw URLs,
+   file paths) from forcing the page wider than the viewport — on mobile
+   that widened layout viewport also stretches any position:fixed element
+   sized with inset:0/100vw, including the fu-lightbox overlay, pushing its
+   centered image off-screen. */
+#fanupdate .fu-entry {
+	overflow-wrap: break-word;
+}
 
 h2 {}
 h3 {}
@@ -118,6 +126,12 @@ p {}
 /*	====	Entries	====	*/
 
 p.catfile {padding: 0 0 0 3em;}
+
+/* Category-filter links inside catfile. */
+.fu-cat-link {}
+
+/* Comment-count link in catfile (e.g. "3 comments"). */
+.fu-comment-count-link {}
 
 /* Entry date in the category archive listing (show-cat.php). */
 span.date {}
@@ -263,9 +277,12 @@ textarea {
 a.rss {}
 
 div.archivelink {
-	text-align: right;	
+	text-align: right;
 	margin: 2em 0 0 0;
 }
+
+/* main/archive nav links inside div.archivelink. */
+.fu-nav-link {}
 
 div.credit {
 	clear: both;
@@ -273,6 +290,9 @@ div.credit {
 	border-top: 6px solid #eee;
 	margin: 1em 0 0 0;
 }
+
+/* FanUpdate credit link inside div.credit. */
+.fu-credit-link {}
 
 div.credit p {margin: 0;}
 </textarea></p>

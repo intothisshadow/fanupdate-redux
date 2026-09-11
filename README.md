@@ -62,25 +62,16 @@ This Redux release updates the codebase to **PHP 8.2+** and includes a full admi
   FanUpdate Redux releases (stable or prerelease channel, with optional
   automatic checks on a configurable interval) and shows a dismissible
   Dashboard notice when one is available. From the same page you can
-  download the release, review a confirmation summary, and install it —
-  the whole check → download → back up → install pipeline runs entirely
-  in PHP, with no SSH, Composer, Git, or cron required. Every download is
-  validated for size and ZIP integrity, and — when the release publishes a
-  SHA-256 checksum — verified against it before installation is allowed to
-  proceed; a release with no published checksum still downloads normally,
-  with the Updates page noting that only size/integrity were verified. A
-  backup is taken automatically before every install and restored
-  automatically if the install fails; backups can also be restored manually
-  at any time. A System Status panel reports PHP version, ZIP/cURL
-  availability, file permissions, and disk space, and an Update Logs
-  section keeps a persisted history of every check/download/install/rollback.
+  download the release, review a confirmation summary, and install it. An
+  admin can also install a release ZIP file they upload directly — useful
+  if the server can't reach GitHub, or to install a build that isn't
+  published as a release — through the same validated backup/install/
+  automatic-rollback pipeline as a GitHub-fetched release.
 - **Opt-in anonymous install statistics** — **off by default.** Enabled from
   **Admin → Options → Privacy**, this sends a small, anonymous ping (a
   randomly generated installation ID, the FanUpdate Redux version, and the
   PHP version — nothing else) roughly once every 30 days, so the maintainer
-  can see a rough install count and which PHP versions are actually in use.
-  Completely independent of the Admin Update Manager above — works the same
-  whether or not update checks are enabled. See
+  can see a rough install count and which PHP versions are actually in use. See
   [Privacy: Anonymous Install Statistics](#privacy-anonymous-install-statistics)
   for exactly what is and isn't sent.
 
@@ -360,6 +351,24 @@ carries `class="fu-archive-list"`, each `<li>` carries
 wrapped in `<span class="fu-archive-count">`. Style `#fanupdate
 .fu-archive-list`/`.fu-archive-item`/`.fu-archive-count` in your site's CSS.
 
+### Nav, category, comment-count, and credit links
+
+The category filter links inside `{{category}}`, the `{{comment_link}}`
+link, the main/archive nav links in the default `footer_template`, and the
+FanUpdate credit link all carry their own `fu-` prefixed hook class so they
+can be styled directly instead of relying on inherited `font-size`/
+`letter-spacing` from an ancestor element:
+
+| Class | Where |
+|-------|-------|
+| `.fu-cat-link` | Category filter links inside `p.catfile` |
+| `.fu-comment-count-link` | The `{{comment_link}}` link inside `p.catfile` |
+| `.fu-nav-link` | Main/archive nav links inside `div.archivelink` |
+| `.fu-credit-link` | The FanUpdate credit link inside `div.credit` |
+
+See the corresponding rules in **Admin → Category → Get Code**'s CSS
+starter.
+
 ### Comment form template variables
 
 | Variable | Description |
@@ -427,10 +436,14 @@ in the options table if you need to change them):
 The post editor's "Insert image" toolbar button opens a modal with two tabs:
 **Upload New** and **Choose Existing**.
 
-Upload New picks a local JPEG, PNG, GIF, or WebP file. The file is uploaded
-immediately to `uploads/images/YYYY/MM/` and a constrained-fit thumbnail is
-generated into the `thumbs/` subdirectory at the same path, and the upload is
-recorded in the **Admin → Media** gallery (see below). Choose Existing browses
+Upload New picks one or more local JPEG, PNG, GIF, or WebP files at once.
+Each file is uploaded immediately to `uploads/images/YYYY/MM/` and a
+constrained-fit thumbnail is generated into the `thumbs/` subdirectory at
+the same path, and the upload is recorded in the **Admin → Media** gallery
+(see below). Selecting several files uploads them one at a time and inserts
+each into the post as its own upload finishes, in the order they were
+selected — a failure on one file doesn't stop the rest, and a single
+end-of-batch summary reports anything that failed. Choose Existing browses
 that gallery directly and inserts a previously uploaded image with no new
 upload. Either way, the snippet
 
@@ -441,6 +454,15 @@ upload. Either way, the snippet
 is inserted at the cursor position in the post body. On the public blog, clicking
 any thumbnail opens the full-size image in an overlay lightbox. Pressing Escape
 or clicking outside the image closes it.
+
+When a post contains more than one `fu-lightbox` image, the lightbox groups
+them and adds Prev/Next navigation (buttons, plus Left/Right arrow keys)
+with a "N / total" counter — so a visitor can step through every image in
+that post without closing and reopening the lightbox. Grouping is scoped to
+the clicked image's post (its nearest `.fu-entry` ancestor), so images in
+different posts on the same page never mix into one gallery. Navigation
+doesn't wrap around: Prev is disabled on the first image, Next on the last.
+A post with only one image shows no Prev/Next/counter at all.
 
 **Upload options** (configurable from **Admin → Options**):
 

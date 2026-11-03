@@ -5,6 +5,26 @@ All notable changes to this project are documented here.
 
 ---
 
+## [Redux 2.6.1] — November 3, 2026 — Legacy Charset Upgrade Fixes
+
+### Fixed
+
+- **Upgrading a legacy site with non-ASCII content to InnoDB/utf8mb4 (FP-40)** —
+  testing the conversion against real latin1 tables with accented text,
+  curly quotes, Cyrillic and emoji found three bugs that never showed on
+  sites with plain-ASCII content:
+  - The check for UTF-8 text stored in latin1 columns read values through
+    the app's utf8mb4 connection, where MySQL converts latin1 to UTF-8 on
+    read, so any accented text looked "mis-encoded". It now reads the raw
+    stored bytes.
+  - Re-labelling mis-encoded columns failed with error 1283 because the
+    entries and comments `FULLTEXT` indexes cover them; the indexes are now
+    dropped and re-created around the step, so search keeps working.
+  - A re-labelled table kept a latin1 default charset and was reported as
+    pending forever; it now finishes with a utf8mb4 conversion (no bytes
+    change) and the columns use the same collation as every other table.
+  Fresh installs and sites without non-ASCII content were never affected.
+
 ## [Redux 2.6.0] — November 3, 2026 — Media Bulk Delete, Installer Redirect, Manual ZIP Upload & More
 
 ### Added

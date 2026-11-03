@@ -430,10 +430,36 @@ class SchemaMigrator
                 }
             }
 
-            foreach ($reinterpretSql as $alterClause) {
+            // FULLTEXT indexes block the VARBINARY/BLOB step (error 1283), so
+            // drop them in the first ALTER and re-add them in the last; each
+            // ALTER stays all-or-nothing.
+            $fulltext   = $this->fulltextIndexes($table);
+            $lastClause = count($reinterpretSql) - 1;
+
+            foreach ($reinterpretSql as $i => $alterClause) {
+                if ($i === 0) {
+                    $drops = array_map(static fn (array $ix): string => 'DROP INDEX `' . $ix['name'] . '`', $fulltext);
+                    $alterClause = implode(', ', [...$drops, $alterClause]);
+                }
+                if ($i === $lastClause) {
+                    $adds = array_map(
+                        static fn (array $ix): string => 'ADD FULLTEXT KEY `' . $ix['name'] . '` (`' . implode('`, `', $ix['columns']) . '`)',
+                        $fulltext
+                    );
+                    $alterClause = implode(', ', [$alterClause, ...$adds]);
+                }
+
                 if (!$this->db->Execute('ALTER TABLE `' . $table . '` ' . $alterClause)) {
                     return ['table' => $table, 'ok' => false, 'message' => 'Table ' . $table . ' charset reinterpretation step failed.'];
                 }
+            }
+
+            // The MODIFYs leave the table's own default charset at latin1 (so
+            // it would keep reporting as pending) and the columns on the
+            // server's default utf8mb4 collation. Columns are already
+            // utf8mb4, so this changes no bytes.
+            if (!$this->db->Execute('ALTER TABLE `' . $table . '` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci')) {
+                return ['table' => $table, 'ok' => false, 'message' => 'Table ' . $table . ' could not be finalised as utf8mb4.'];
             }
 
             return [
@@ -464,6 +490,31 @@ class SchemaMigrator
     }
 
     /**
+     * @return list<array{name: string, columns: list<string>}>
+     */
+    private function fulltextIndexes(string $table): array
+    {
+        $rows = $this->db->GetAll(
+            "SELECT INDEX_NAME, COLUMN_NAME FROM information_schema.STATISTICS
+              WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_TYPE = 'FULLTEXT'
+              ORDER BY INDEX_NAME, SEQ_IN_INDEX",
+            [$table]
+        );
+
+        $indexes = [];
+        foreach ($rows as $row) {
+            $indexes[(string) $row['INDEX_NAME']][] = (string) $row['COLUMN_NAME'];
+        }
+
+        $result = [];
+        foreach ($indexes as $name => $columns) {
+            $result[] = ['name' => (string) $name, 'columns' => $columns];
+        }
+
+        return $result;
+    }
+
+    /**
      * Scan up to $limit rows of $table's $columns for a value that is
      * both non-ASCII and valid UTF-8 — the signature of content that was
      * written into a latin1-declared column by a connection that was
@@ -483,7 +534,10 @@ class SchemaMigrator
             return false;
         }
 
-        $colList = implode(', ', array_map(static fn (string $c): string => '`' . $c . '`', $columns));
+        // CAST ... AS BINARY returns the stored bytes; a plain SELECT would
+        // let the connection's charset convert latin1 to valid UTF-8 and
+        // hide the very difference being tested for.
+        $colList = implode(', ', array_map(static fn (string $c): string => 'CAST(`' . $c . '` AS BINARY) AS `' . $c . '`', $columns));
         $query   = 'SELECT ' . $colList . ' FROM `' . $table . '` LIMIT ' . $limit;
 
         if (!$this->db->Execute($query, null)) {

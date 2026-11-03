@@ -44,7 +44,7 @@ This Redux release updates the codebase to **PHP 8.2+** and includes a full admi
   full-size image in a built-in lightbox. Uploads live in
   `uploads/images/YYYY/MM/` with PHP execution blocked via `.htaccess`.
   **Admin → Media** lists every upload in a paginated gallery and lets you
-  delete one.
+  delete one or several at once.
 - **Comments** — threaded display, moderation queue, spam blacklist, optional CAPTCHA
 - **Spam protection** — four automatic layers stop bots before any database work;
   points-based scoring handles borderline human submissions
@@ -91,7 +91,10 @@ $fanupdate['dbuser'] = 'db_user';
 $fanupdate['dbpass'] = 'db_pass';
 ```
 
-You **must** set the database variables before running the installer. The
+You **must** set the database variables before running the installer.
+Until installation finishes, opening the front page or `admin/` sends you
+to `install.php` automatically (and `install.php` tells you to create
+`blog-config.php` if it isn't there yet). The
 table name variables only need changing if you are integrating with a
 collective management script (see [Collective integration](#collective-integration)).
 
@@ -497,7 +500,9 @@ PHP's `finfo` extension.
 
 **Admin → Media** lists every uploaded image in a paginated thumbnail grid
 (newest first), and lets you delete one — this removes the original file, its
-thumbnail, and the gallery's record of it. Deleting an image does not check
+thumbnail, and the gallery's record of it. To delete several at once, tick
+the checkbox on each image (or "Select all on this page"), click **Delete
+Selected**, and confirm on the next screen. Deleting an image does not check
 whether a post still embeds it; a post that does simply shows a broken image
 afterwards, the same as if the file had been deleted manually.
 

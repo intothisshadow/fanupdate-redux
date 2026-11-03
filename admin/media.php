@@ -5,7 +5,7 @@
  *
  * Media gallery (TODO.md item "4. UI - Create an Image/File Manager"):
  * browse every image uploaded through the WYSIWYG editor's "insert image"
- * button (admin/upload.php), delete one, and — via the JSON ?action=list
+ * button (admin/upload.php), delete one or several (checkbox select + confirm step), and — via the JSON ?action=list
  * endpoint below — supply the "choose existing image" picker in the
  * WYSIWYG toolbar (assets/js/fanupdate-admin.js) with paginated results.
  * Delegates storage/business logic to MediaService/MediaRepository; this
@@ -111,9 +111,37 @@ if (($_GET['action'] ?? '') === 'list') {
 
 $confirmDeleteId  = 0;
 $confirmDeleteDto = null;
+$confirmBulkDtos  = [];
+
+// id[] (bulk) is an array; id (single) is scalar — never both on one request.
+/** @var int[] $bulkIds */
+$bulkIds = [];
+if (isset($_POST['id']) && is_array($_POST['id'])) {
+    $bulkIds = array_values(array_unique(array_filter(
+        array_map('intval', $_POST['id']),
+        static fn (int $v): bool => $v > 0
+    )));
+}
 
 if (isset($_POST['action']) && !$fu->verifyCsrfOrFail()) {
     // CSRF check failed — error already queued; skip processing the action.
+} elseif (isset($_POST['action']) && $_POST['action'] === 'bulk-delete') {
+    // Submitted from the gallery's select form — confirm before deleting.
+    if ($bulkIds === []) {
+        $fu->addErr('No images were selected.');
+    } else {
+        $confirmBulkDtos = $mediaService->getBulkDeleteConfirmation($bulkIds);
+        if ($confirmBulkDtos === []) {
+            $fu->addErr('The selected images no longer exist.');
+        }
+    }
+} elseif (isset($_POST['action']) && $_POST['action'] === 'bulk-delete-confirmed') {
+    if ($bulkIds === []) {
+        $fu->addErr('No images were selected.');
+    } else {
+        $count = $mediaService->deleteImages($bulkIds);
+        $fu->addSuccess($count . ' ' . ($count === 1 ? 'image' : 'images') . ' deleted.');
+    }
 } elseif (
     isset($_POST['action'], $_POST['id'])
     && $_POST['action'] === 'delete'
@@ -150,7 +178,37 @@ $fu->getHeader('Media');
 $fu->reportSuccess();
 $fu->reportErrors();
 
-if ($confirmDeleteId > 0 && $confirmDeleteDto !== null) {
+if ($confirmBulkDtos !== []) {
+    $bulkCount = count($confirmBulkDtos);
+    ?>
+    <fieldset>
+        <legend>Confirm deletion</legend>
+        <p>
+            Are you sure you want to delete the following <?php echo $bulkCount; ?>
+            <?php echo $bulkCount === 1 ? 'image' : 'images'; ?>?
+            This cannot be undone. Any post that already embedded these images will show a broken image instead.
+        </p>
+
+        <ul class="catlist">
+            <?php foreach ($confirmBulkDtos as $bulkDto) { ?>
+                <li><?php echo htmlspecialchars($bulkDto['filename'], ENT_QUOTES, 'UTF-8'); ?></li>
+            <?php } ?>
+        </ul>
+
+        <form action="media.php" method="post">
+            <?php echo $fu->csrfField(); ?>
+            <?php foreach ($confirmBulkDtos as $bulkDto) { ?>
+                <input type="hidden" name="id[]" value="<?php echo $bulkDto['id']; ?>" />
+            <?php } ?>
+            <div class="primary">
+                <button type="submit" name="action" value="bulk-delete-confirmed" class="delete" data-skip-confirm="1"
+                       title="Permanently delete these images, accesskey s" accesskey="s">Permanently Delete</button>
+                <a href="media.php" class="button">Cancel</a>
+            </div>
+        </form>
+    </fieldset>
+    <?php
+} elseif ($confirmDeleteId > 0 && $confirmDeleteDto !== null) {
     ?>
     <fieldset>
         <legend>Confirm deletion</legend>
@@ -178,12 +236,21 @@ if ($confirmDeleteId > 0 && $confirmDeleteDto !== null) {
 
     if ($fu->db->total_results > 0) {
         ?>
+        <form action="media.php" method="post" id="media-select-form">
+            <?php echo $fu->csrfField(); ?>
+            <div class="media-bulk-bar">
+                <label><input type="checkbox" id="select-all" /> Select all on this page</label>
+                <button type="submit" name="action" value="bulk-delete" class="delete" data-skip-confirm="1"
+                        title="Delete all checked images">Delete Selected</button>
+            </div>
         <div class="media-grid">
             <?php
             while ($row = $fu->db->ReadRecordPaginate()) {
                 $dto = $mediaService->rowToDto($row);
                 ?>
                 <figure class="media-item">
+                    <input type="checkbox" name="id[]" value="<?php echo $dto['id']; ?>" class="media-select"
+                           aria-label="Select <?php echo htmlspecialchars($dto['filename'], ENT_QUOTES, 'UTF-8'); ?>" />
                     <a href="<?php echo htmlspecialchars($dto['url'], ENT_QUOTES, 'UTF-8'); ?>" class="fu-lightbox">
                         <img src="<?php echo htmlspecialchars($dto['thumbUrl'], ENT_QUOTES, 'UTF-8'); ?>"
                              alt="<?php echo htmlspecialchars($dto['filename'], ENT_QUOTES, 'UTF-8'); ?>"
@@ -203,8 +270,10 @@ if ($confirmDeleteId > 0 && $confirmDeleteDto !== null) {
             $fu->db->FreeResult();
             ?>
         </div>
+        </form>
 
         <p class="paginate"><?php $fu->db->PrintPaginate(); ?></p>
+        <script src="../assets/js/fanupdate-post-admin.js"></script>
         <script>fuLightboxInit();</script>
         <?php
     } else {

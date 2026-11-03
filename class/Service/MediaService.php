@@ -117,6 +117,46 @@ class MediaService
     }
 
     /**
+     * Delete several images, skipping any that no longer exist.
+     *
+     * @param int[] $ids
+     * @return int Number of images actually deleted.
+     */
+    public function deleteImages(array $ids): int
+    {
+        $count = 0;
+        foreach ($ids as $id) {
+            if ($this->deleteImage((int) $id)) {
+                $count++;
+            }
+        }
+
+        return $count;
+    }
+
+    /**
+     * DTOs for the bulk delete-confirmation view, in the order given.
+     * Ids that no longer exist are omitted.
+     *
+     * @param int[] $ids
+     * @return list<array{id: int, url: string, thumbUrl: string, filename: string,
+     *                    width: int, height: int, size: int, humanSize: string,
+     *                    uploadedAt: string}>
+     */
+    public function getBulkDeleteConfirmation(array $ids): array
+    {
+        $dtos = [];
+        foreach ($ids as $id) {
+            $dto = $this->findDto((int) $id);
+            if ($dto !== null) {
+                $dtos[] = $dto;
+            }
+        }
+
+        return $dtos;
+    }
+
+    /**
      * Shape a raw media_table row into the display-ready array
      * admin/media.php's gallery and the WYSIWYG picker's JSON response
      * both consume.

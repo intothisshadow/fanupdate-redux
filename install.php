@@ -26,6 +26,17 @@ ini_set('display_startup_errors', '1');
 error_reporting(E_ALL);
 // ─────────────────────────────────────────────────────────────────────────────
 
+// index.php and admin/index.php send first-time visitors here, so a missing
+// config file must produce guidance rather than a fatal error.
+if (!is_file(__DIR__ . '/blog-config.php')) {
+    http_response_code(503);
+    echo '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>FanUpdate Redux — Setup</title></head><body>'
+        . '<h1>FanUpdate Redux setup</h1>'
+        . '<p>Copy <code>blog-config.sample.php</code> to <code>blog-config.php</code>, enter your database '
+        . 'details in it, then reload this page.</p></body></html>';
+    exit;
+}
+
 require_once('blog-config.php');
 require_once('functions.php');
 // Categories Support (hybrid): needed by SchemaMigrator below for
@@ -467,7 +478,7 @@ if (!$fu->noErr()) {
         // blog table
         $query = 'CREATE TABLE ' . $fu->getOpt('blog_table') . " (
       `entry_id` int(6) unsigned NOT NULL AUTO_INCREMENT,
-      `added` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
+      `added` datetime NOT NULL,
       `title` varchar(50) NOT NULL DEFAULT '',
       `body` text NOT NULL,
       `is_public` tinyint(1) unsigned NOT NULL DEFAULT '1',
@@ -489,7 +500,7 @@ if (!$fu->noErr()) {
       `name` varchar(30) NOT NULL DEFAULT '',
       `email` varchar(100) NOT NULL DEFAULT '',
       `url` varchar(100) NOT NULL DEFAULT '',
-      `added` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
+      `added` datetime NOT NULL,
       `comment` text NOT NULL,
       `approved` tinyint(1) NOT NULL DEFAULT '0',
       `points` int(4) NOT NULL DEFAULT '0',
@@ -601,7 +612,7 @@ if (!$fu->noErr()) {
 
         // catoptions table
         $query = 'CREATE TABLE ' . $fu->getOpt('catoptions_table') . " (
-      `cat_id` INT(6) UNSIGNED NULL,
+      `cat_id` INT(6) UNSIGNED NOT NULL,
       `comments_on` TINYINT(1) UNSIGNED NULL,
       `date_format` VARCHAR(30) NULL,
       `gravatar_on` TINYINT(1) UNSIGNED NULL,
@@ -800,7 +811,7 @@ if (!$fu->noErr()) {
     if ($version_installed > 0 && version_compare((string) $version_installed, '2.2.1b2', '<')) {
 
         $query = 'ALTER TABLE ' . $fu->getOpt('comments_table') . "
-      CHANGE `added` `added` DATETIME NOT NULL DEFAULT '0000-00-00 00:00:00'";
+      CHANGE `added` `added` DATETIME NOT NULL";
         if ($fu->db->Execute($query)) {
             $fu->addSuccess('Old table <strong>' . $fu->getOpt('comments_table') . '</strong> modified.');
         } else {

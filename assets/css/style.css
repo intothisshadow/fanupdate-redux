@@ -1391,6 +1391,19 @@ div#fanupdate textarea {
     text-align: center;
 }
 
+.media-bulk-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.media-item input.media-select {
+    align-self: flex-start;
+    accent-color: var(--fu-accent);
+}
+
 .media-item a.fu-lightbox {
     display: flex;
     align-items: center;

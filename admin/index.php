@@ -20,6 +20,23 @@
 
 declare(strict_types=1);
 
+// Not installed yet: land on the installer instead of failing on a missing
+// blog-config.php or missing tables. Skipped entirely once install.php is gone.
+if (is_file(dirname(__DIR__) . '/install.php')) {
+    require_once('../class/Service/InstallDetector.php');
+
+    $config = null;
+    if (is_file(dirname(__DIR__) . '/blog-config.php')) {
+        require_once('../blog-config.php');
+        $config = $fanupdate ?? [];
+    }
+
+    if ((new InstallDetector())->needsInstaller(dirname(__DIR__), $config)) {
+        header('Location: ../install.php', true, 302);
+        exit;
+    }
+}
+
 require_once('../blog-config.php');
 require_once('../functions.php');
 require_once('../version.php');
@@ -356,7 +373,7 @@ $fu->getHeader('Dashboard');
         }
         $fu->db->FreeResult();
 
-        $query = 'SELECT c.*, COUNT(c.comment_id) AS num_comments
+        $query = 'SELECT c.name, c.email, MAX(c.url) AS url, COUNT(c.comment_id) AS num_comments
             FROM ' . $fu->getOpt('comments_table') . ' c
             WHERE c.approved > 0 AND c.email != ?
             GROUP BY c.name, c.email

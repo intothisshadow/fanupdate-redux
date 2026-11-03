@@ -5,10 +5,27 @@ All notable changes to this project are documented here.
 
 ---
 
-## [Unreleased]
+## [Redux 2.6.0] — November 3, 2026 — Media Bulk Delete, Installer Redirect, Manual ZIP Upload & More
 
 ### Added
 
+- **Automatic redirect to the installer (FP-45)** — while `install.php` is
+  still present, opening the front page (`index.php`) or `admin/` now
+  redirects (302) to `install.php` when `blog-config.php` is missing, the
+  database can't be reached, or the options table doesn't exist yet,
+  instead of failing with a fatal error. `install.php` itself now shows a
+  short "copy `blog-config.sample.php` to `blog-config.php`" page, with no
+  filesystem paths, when the config file is missing. Finished installs are
+  unaffected and pay no cost: once `install.php` has deleted itself, the
+  check ends after a single file test and never touches the database. An
+  upgrade (tables already exist, `install.php` still uploaded) is not
+  redirected.
+- **Bulk delete on the Media page (FP-43)** — each image in **Admin →
+  Media** now has a checkbox, with a "Select all on this page" toggle and a
+  **Delete Selected** button. As with bulk-deleting blog entries, a
+  confirmation screen lists the filenames before anything is removed;
+  images that no longer exist are skipped and the success message reports
+  how many were actually deleted.
 - **Multiple image upload in the WYSIWYG "Insert Image" modal (FP-26)** —
   the "Upload New" tab's "Choose File…" button now accepts selecting
   several images at once (`<input type="file" multiple>`), uploading them
@@ -86,6 +103,16 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- **Dashboard "Top commenters" query failed under `ONLY_FULL_GROUP_BY`** —
+  `admin/index.php` selected `c.*` while grouping by `c.name, c.email`
+  (error 1055). It now selects only the grouped columns plus
+  `MAX(c.url)` and the count.
+- **Fresh install failed on MySQL/MariaDB strict mode** — `install.php`
+  created `blog` and `blog_comments` with `DEFAULT '0000-00-00 00:00:00'`
+  on `added` (rejected under `NO_ZERO_DATE`, error 1067) and
+  `blog_catoptions` with a nullable `cat_id` primary key (error 1171).
+  The zero-date defaults are removed (inserts always supply `added`) and
+  `cat_id` is now `NOT NULL`.
 - **Stray "WARNING: unlink(): No such file or directory" messages (FP-44)** —
   the error handler in `functions.php` didn't recognise PHP 8's `@`
   suppression, so harmless warnings from deliberately silenced file

@@ -86,6 +86,13 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- **Stray "WARNING: unlink(): No such file or directory" messages (FP-44)** —
+  the error handler in `functions.php` didn't recognise PHP 8's `@`
+  suppression, so harmless warnings from deliberately silenced file
+  operations (cleaning up temporary files, media deletion, update/rollback
+  housekeeping) could appear as red warning lines at the top of admin
+  pages. Suppressed warnings are now silent again, as intended.
+
 - `captcha.php` and `admin/upload.php`: removed three dead `imagedestroy()`
   calls, which have had no effect since PHP 8.0 (`GdImage` is a
   garbage-collected object) and started emitting an `E_DEPRECATED` warning

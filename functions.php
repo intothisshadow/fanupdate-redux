@@ -274,7 +274,9 @@ function fu_is_known_date_format_preset(string $format): bool
 
 function myErrorHandler(int $errno, string $errstr, string $errfile, int $errline): bool
 {
-    if (error_reporting() === 0) {
+    // PHP 8+ makes @ narrow error_reporting() to fatal-class errors rather
+    // than zeroing it, so a `=== 0` test no longer detects suppression.
+    if (!(error_reporting() & $errno)) {
         return false;
     }
 

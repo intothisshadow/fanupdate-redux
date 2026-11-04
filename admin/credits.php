@@ -51,8 +51,8 @@ $fu->getHeader('Credits');
 <div class="credits-section">
     <h3>Contributors</h3>
     <?php foreach (FU_CONTRIBUTORS as $person) { ?>
-    <div style="margin-bottom:1.25rem; padding-bottom:1.25rem; border-bottom:0.5px solid var(--fu-border);">
-        <p style="margin-bottom:2px;">
+    <div class="credits-person">
+        <p>
             <strong>
                 <?php if (!empty($person['url'])) { ?>
                 <a href="<?php echo htmlspecialchars($person['url'], ENT_QUOTES, 'UTF-8'); ?>" target="_blank" rel="noopener">
@@ -76,8 +76,8 @@ $fu->getHeader('Credits');
 <div class="credits-section">
     <h3>Libraries &amp; third-party code</h3>
     <?php foreach (FU_LIBRARIES as $lib) { ?>
-    <div style="margin-bottom:0.875rem;">
-        <p style="margin-bottom:2px;">
+    <div class="credits-lib">
+        <p>
             <strong>
                 <?php if (!empty($lib['url'])) { ?>
                 <a href="<?php echo htmlspecialchars($lib['url'], ENT_QUOTES, 'UTF-8'); ?>" target="_blank" rel="noopener">

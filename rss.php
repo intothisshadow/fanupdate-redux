@@ -103,17 +103,23 @@ $feed->addNamespace('wfw',     'http://wellformedweb.org/CommentAPI/');
 
 $fu->db->Execute($query, 'Could not execute query.', $query_params);
 
+// Prefix for root-relative URLs in entry HTML; empty (skip rewrite) if SERVER_NAME isn't a valid hostname.
+$feed_host = filter_var((string) ($_SERVER['SERVER_NAME'] ?? ''), FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME);
+$feed_host = $feed_host === false ? '' : $feed_host;
+
 while ($row = $fu->db->ReadRecord()) {
 
     // getOpt('blog_page') returns mixed; FanUpdate_Post expects ?string.
     $post = new FanUpdate_Post($row, $fu, $fu->getOpt('blog_page') ?: null);
 
     $html_text = $post->getBodyFormatted();
-    $html_text = str_replace(
-        ['href="/', 'src="/'],
-        ['href="' . $_SERVER['SERVER_NAME'] . '/', 'src="' . $_SERVER['SERVER_NAME'] . '/'],
-        $html_text
-    );
+    if ($feed_host !== '') {
+        $html_text = str_replace(
+            ['href="/', 'src="/'],
+            ['href="' . $feed_host . '/', 'src="' . $feed_host . '/'],
+            $html_text
+        );
+    }
 
     $item = $feed->createNewItem();
 

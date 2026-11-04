@@ -1036,6 +1036,21 @@ fieldset#action .secondary {
     color: var(--fu-hint);
 }
 
+.credits-person {
+    margin-bottom: 1.25rem;
+    padding-bottom: 1.25rem;
+    border-bottom: 0.5px solid var(--fu-border);
+}
+
+.credits-lib {
+    margin-bottom: 0.875rem;
+}
+
+.credits-person > p:first-child,
+.credits-lib > p:first-child {
+    margin-bottom: 2px;
+}
+
 /* ── Footer credit line ───────────────────────────────────────────────────── */
 
 .credit {

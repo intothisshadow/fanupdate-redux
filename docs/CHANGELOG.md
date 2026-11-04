@@ -49,6 +49,11 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- **RSS feed host validation** — the server name used to turn root-relative
+  links and images in entries into full URLs is now checked to be a valid
+  hostname first; if it isn't, those links are left as they were.
+- **Credits page styling** — the contributor and library blocks now use
+  theme CSS classes instead of inline styles, in both day and night themes.
 - **Admin navigation missing on phones** — below 800px wide the main
   links (Dashboard, Entries, Comments, Categories, Media, Options, Updates)
   were hidden with no way to reach them. A menu button now opens them as a

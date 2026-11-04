@@ -400,6 +400,14 @@ $setting[33]['optvalue'] = 'https://coding.unloved-heart.net/update-blog/rss.php
 $setting[33]['optdesc']  = 'RSS feed URL shown on the Dashboard as "FanUpdate Redux News". Leave blank to hide the Dashboard widget entirely.';
 $setting[33]['version']  = '2.2.1b2';
 
+// FP-37: hide collective-sourced categories without removing the collective
+// script configuration. Existing installs get this via
+// UpgradeRunner::NEW_DEFAULT_OPTIONS.
+$setting[34]['optkey']   = 'show_collective_categories';
+$setting[34]['optvalue'] = 'y';
+$setting[34]['optdesc']  = 'Show categories from your collective script (Enthusiast, Fanatically, ...) alongside FanUpdate\'s own in the category list and entry category picker. Turn off to list only FanUpdate\'s own categories. Has no effect when no collective script is configured.';
+$setting[34]['version']  = '2.2.1b2';
+
 // ── check tables don't already exist (fresh install only) ───────────────────
 
 if ($version_installed == 0) {

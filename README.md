@@ -651,6 +651,12 @@ read-only in FanUpdate — you can't rename or delete them here — but their
 per-category settings (entry/comment templates, Gravatar options) are fully
 editable regardless of source, same as always.
 
+If you'd rather only see your own categories, turn off **Show collective
+categories** (`show_collective_categories`) in **Admin → Options → Main**.
+Collective categories then disappear from the Categories list and the post
+editor's picker; entries already filed under them, and your collective
+script configuration, are left alone.
+
 In standalone mode (`collective_script = 'n'`) there is only ever one
 category source, exactly as before — the table above isn't created or used.
 

@@ -78,6 +78,7 @@ class CategoryRepository implements CategoryRepositoryInterface
         private readonly string $colId,
         private readonly string $colSubj,
         private readonly ?string $standaloneTable = null,
+        private readonly bool $showCollectiveCategories = true,
     ) {
     }
 
@@ -249,6 +250,23 @@ class CategoryRepository implements CategoryRepositoryInterface
 
     public function listAll(): void
     {
+        if ($this->standaloneTable !== null && !$this->showCollectiveCategories) {
+            // Collective-sourced categories are hidden by the
+            // show_collective_categories option: list only the standalone table.
+            $offset = self::STANDALONE_ID_OFFSET;
+            $query  = 'SELECT s.id + ' . $offset . ' AS cid,
+                    s.name AS cname,
+                    COUNT(j1.cat_id) AS num
+                FROM ' . $this->standaloneTable . ' s
+                LEFT JOIN ' . $this->catjoinTable . ' j1 ON j1.cat_id = s.id + ' . $offset . '
+                GROUP BY s.id
+                ORDER BY cname ASC';
+
+            $this->db->Execute($query);
+
+            return;
+        }
+
         if ($this->standaloneTable !== null) {
             // Hybrid mode: union the always-present standalone table
             // (IDs shifted into their own space) with the collective

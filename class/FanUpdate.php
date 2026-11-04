@@ -439,6 +439,18 @@ class FanUpdate
     }
 
     /**
+     * Whether collective-sourced categories are listed alongside standalone
+     * ones (show_collective_categories). Defaults to true when the option is
+     * missing, e.g. on an install that hasn't run its upgrade yet.
+     */
+    public function showCollectiveCategories(): bool
+    {
+        $value = $this->getOpt('show_collective_categories', true);
+
+        return !in_array(strtolower((string) $value), ['n', 'no', '0'], true);
+    }
+
+    /**
      * Normalise a collective_script identifier from the legacy single-letter
      * shorthand ('n', 'e') to the descriptive string this codebase now
      * stores and displays ('none', 'enthusiast') — TODO.md's Database

@@ -7,6 +7,15 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- **Hide collective categories (FP-37)** — a new "Show collective categories"
+  toggle in Admin → Options → Main (`show_collective_categories`). Turn it off
+  to list only FanUpdate's own categories on the Categories page and in the
+  entry editor's category picker, while keeping your Enthusiast/Fanatically
+  configuration. Defaults to on, so existing sites are unchanged; the setting
+  appears in Options after your next version upgrade.
+
 ### Fixed
 
 - **Admin navigation missing on phones** — below 800px wide the main

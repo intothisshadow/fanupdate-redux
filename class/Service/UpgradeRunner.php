@@ -152,6 +152,13 @@ class UpgradeRunner
             'value'       => 'https://coding.unloved-heart.net/update-blog/rss.php?c=4',
             'description' => 'RSS feed URL shown on the Dashboard as "FanUpdate Redux News". Leave blank to hide the Dashboard widget entirely.',
         ],
+        // FP-37: a missing row already behaves as "y" (see
+        // FanUpdate::showCollectiveCategories()); this just makes the toggle
+        // appear in Admin -> Options -> Main.
+        'show_collective_categories' => [
+            'value'       => 'y',
+            'description' => 'Show categories from your collective script (Enthusiast, Fanatically, ...) alongside FanUpdate\'s own in the category list and entry category picker. Turn off to list only FanUpdate\'s own categories. Has no effect when no collective script is configured.',
+        ],
     ];
 
     /**

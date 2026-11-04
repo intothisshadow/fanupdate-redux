@@ -65,7 +65,8 @@ $categoryService = new CategoryService(new CategoryRepository(
     (string) $fu->getOpt('catoptions_table'),
     (string) $fu->getOpt('col_id'),
     (string) $fu->getOpt('col_subj'),
-    $standaloneTable
+    $standaloneTable,
+    $fu->showCollectiveCategories()
 ));
 
 $showNav  = true;

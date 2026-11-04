@@ -185,8 +185,15 @@ class FanUpdate
         return new LogService(
             $this->db,
             (string) $this->getOpt('log_table'),
-            (bool) $this->getOpt('log_anonymize_ips')
+            (bool) $this->getOpt('log_anonymize_ips'),
+            $this->timezone()
         );
+    }
+
+    /** The configured IANA timezone, or UTC when unset/invalid (FP-19). */
+    public function timezone(): string
+    {
+        return fu_resolve_timezone($this->getOpt(FU_TIMEZONE_OPTION_KEY, true));
     }
 
     /** 0 means keep forever; a missing/invalid option falls back to the default. */

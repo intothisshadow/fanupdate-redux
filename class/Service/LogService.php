@@ -9,6 +9,9 @@ declare(strict_types=1);
  * security and admin events (logins, lockouts, content and settings changes,
  * update-pipeline actions).
  *
+ * Timestamps are stored in UTC; the optional $timezone only affects how the
+ * date_from/date_to filters (local calendar days) are turned into UTC bounds.
+ *
  * Privacy: only an event type, the acting username, an IP address and a short
  * message are stored — never passwords, tokens or submitted comment bodies.
  * Control characters are stripped and field lengths capped. IPs can be
@@ -79,6 +82,7 @@ class LogService
         private readonly SqlConnection $db,
         private readonly string $table,
         private readonly bool $anonymizeIps = false,
+        private readonly string $timezone = 'UTC',
     ) {
     }
 
@@ -217,25 +221,43 @@ class LogService
             array_push($params, $like, $like, $like);
         }
 
-        $from = $filters['date_from'] ?? '';
-        if (self::isDate($from)) {
+        $from = $this->localDayBoundToUtc($filters['date_from'] ?? '', false);
+        if ($from !== null) {
             $clauses[] = '`created_at` >= ?';
-            $params[]  = $from . ' 00:00:00';
+            $params[]  = $from;
         }
 
-        $to = $filters['date_to'] ?? '';
-        if (self::isDate($to)) {
+        $to = $this->localDayBoundToUtc($filters['date_to'] ?? '', true);
+        if ($to !== null) {
             $clauses[] = '`created_at` <= ?';
-            $params[]  = $to . ' 23:59:59';
+            $params[]  = $to;
         }
 
         return [$clauses === [] ? '' : 'WHERE ' . implode(' AND ', $clauses), $params];
     }
 
-    private static function isDate(string $value): bool
+    /**
+     * Rows are stored in UTC, but the admin picks dates as local days, so
+     * convert a local day's first/last second to UTC. Null for a non-date.
+     */
+    private function localDayBoundToUtc(string $localDate, bool $endOfDay): ?string
     {
-        $date = DateTime::createFromFormat('!Y-m-d', $value);
+        try {
+            $zone = new DateTimeZone($this->timezone);
+        } catch (\Exception) {
+            $zone = new DateTimeZone('UTC');
+        }
 
-        return $date !== false && $date->format('Y-m-d') === $value;
+        $day = DateTime::createFromFormat('!Y-m-d', $localDate, $zone);
+
+        if ($day === false || $day->format('Y-m-d') !== $localDate) {
+            return null;
+        }
+
+        if ($endOfDay) {
+            $day->setTime(23, 59, 59);
+        }
+
+        return $day->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
     }
 }

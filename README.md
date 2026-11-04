@@ -777,7 +777,9 @@ failures, and lockouts), logouts, password/username/email changes and resets,
 entry, category, comment and media changes, blacklist and settings changes,
 update actions (download, install, rollback, database upgrade), and public
 comments blocked by the rate limit. You can filter by event type, search the
-text, and filter by date range; entries are shown in UTC.
+text, and filter by date range. Times, and the date filters, use the timezone
+set in **Admin → Options** (entries are stored in UTC, so changing the
+timezone later re-labels old entries correctly).
 
 - It never stores passwords, tokens, comment text, setting *values*, or the
   username typed into a failed login (a mistyped password often lands there).

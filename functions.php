@@ -151,6 +151,24 @@ function fu_is_valid_timezone(string $tz): bool
     return in_array($tz, DateTimeZone::listIdentifiers(), true);
 }
 
+/** $tz when it is a valid IANA identifier, otherwise FU_DEFAULT_TIMEZONE. */
+function fu_resolve_timezone(mixed $tz): string
+{
+    return is_string($tz) && fu_is_valid_timezone($tz) ? $tz : FU_DEFAULT_TIMEZONE;
+}
+
+/** Formats a stored UTC datetime string in $tz; returns '' when it cannot be parsed. */
+function fu_format_utc_in_timezone(string $utcDatetime, string $tz, string $format = 'Y-m-d H:i:s'): string
+{
+    try {
+        $dt = new DateTime($utcDatetime, new DateTimeZone('UTC'));
+    } catch (Exception) {
+        return '';
+    }
+
+    return $dt->setTimezone(new DateTimeZone(fu_resolve_timezone($tz)))->format($format);
+}
+
 /**
  * Best-effort mapping from a legacy whole-hour 'timezone_offset' value to a
  * single representative IANA zone, used only for the one-time migration off

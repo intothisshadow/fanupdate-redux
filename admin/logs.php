@@ -24,6 +24,7 @@ $fu->login();
 
 $showNav = true;
 
+$siteTimezone    = $fu->timezone();
 $logService      = $fu->logService();
 $errorLogService = new ErrorLogService(fu_error_log_directory(), dirname(__DIR__));
 
@@ -114,9 +115,11 @@ $fu->reportErrors();
 if ($tab === 'activity') { ?>
 
 <p class="hint small">
-    Security and admin events. Entries older than
-    <?php echo $fu->logRetentionDays() === 0 ? '(never — retention is off)' : $fu->logRetentionDays() . ' days'; ?>
-    are removed automatically; change this under <a href="options.php">Options</a>.
+    Security and admin events, shown in your timezone (<?php echo $e($siteTimezone); ?>).
+    <?php echo $fu->logRetentionDays() === 0
+        ? 'Entries are kept forever.'
+        : 'Entries older than ' . $fu->logRetentionDays() . ' days are removed automatically.'; ?>
+    Change this under <a href="options.php">Options</a>.
 </p>
 
 <form action="logs.php" method="get" style="margin-bottom:1.5rem;">
@@ -146,7 +149,7 @@ if ($tab === 'activity') { ?>
         <table aria-label="Activity log">
             <thead>
                 <tr>
-                    <th scope="col">Time (UTC)</th>
+                    <th scope="col">Time</th>
                     <th scope="col">Event</th>
                     <th scope="col">User</th>
                     <th scope="col">IP</th>
@@ -160,7 +163,7 @@ if ($tab === 'activity') { ?>
                     $class = ($class === 'even') ? 'odd' : 'even';
                     ?>
                     <tr class="<?php echo $class; ?>">
-                        <td><?php echo $e((string) $row['created_at']); ?></td>
+                        <td><?php echo $e(fu_format_utc_in_timezone((string) $row['created_at'], $siteTimezone)); ?></td>
                         <td><?php echo $e(LogService::EVENT_TYPES[$row['event_type']] ?? (string) $row['event_type']); ?></td>
                         <td><?php echo $e((string) $row['username']); ?></td>
                         <td><?php echo $e((string) $row['ip']); ?></td>
@@ -190,7 +193,8 @@ if ($tab === 'activity') { ?>
 <?php } else { ?>
 
 <p class="hint small">
-    PHP warnings, errors and uncaught exceptions recorded by FanUpdate, newest first
+    PHP warnings, errors and uncaught exceptions recorded by FanUpdate, newest first, in
+    your timezone (<?php echo $e($siteTimezone); ?>)
     (showing up to <?php echo FU_ERRORS_SHOWN; ?>; <?php echo (int) $errorLogService->count(); ?> stored).
     The file rotates automatically at 512&nbsp;KB.
 </p>
@@ -201,7 +205,7 @@ if ($tab === 'activity') { ?>
         <table aria-label="Error log">
             <thead>
                 <tr>
-                    <th scope="col">Time (UTC)</th>
+                    <th scope="col">Time</th>
                     <th scope="col">Level</th>
                     <th scope="col">Message</th>
                     <th scope="col">Location</th>
@@ -214,7 +218,7 @@ if ($tab === 'activity') { ?>
                     $class = ($class === 'even') ? 'odd' : 'even';
                     ?>
                     <tr class="<?php echo $class; ?>">
-                        <td><?php echo $e($row['time']); ?></td>
+                        <td><?php echo $e(fu_format_utc_in_timezone($row['time'], $siteTimezone)); ?></td>
                         <td><?php echo $e($row['level']); ?></td>
                         <td><?php echo $e($row['message']); ?></td>
                         <td><?php echo $e($row['file']); ?><?php echo $row['line'] > 0 ? ':' . $row['line'] : ''; ?></td>

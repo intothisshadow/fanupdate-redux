@@ -29,6 +29,8 @@ require_once(__DIR__ . '/class/Repository/UpgradeRepositoryInterface.php');
 require_once(__DIR__ . '/class/Repository/UpgradeRepository.php');
 require_once(__DIR__ . '/class/Service/SchemaMigrator.php');
 require_once(__DIR__ . '/class/Service/UpgradeRunner.php');
+require_once(__DIR__ . '/class/Service/LogService.php');
+require_once(__DIR__ . '/class/Service/ErrorLogService.php');
 
 // _____________________________________________ BOOLEAN (Y/N) OPTIONS
 
@@ -51,6 +53,7 @@ const FU_YN_OPTION_KEYS = [
     'gravatar_on',
     'points_scoring',
     'ajax_comments',
+    'log_anonymize_ips',
 ];
 
 /**
@@ -272,12 +275,53 @@ function fu_is_known_date_format_preset(string $format): bool
 
 // _____________________________________________ ERROR REPORTING
 
+/** Directory for the file-based application error log (FP-46). FU_ERROR_LOG_DIR overrides it, e.g. in tests. */
+function fu_error_log_directory(): string
+{
+    return defined('FU_ERROR_LOG_DIR') ? (string) FU_ERROR_LOG_DIR : __DIR__ . '/data/logs';
+}
+
+/** Appends a PHP error to the error log; never throws and never recurses into the handler. */
+function fu_log_php_error(string $level, string $message, string $file, int $line): void
+{
+    static $logging = false;
+
+    if ($logging) {
+        return;
+    }
+
+    $logging = true;
+    try {
+        (new ErrorLogService(fu_error_log_directory(), __DIR__))->record($level, $message, $file, $line);
+    } catch (\Throwable) {
+        // Logging must never break the request being logged.
+    } finally {
+        $logging = false;
+    }
+}
+
+function fu_php_error_level(int $errno): string
+{
+    return match ($errno) {
+        E_USER_ERROR, E_RECOVERABLE_ERROR => 'error',
+        E_WARNING, E_USER_WARNING => 'warning',
+        E_DEPRECATED, E_USER_DEPRECATED => 'deprecated',
+        default => 'notice',
+    };
+}
+
 function myErrorHandler(int $errno, string $errstr, string $errfile, int $errline): bool
 {
     // PHP 8+ makes @ narrow error_reporting() to fatal-class errors rather
     // than zeroing it, so a `=== 0` test no longer detects suppression.
     if (!(error_reporting() & $errno)) {
         return false;
+    }
+
+    // "Table doesn't exist" warnings are expected during install/version detection.
+    $expectedMissingTable = str_contains($errstr, "doesn't exist") || str_contains($errstr, 'does not exist');
+    if (!$expectedMissingTable) {
+        fu_log_php_error(fu_php_error_level($errno), $errstr, $errfile, $errline);
     }
 
     switch ($errno) {
@@ -305,6 +349,20 @@ function myErrorHandler(int $errno, string $errstr, string $errfile, int $errlin
 }
 
 set_error_handler('myErrorHandler');
+
+/**
+ * Logs an uncaught exception, then re-throws it so PHP's own handling
+ * (display_errors / host error log) is unchanged.
+ */
+function fu_uncaught_exception_handler(\Throwable $e): void
+{
+    fu_log_php_error('exception', get_class($e) . ': ' . $e->getMessage(), $e->getFile(), $e->getLine());
+
+    restore_exception_handler();
+    throw $e;
+}
+
+set_exception_handler('fu_uncaught_exception_handler');
 
 
 // _____________________________________________ VALIDATION
@@ -391,6 +449,7 @@ function fu_build_upgrade_runner(FanUpdate $fu): UpgradeRunner
     $collectiveScriptConfigured = $fu->hasCollectiveScript();
     $standaloneCategoryTableOpt = (string) $fu->getOpt('standalone_category_table');
     $mediaTableOpt              = (string) $fu->getOpt('media_table');
+    $logTableOpt                = (string) $fu->getOpt('log_table');
 
     $schemaMigrator = new SchemaMigrator(
         $fu->db,
@@ -405,7 +464,8 @@ function fu_build_upgrade_runner(FanUpdate $fu): UpgradeRunner
         (string) $fu->getOpt('col_subj'),
         $collectiveScriptConfigured,
         $standaloneCategoryTableOpt !== '' ? $standaloneCategoryTableOpt : null,
-        $mediaTableOpt !== '' ? $mediaTableOpt : null
+        $mediaTableOpt !== '' ? $mediaTableOpt : null,
+        $logTableOpt !== '' ? $logTableOpt : null
     );
 
     $legacyCollectiveScript = (string) ($fanupdate['collective_script'] ?? 'n');

@@ -49,6 +49,7 @@ if (isset($_POST['action']) && !$fu->verifyCsrfOrFail()) {
             $fu->addErr('Word <strong>' . htmlspecialchars($clean['badword'], ENT_QUOTES, 'UTF-8') . '</strong> is already blacklisted.');
         } else {
             if ($blacklistService->addWord($clean['badword'])) {
+                $fu->logEvent(LogService::BLACKLIST_CHANGED, 'Blacklist word added.');
                 $fu->addSuccess('Word <strong>' . htmlspecialchars($clean['badword'], ENT_QUOTES, 'UTF-8') . '</strong> blacklisted.');
             } else {
                 $fu->addErr('Failed to add word to blacklist.');
@@ -62,6 +63,7 @@ if (isset($_POST['action']) && !$fu->verifyCsrfOrFail()) {
         foreach ($words as $word) {
             $word_clean = clean_input($word);
             if ($blacklistService->deleteWord($word_clean)) {
+                $fu->logEvent(LogService::BLACKLIST_CHANGED, 'Blacklist word removed.');
                 $fu->addSuccess('Word <strong>' . htmlspecialchars($word_clean, ENT_QUOTES, 'UTF-8') . '</strong> removed from blacklist.');
             }
         }

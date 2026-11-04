@@ -39,6 +39,8 @@ $fanupdate           = $fanupdate ?? [];
 // default already) doesn't throw an "Undefined variable" warning on a
 // config file that simply never declared it.
 $coltable            = $coltable ?? [];
+// Event log table: defaults so upgraded installs need no blog-config.php edit.
+$fanupdate['log_table'] = $fanupdate['log_table'] ?? 'blog_log';
 $fanupdate['tables'] = [
     $fanupdate['blog_table'],
     $fanupdate['collective_table'],
@@ -56,6 +58,7 @@ $fanupdate['tables'] = [
     // Media gallery (Admin -> Media) — '?? ''' guards configs from before
     // this option existed, same as standalone_category_table above.
     $fanupdate['media_table'] ?? '',
+    $fanupdate['log_table'],
 ];
 
 // requires SqlConnection class, clean_input
@@ -155,6 +158,43 @@ class FanUpdate
     public function getCleanSelf(): string
     {
         return $this->_clean_self;
+    }
+
+    // ── event log (FP-46) ───────────────────────────────────────────────────
+
+    /**
+     * Records an audit event. $actor defaults to the logged-in admin's
+     * username (empty for unauthenticated events). Never throws.
+     */
+    public function logEvent(string $eventType, string $message, ?string $actor = null): void
+    {
+        $actor ??= $this->isLoggedIn() ? (string) $this->getOpt('admin_username', true) : '';
+        $ip      = (string) ($_SERVER['REMOTE_ADDR'] ?? '');
+
+        $log = $this->logService();
+        $log->log($eventType, $actor, $ip, $message);
+
+        // Opportunistic retention pruning: no cron dependency on shared hosts.
+        if (random_int(1, 50) === 1) {
+            $log->prune($this->logRetentionDays());
+        }
+    }
+
+    public function logService(): LogService
+    {
+        return new LogService(
+            $this->db,
+            (string) $this->getOpt('log_table'),
+            (bool) $this->getOpt('log_anonymize_ips')
+        );
+    }
+
+    /** 0 means keep forever; a missing/invalid option falls back to the default. */
+    public function logRetentionDays(): int
+    {
+        $raw = $this->getOpt('log_retention_days', true);
+
+        return is_numeric($raw) ? max(0, (int) $raw) : LogService::DEFAULT_RETENTION_DAYS;
     }
 
     // ── CSRF protection ─────────────────────────────────────────────────────
@@ -777,6 +817,9 @@ class FanUpdate
     {
         // ── logout ──────────────────────────────────────────────────────────
         if (isset($_GET['action']) && $_GET['action'] === 'logout') {
+            if ($this->isLoggedIn()) {
+                $this->logEvent(LogService::LOGOUT, 'Logged out.');
+            }
             $this->setAuthCookie('fu_username', '', time() - 36000);
             $this->setAuthCookie('fu_token', '', time() - 36000);
             header('Location: ' . clean_input($_SERVER['PHP_SELF']));
@@ -834,6 +877,7 @@ class FanUpdate
                 if ($usernameOk && $passwordOk) {
                     // ── success ───────────────────────────────────────────────
                     $rateLimiter->recordSuccess();
+                    $this->logEvent(LogService::LOGIN_SUCCESS, 'Admin login succeeded.', $username);
 
                     $remember = !empty($_POST['remember_me']);
                     $expire   = $remember ? time() + 60 * 60 * 24 * 30 : 0;
@@ -847,6 +891,17 @@ class FanUpdate
                 } else {
                     // ── failure ───────────────────────────────────────────────
                     $rateLimiter->recordFailure();
+
+                    // The attempted username is deliberately not logged: a
+                    // mistyped password is often entered in that field.
+                    $this->logEvent(LogService::LOGIN_FAILURE, 'Admin login failed.', '');
+                    if ($rateLimiter->isLockedOut()) {
+                        $this->logEvent(
+                            LogService::LOGIN_LOCKOUT,
+                            'Login locked out for ' . $rateLimiter->humanTimeRemaining() . '.',
+                            ''
+                        );
+                    }
 
                     // Deliberate: same message for wrong username and wrong
                     // password — do not leak which one was incorrect.

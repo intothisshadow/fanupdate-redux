@@ -408,6 +408,18 @@ $setting[34]['optvalue'] = 'y';
 $setting[34]['optdesc']  = 'Show categories from your collective script (Enthusiast, Fanatically, ...) alongside FanUpdate\'s own in the category list and entry category picker. Turn off to list only FanUpdate\'s own categories. Has no effect when no collective script is configured.';
 $setting[34]['version']  = '2.2.1b2';
 
+// FP-46: admin event log. Existing installs get these via
+// UpgradeRunner::NEW_DEFAULT_OPTIONS.
+$setting[35]['optkey']   = 'log_retention_days';
+$setting[35]['optvalue'] = '90';
+$setting[35]['optdesc']  = 'Number of days to keep entries in the Admin → Logs activity log. Older entries are removed automatically. Use 0 to keep them forever.';
+$setting[35]['version']  = '2.2.1b2';
+
+$setting[36]['optkey']   = 'log_anonymize_ips';
+$setting[36]['optvalue'] = 'n';
+$setting[36]['optdesc']  = 'Anonymise IP addresses in the activity log (the last part of each address is zeroed before it is stored). Does not affect entries already logged.';
+$setting[36]['version']  = '2.2.1b2';
+
 // ── check tables don't already exist (fresh install only) ───────────────────
 
 if ($version_installed == 0) {
@@ -722,7 +734,8 @@ if (!$fu->noErr()) {
         (string) $fu->getOpt('col_subj'),
         $fu->hasCollectiveScript(),
         ((string) $fu->getOpt('standalone_category_table')) !== '' ? (string) $fu->getOpt('standalone_category_table') : null,
-        ((string) $fu->getOpt('media_table')) !== '' ? (string) $fu->getOpt('media_table') : null
+        ((string) $fu->getOpt('media_table')) !== '' ? (string) $fu->getOpt('media_table') : null,
+        ((string) $fu->getOpt('log_table')) !== '' ? (string) $fu->getOpt('log_table') : null
     );
 
     foreach ($schemaMigrator->runPendingSchemaChanges() as $migrationResult) {

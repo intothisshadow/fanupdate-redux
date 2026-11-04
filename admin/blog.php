@@ -138,6 +138,7 @@ if (isset($_POST['action']) && !$fu->verifyCsrfOrFail()) {
         ]);
 
         if ($newEntryId > 0) {
+            $fu->logEvent(LogService::ENTRY_CREATED, 'Entry #' . $newEntryId . ' "' . $clean['title'] . '" created.');
             $fu->addSuccess('Entry <strong>' . htmlspecialchars($clean['title'], ENT_QUOTES, 'UTF-8') . '</strong> added.');
         } else {
             $fu->addErr('Failed to add entry.');
@@ -157,6 +158,7 @@ if (isset($_POST['action']) && !$fu->verifyCsrfOrFail()) {
         ]);
 
         if ($ok) {
+            $fu->logEvent(LogService::ENTRY_UPDATED, 'Entry #' . $clean['id'] . ' "' . $clean['title'] . '" updated.');
             $fu->addSuccess('Entry <strong>' . htmlspecialchars($clean['title'], ENT_QUOTES, 'UTF-8') . '</strong> updated.');
         } else {
             $fu->addErr('Failed to update entry.');
@@ -166,6 +168,7 @@ if (isset($_POST['action']) && !$fu->verifyCsrfOrFail()) {
 
         // Reached only from the single-entry confirm-delete view's form.
         $blogService->deleteEntry($clean['id']);
+        $fu->logEvent(LogService::ENTRY_DELETED, 'Entry #' . $clean['id'] . ' deleted.');
         $fu->addSuccess('Entry deleted.');
 
     } elseif ($_POST['action'] === 'bulk-delete') {
@@ -187,6 +190,7 @@ if (isset($_POST['action']) && !$fu->verifyCsrfOrFail()) {
         } else {
             $blogService->deleteEntries($bulkIds);
             $count = count($bulkIds);
+            $fu->logEvent(LogService::ENTRY_DELETED, $count . ' ' . ($count === 1 ? 'entry' : 'entries') . ' deleted (#' . implode(', #', $bulkIds) . ').');
             $fu->addSuccess($count . ' ' . ($count === 1 ? 'entry' : 'entries') . ' deleted.');
         }
     }

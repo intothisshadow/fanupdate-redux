@@ -128,6 +128,8 @@ if (isset($_POST['action']) && $_POST['action'] === 'update' && !$fu->verifyCsrf
         if ($affected === null) {
             $fu->addErr('Failed to update <strong>' . htmlspecialchars($key, ENT_QUOTES, 'UTF-8') . '</strong>.');
         } elseif ($affected > 0) {
+            // Key only: some option values are sensitive.
+            $fu->logEvent(LogService::OPTIONS_CHANGED, 'Setting "' . $key . '" changed.');
             $fu->addSuccess(
                 'Set <strong>' . htmlspecialchars($key, ENT_QUOTES, 'UTF-8') . '</strong> = '
                 . nl2br(htmlspecialchars($value, ENT_QUOTES, 'UTF-8'))

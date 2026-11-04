@@ -80,7 +80,7 @@
 /* ── Base ─────────────────────────────────────────────────────────────────── */
 
 html {
-    font-size: 15px;
+    font-size: 20px;
     -webkit-text-size-adjust: 100%;
 }
 
@@ -241,6 +241,7 @@ pre {
 #smilies    a.options,
 #templates  a.options,
 #updates    a.updates,
+#logs       a.logs,
 #credits    a.credits {
     background: var(--fu-bg);
     color: var(--fu-accent);
@@ -1534,6 +1535,7 @@ div#fanupdate textarea {
 #fu-nav-toggle { display: none; }
 
 @media (max-width: 800px) {
+    html          { font-size: 15px; }
     #header-inner { padding: 0 1rem; }
     #header h1    { margin-right: 0.75rem; }
     #main         { padding: 1.25rem; }

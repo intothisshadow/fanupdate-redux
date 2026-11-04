@@ -121,6 +121,7 @@ if (isset($_POST['reset_password'])) {
             }
 
             if ($ok) {
+                $fu->logEvent(LogService::PASSWORD_RESET, 'Admin password reset via reset-password.php.', '');
                 $rateLimiter->recordSuccess();
                 $currentUsername = (string) $new_username;
                 $showform        = false;

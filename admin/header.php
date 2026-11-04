@@ -113,6 +113,7 @@ $fuAssetVersion = urlencode(FU_VERSION);
                     <li><a href="category.php"  class="categories"><i class="ti ti-tag" aria-hidden="true"></i> Categories</a></li>
                     <li><a href="media.php"     class="media"><i class="ti ti-photo" aria-hidden="true"></i> Media</a></li>
                     <li><a href="options.php"   class="options"><i class="ti ti-settings" aria-hidden="true"></i> Options</a></li>
+                    <li><a href="logs.php"      class="logs"><i class="ti ti-list-details" aria-hidden="true"></i> Logs</a></li>
                     <li><a href="update.php"    class="updates"><i class="ti ti-refresh" aria-hidden="true"></i> Updates</a></li>
                 </ul>
 

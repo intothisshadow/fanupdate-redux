@@ -159,6 +159,16 @@ class UpgradeRunner
             'value'       => 'y',
             'description' => 'Show categories from your collective script (Enthusiast, Fanatically, ...) alongside FanUpdate\'s own in the category list and entry category picker. Turn off to list only FanUpdate\'s own categories. Has no effect when no collective script is configured.',
         ],
+        // FP-46: admin event log (Admin -> Logs). Missing rows already
+        // behave as these defaults; seeding makes them editable in Options.
+        'log_retention_days' => [
+            'value'       => '90',
+            'description' => 'Number of days to keep entries in the Admin → Logs activity log. Older entries are removed automatically. Use 0 to keep them forever.',
+        ],
+        'log_anonymize_ips' => [
+            'value'       => 'n',
+            'description' => 'Anonymise IP addresses in the activity log (the last part of each address is zeroed before it is stored). Does not affect entries already logged.',
+        ],
     ];
 
     /**

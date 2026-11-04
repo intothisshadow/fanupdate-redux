@@ -54,6 +54,7 @@ if ($accountAction !== null && !$fu->verifyCsrfOrFail()) {
         $fu->addErr('Username cannot be empty.');
     } else {
         $accountService->updateUsername($new_username);
+        $fu->logEvent(LogService::ACCOUNT_UPDATED, 'Admin username changed.');
         $fu->addSuccess('Username updated to <strong>' . htmlspecialchars($new_username, ENT_QUOTES, 'UTF-8') . '</strong>.');
     }
 
@@ -65,6 +66,7 @@ if ($accountAction !== null && !$fu->verifyCsrfOrFail()) {
         $fu->addErr('Please enter a valid email address.');
     } else {
         $accountService->updateEmail($new_email);
+        $fu->logEvent(LogService::ACCOUNT_UPDATED, 'Admin email changed.');
         $fu->addSuccess('Email updated to <strong>' . htmlspecialchars($new_email, ENT_QUOTES, 'UTF-8') . '</strong>.');
     }
 
@@ -82,6 +84,7 @@ if ($accountAction !== null && !$fu->verifyCsrfOrFail()) {
         $fu->addErr('New password must be at least 8 characters.');
     } else {
         $accountService->updatePassword($new_pw);
+        $fu->logEvent(LogService::PASSWORD_CHANGED, 'Admin password changed.');
         $fu->addSuccess('Password updated.');
     }
 }

@@ -108,6 +108,7 @@ if (isset($_POST['action']) && !$fu->verifyCsrfOrFail()) {
                 $fu->addErr('Failed to add comment.');
                 $showform = true;
             } else {
+                $fu->logEvent(LogService::COMMENT_CHANGED, 'Comment added by admin.');
                 $fu->addSuccess('Comment added.');
                 $clean = [];
             }
@@ -129,6 +130,7 @@ if (isset($_POST['action']) && !$fu->verifyCsrfOrFail()) {
             $fu->addErr('Failed to update comment #<strong>' . $clean['id'] . '</strong>.');
             $showform = true;
         } else {
+            $fu->logEvent(LogService::COMMENT_CHANGED, 'Comment #' . $clean['id'] . ' updated.');
             $fu->addSuccess('Comment #<strong>' . $clean['id'] . '</strong> updated.');
             $clean = [];
         }
@@ -140,6 +142,7 @@ if (isset($_POST['action']) && !$fu->verifyCsrfOrFail()) {
         if (!$commentService->deleteComment($clean['id'])) {
             $fu->addErr('Failed to delete comment #<strong>' . $clean['id'] . '</strong>.');
         } else {
+            $fu->logEvent(LogService::COMMENT_CHANGED, 'Comment #' . $clean['id'] . ' deleted.');
             $fu->addSuccess('Comment #<strong>' . $clean['id'] . '</strong> deleted.');
         }
         $clean = [];

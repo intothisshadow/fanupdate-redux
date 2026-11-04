@@ -148,6 +148,18 @@ $fu->reportErrors();
 </form>
 
 <div class="page-header" style="margin-top:2rem;">
+    <h2>Activity log</h2>
+</div>
+
+<p class="hint small">
+    <a href="logs.php">Admin &rarr; Logs</a> keeps a local record of logins, lockouts and admin changes:
+    event type, time, acting username, IP address and a short message. It never stores passwords, comment
+    text, setting values, or the username typed into a failed login. Nothing is sent anywhere. Entries are
+    deleted automatically after <code>log_retention_days</code> days, and IP addresses can be anonymised
+    with <code>log_anonymize_ips</code> (both in <a href="options.php">Options &rarr; Main</a>).
+</p>
+
+<div class="page-header" style="margin-top:2rem;">
     <h2>Status</h2>
 </div>
 

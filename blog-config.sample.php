@@ -101,6 +101,10 @@ $fanupdate['smilies_table']		= 'blog_smilies';
 // uploads/images/ directory tree on every page load.
 $fanupdate['media_table']		= 'blog_media';
 
+// Admin event log (Admin -> Logs). Optional: defaults to 'blog_log' when
+// omitted, so upgraded installs need no change here.
+$fanupdate['log_table']			= 'blog_log';
+
 // Standalone categories table (Categories Support / hybrid mode).
 // Only used when a collective script is actually configured (see Admin ->
 // Options -> Collective Source after installing) — lets FanUpdate manage

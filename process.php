@@ -75,6 +75,7 @@ if (isset($_POST['submit_comment'])) {
     if (!$bot_detected) {
         $commentRateLimiter = new CommentRateLimiter();
         if ($commentRateLimiter->isBlocked()) {
+            $fu->logEvent(LogService::COMMENT_BLOCKED, 'Public comment blocked by rate limit.', '');
             $bot_detected = true;
         }
     }

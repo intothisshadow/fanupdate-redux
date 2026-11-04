@@ -67,6 +67,9 @@ This Redux release updates the codebase to **PHP 8.2+** and includes a full admi
   if the server can't reach GitHub, or to install a build that isn't
   published as a release — through the same validated backup/install/
   automatic-rollback pipeline as a GitHub-fetched release.
+- **Activity & error logs** — **Admin → Logs** keeps a searchable record of
+  logins, lockouts, content and settings changes and update actions, plus a
+  viewer for PHP errors. See [Logs](#logs).
 - **Opt-in anonymous install statistics** — **off by default.** Enabled from
   **Admin → Options → Privacy**, this sends a small, anonymous ping (a
   randomly generated installation ID, the FanUpdate Redux version, and the
@@ -759,6 +762,38 @@ listing every affected title before you confirm.
 
 ---
 
+## Logs
+
+**Admin → Logs** has two tabs.
+
+**Activity** records security and admin events: admin logins (successes,
+failures, and lockouts), logouts, password/username/email changes and resets,
+entry, category, comment and media changes, blacklist and settings changes,
+update actions (download, install, rollback, database upgrade), and public
+comments blocked by the rate limit. You can filter by event type, search the
+text, and filter by date range; entries are shown in UTC.
+
+- It never stores passwords, tokens, comment text, setting *values*, or the
+  username typed into a failed login (a mistyped password often lands there).
+- Entries older than **Log retention (days)** (default 90, `0` = keep forever)
+  are removed automatically.
+- Turn on **Anonymise IPs in logs** to zero the last part of each address
+  before it is stored.
+- Both settings are in **Admin → Options → Main**. They appear there after
+  your next version upgrade; until then the defaults above apply.
+
+**Errors** lists PHP warnings, errors and uncaught exceptions that FanUpdate
+caught, newest first, with server paths shortened to install-relative ones.
+They are kept in `data/logs/error.log` (auto-created and protected by a
+`.htaccess` deny rule — on nginx, add the `location ^~ /data/ { deny all; }`
+rule mentioned under [Login rate limiting](#login-rate-limiting)). The file
+rotates at 512&nbsp;KB, so it cannot grow without bound.
+
+Both tabs have a **Clear** button. The activity log lives in a `blog_log`
+table, created automatically — on an upgrade, by the database update that
+**Admin → Updates** offers. To use a different table name, set
+`$fanupdate['log_table']` in `blog-config.php`.
+
 ## Privacy: Anonymous Install Statistics
 
 **Off by default.** From **Admin → Options → Privacy** you can opt in to
@@ -904,6 +939,7 @@ fanupdate/
 │   ├── index.php            # Admin dashboard
 │   ├── blog.php             # Admin: entries list
 │   ├── upload.php           # Admin: image upload endpoint (AJAX)
+│   ├── logs.php             # Admin: activity log and PHP error log viewer
 │   ├── media.php            # Admin: paginated media gallery (browse/delete uploads)
 │   ├── category.php         # Admin: categories
 │   ├── comment.php          # Admin: comments
@@ -931,7 +967,8 @@ fanupdate/
 │   └── Update/               # Admin Update Manager value objects/provider: UpdateProviderInterface, GitHubUpdateProvider, ReleaseInfo, DownloadResult, BackupResult, InstallResult, RollbackResult, SystemStatusCheck, UpgradeResult
 ├── data/
 │   ├── login_attempts/      # Login rate limiter lock files (auto-created, not web-accessible)
-│   └── comment_rate/        # Comment rate limiter lock files (auto-created, not web-accessible)
+│   ├── comment_rate/        # Comment rate limiter lock files (auto-created, not web-accessible)
+│   └── logs/                # Application error log (auto-created, not web-accessible)
 ├── uploads/
 │   ├── .htaccess            # Blocks PHP execution (auto-created on first upload)
 │   └── images/

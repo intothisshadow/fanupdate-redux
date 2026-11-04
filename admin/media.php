@@ -140,6 +140,7 @@ if (isset($_POST['action']) && !$fu->verifyCsrfOrFail()) {
         $fu->addErr('No images were selected.');
     } else {
         $count = $mediaService->deleteImages($bulkIds);
+        $fu->logEvent(LogService::MEDIA_DELETED, $count . ' ' . ($count === 1 ? 'image' : 'images') . ' deleted.');
         $fu->addSuccess($count . ' ' . ($count === 1 ? 'image' : 'images') . ' deleted.');
     }
 } elseif (
@@ -149,6 +150,7 @@ if (isset($_POST['action']) && !$fu->verifyCsrfOrFail()) {
 ) {
     // Reached only from the confirm-delete view's form below.
     if ($mediaService->deleteImage((int) $_POST['id'])) {
+        $fu->logEvent(LogService::MEDIA_DELETED, 'Image #' . (int) $_POST['id'] . ' deleted.');
         $fu->addSuccess('Image deleted.');
     } else {
         $fu->addErr('That image no longer exists.');

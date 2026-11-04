@@ -103,6 +103,7 @@ if (isset($_POST['action']) && !$fu->verifyCsrfOrFail()) {
 
         if ($result['settings_ok'] === true) {
             $clean['cat_id'] = $result['cat_id'];
+            $fu->logEvent(LogService::CATEGORY_CHANGED, 'Category "' . $clean['name'] . '" added.');
             $fu->addSuccess('Category <strong>' . htmlspecialchars($clean['name'], ENT_QUOTES, 'UTF-8') . '</strong> added.');
         } elseif ($result['settings_ok'] === false) {
             $fu->addErr('Failed to save category settings.');
@@ -111,6 +112,7 @@ if (isset($_POST['action']) && !$fu->verifyCsrfOrFail()) {
     } elseif ($_POST['action'] === 'update' && $clean['cat_id'] !== null) {
 
         if ($categoryService->updateCategory($clean['cat_id'], $clean)) {
+            $fu->logEvent(LogService::CATEGORY_CHANGED, 'Category #' . $clean['cat_id'] . ' updated.');
             $fu->addSuccess('Category updated.');
         } else {
             $fu->addErr('Failed to update category.');
@@ -123,6 +125,7 @@ if (isset($_POST['action']) && !$fu->verifyCsrfOrFail()) {
         // docblock. Surface a clearer message for that case than the
         // generic failure one.
         if ($categoryService->deleteCategory($clean['cat_id'])) {
+            $fu->logEvent(LogService::CATEGORY_CHANGED, 'Category #' . $clean['cat_id'] . ' deleted.');
             $fu->addSuccess('Category deleted.');
         } elseif (!$categoryService->isStandaloneCategory($clean['cat_id'])) {
             $fu->addErr('This category is managed by an external source and cannot be deleted here.');

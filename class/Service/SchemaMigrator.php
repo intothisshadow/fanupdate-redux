@@ -70,6 +70,7 @@ class SchemaMigrator
         private readonly bool $collectiveScriptConfigured,
         private readonly ?string $standaloneCategoryTable,
         private readonly ?string $mediaTable = null,
+        private readonly ?string $logTable = null,
     ) {
     }
 
@@ -96,6 +97,14 @@ class SchemaMigrator
             $this->mediaTable !== null
             && $this->mediaTable !== ''
             && !$this->tableExists($this->mediaTable)
+        ) {
+            return true;
+        }
+
+        if (
+            $this->logTable !== null
+            && $this->logTable !== ''
+            && !$this->tableExists($this->logTable)
         ) {
             return true;
         }
@@ -136,6 +145,11 @@ class SchemaMigrator
         $steps[] = [
             'label' => 'Checking Media table',
             'run'   => fn (): ?array => $this->ensureMediaTable(),
+        ];
+
+        $steps[] = [
+            'label' => 'Checking Event Log table',
+            'run'   => fn (): ?array => $this->ensureLogTable(),
         ];
 
         foreach ($this->migrationSteps() as $def) {
@@ -255,6 +269,42 @@ class SchemaMigrator
             'message' => $ok
                 ? 'Table ' . $this->mediaTable . ' created.'
                 : 'Table ' . $this->mediaTable . ' not created!',
+        ];
+    }
+
+    // ── Event log: log_table (FP-46) ────────────────────────────────────────
+
+    /** Creates the admin event log table; a no-op when unconfigured or already present. */
+    private function ensureLogTable(): ?array
+    {
+        if (
+            $this->logTable === null
+            || $this->logTable === ''
+            || $this->tableExists($this->logTable)
+        ) {
+            return null;
+        }
+
+        $query = 'CREATE TABLE `' . $this->logTable . "` (
+      `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+      `event_type` varchar(32) NOT NULL,
+      `username` varchar(50) NOT NULL DEFAULT '',
+      `ip` varchar(45) NOT NULL DEFAULT '',
+      `message` varchar(500) NOT NULL DEFAULT '',
+      `created_at` datetime NOT NULL,
+      PRIMARY KEY (`id`),
+      KEY `type_created` (`event_type`, `created_at`),
+      KEY `created` (`created_at`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci";
+
+        $ok = $this->db->Execute($query);
+
+        return [
+            'table'   => $this->logTable,
+            'ok'      => $ok,
+            'message' => $ok
+                ? 'Table ' . $this->logTable . ' created.'
+                : 'Table ' . $this->logTable . ' not created!',
         ];
     }
 

@@ -225,6 +225,7 @@ if ($action === 'check') {
         $result = $updateManager->downloadLatestRelease();
 
         if ($result['ok']) {
+            $fu->logEvent(LogService::UPDATE_ACTION, 'Release downloaded and verified.');
             $fu->addSuccess(
                 'Release downloaded and verified (' . fu_update_format_bytes((int) $result['size']) . ').'
                 . (($result['checksumVerified'] ?? false)
@@ -260,6 +261,7 @@ if ($action === 'check') {
             // normal page render below — InstallManager just overwrote every
             // PHP file on disk including this one, but PHP has no way to
             // "hot reload" classes already loaded into this running process.
+            $fu->logEvent(LogService::UPDATE_ACTION, 'Installed update: ' . (string) $result['version'] . '.');
             // A fresh request (?action=run-upgrades) re-requires everything
             // from the newly-copied files, so UpgradeRunner (and everything
             // else) actually reflects the version that was just installed.
@@ -305,6 +307,7 @@ if ($action === 'check') {
         $result = $updateManager->installUploadedRelease($_FILES['update_zip']['tmp_name']);
 
         if ($result['ok']) {
+            $fu->logEvent(LogService::UPDATE_ACTION, 'Installed uploaded release: ' . (string) $result['version'] . '.');
             // Same redirect InstallManager's provider-download path uses —
             // a fresh request is required so the post-install DB-migration
             // step (?action=run-upgrades) runs against the just-installed
@@ -344,6 +347,7 @@ if ($action === 'check') {
         } elseif (empty($upgradeOutcome['messages'])) {
             $fu->addSuccess('Database is already up to date — no pending migrations were needed.');
         } else {
+            $fu->logEvent(LogService::UPDATE_ACTION, 'Database upgrade run (' . count($upgradeOutcome['messages']) . ' change(s)).');
             foreach ($upgradeOutcome['messages'] as $upgradeMessage) {
                 $fu->addSuccess(htmlspecialchars($upgradeMessage, ENT_QUOTES, 'UTF-8'));
             }
@@ -358,8 +362,9 @@ if ($action === 'check') {
         $result        = $updateManager->restoreBackup($backupPath, $backupVersion);
 
         if ($result['ok']) {
+            $fu->logEvent(LogService::UPDATE_ACTION, 'Rolled back to version ' . (string) $result['version'] . '.');
             $fu->addSuccess(
-                'Restored version ' . htmlspecialchars((string) $result['version'], ENT_QUOTES, 'UTF-8')
+                'Restored version' . htmlspecialchars((string) $result['version'], ENT_QUOTES, 'UTF-8')
                 . ' (' . $result['fileCount'] . ' files) from backup. Refresh this page to see it reflected everywhere.'
             );
         } else {

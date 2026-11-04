@@ -9,12 +9,31 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- **Activity & error logs (FP-46)** — a new **Admin → Logs** page. The
+  Activity tab records logins (successes, failures, lockouts), password and
+  account changes, entry/category/comment/media/blacklist/settings changes,
+  update actions, and public comments blocked by the rate limit, with
+  filters for event type, text and date range. The Errors tab shows PHP
+  warnings, errors and uncaught exceptions FanUpdate caught, newest first.
+  Passwords, comment text, setting values and failed-login usernames are
+  never stored. New settings **Log retention (days)** (default 90) and
+  **Anonymise IPs in logs**; both logs have a Clear button. The activity log
+  lives in a new `blog_log` table, created by the database update shown in
+  Admin → Updates (or by a fresh install). Errors are written to
+  `data/logs/error.log`, which rotates at 512 KB.
+
 - **Hide collective categories (FP-37)** — a new "Show collective categories"
   toggle in Admin → Options → Main (`show_collective_categories`). Turn it off
   to list only FanUpdate's own categories on the Categories page and in the
   entry editor's category picker, while keeping your Enthusiast/Fanatically
   configuration. Defaults to on, so existing sites are unchanged; the setting
   appears in Options after your next version upgrade.
+
+### Changed
+
+- **Larger admin text** — the admin panel's base font size went from 15px to
+  20px in both the day and night themes; everything scales with it. Screens
+  800px wide or narrower keep the original 15px.
 
 ### Fixed
 

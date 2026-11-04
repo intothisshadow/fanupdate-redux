@@ -241,7 +241,7 @@ if ($action === 'check') {
         // Invalid/missing CSRF token — error already queued.
     } else {
         try {
-            $backupResult = $backupManager->createBackup(UpdateManager::normalizeVersion(FU_VERSION));
+            $backupResult = $backupManager->createBackup((new VersionNormalizer())->normalize(FU_VERSION));
             $fu->addSuccess(
                 'Backup created and verified (' . fu_update_format_bytes($backupResult->size)
                 . ', ' . $backupResult->fileCount . ' files).'

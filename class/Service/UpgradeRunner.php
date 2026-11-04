@@ -102,19 +102,10 @@ declare(strict_types=1);
  * any later version.
  ******************************************************************************/
 
-// isVersionBehind()/currentInstalledVersion() call UpdateManager::
-// normalizeVersion() directly. admin/index.php and admin/update.php happen
-// to require_once this already (for their own unrelated UpdateManager use),
-// but every other admin/*.php page reaches UpgradeRunner only via
-// functions.php's fu_build_upgrade_runner() (called from admin/header.php's
-// global pending-upgrades banner, shown on every page) — none of those
-// require UpdateManager.php themselves, so relying on a caller to have
-// already loaded it produced a live "Class UpdateManager not found" fatal
-// on every admin page except the two that happened to load it first. A
-// class with a hard dependency on another class should require it itself
-// rather than rely on incidental load order from unrelated callers — same
-// pattern as class/FeedWriter.php requiring class/FeedItem.php.
-require_once(__DIR__ . '/UpdateManager.php');
+// Required here rather than relying on caller load order: UpgradeRunner is
+// reached via functions.php's fu_build_upgrade_runner() on every admin page.
+require_once(__DIR__ . '/VersionNormalizer.php');
+require_once(__DIR__ . '/CollectiveScriptNormalizer.php');
 
 class UpgradeRunner
 {
@@ -208,6 +199,8 @@ class UpgradeRunner
         private readonly ?string $legacyColId = null,
         private readonly ?string $legacyColSubj = null,
         private readonly ?string $legacyCollectiveTable = null,
+        private readonly VersionNormalizer $versionNormalizer = new VersionNormalizer(),
+        private readonly CollectiveScriptNormalizer $collectiveScriptNormalizer = new CollectiveScriptNormalizer(),
     ) {
     }
 
@@ -261,7 +254,7 @@ class UpgradeRunner
      */
     public function runPendingUpgrades(string $targetVersionRaw, ?callable $onProgress = null): UpgradeResult
     {
-        $targetVersion           = UpdateManager::normalizeVersion($targetVersionRaw);
+        $targetVersion           = $this->versionNormalizer->normalize($targetVersionRaw);
         $installedVersion        = $this->normalizedInstalledVersion();
         $versionBehind           = $this->isVersionBehind($targetVersionRaw);
         $schemaPending           = $this->schemaMigrator !== null && $this->schemaMigrator->hasPendingSchemaChanges();
@@ -334,7 +327,7 @@ class UpgradeRunner
      * One-time migration of blog-config.php's legacy collective_script/
      * $coltable values into the options table, normalising the shorthand
      * ('e', 'n') to the descriptive identifier this codebase now stores
-     * ('enthusiast', 'none') — see FanUpdate::normalizeCollectiveScriptIdentifier().
+     * ('enthusiast', 'none') — see CollectiveScriptNormalizer.
      * Only ever runs once per installation: collectiveScriptMigrationPending()
      * gates on the options table not already having a collective_script row,
      * so a subsequent call is a safe no-op regardless of whether
@@ -343,7 +336,7 @@ class UpgradeRunner
      */
     private function migrateLegacyCollectiveScript(): string
     {
-        $normalized = FanUpdate::normalizeCollectiveScriptIdentifier((string) $this->legacyCollectiveScript);
+        $normalized = $this->collectiveScriptNormalizer->normalize((string) $this->legacyCollectiveScript);
 
         $this->repository->setOptionValue(
             'collective_script',
@@ -467,7 +460,7 @@ class UpgradeRunner
         $stored = $this->repository->getOptionValue('entry_template');
 
         return $stored !== null
-            && self::normalizeTemplateWhitespace($stored) === self::normalizeTemplateWhitespace(self::OLD_DEFAULT_ENTRY_TEMPLATE);
+            && $this->normalizeTemplateWhitespace($stored) === $this->normalizeTemplateWhitespace(self::OLD_DEFAULT_ENTRY_TEMPLATE);
     }
 
     /**
@@ -478,7 +471,7 @@ class UpgradeRunner
      * would match genuinely different content. Only whitespace shape is
      * normalized; the actual markup/text must still match exactly.
      */
-    private static function normalizeTemplateWhitespace(string $value): string
+    private function normalizeTemplateWhitespace(string $value): string
     {
         return trim(str_replace(["\r\n", "\r"], "\n", $value));
     }
@@ -508,12 +501,12 @@ class UpgradeRunner
     {
         $installedRaw = $this->repository->getOptionValue('_db_version');
 
-        return $installedRaw !== null ? UpdateManager::normalizeVersion($installedRaw) : null;
+        return $installedRaw !== null ? $this->versionNormalizer->normalize($installedRaw) : null;
     }
 
     private function isVersionBehind(string $targetVersionRaw): bool
     {
-        $targetVersion    = UpdateManager::normalizeVersion($targetVersionRaw);
+        $targetVersion    = $this->versionNormalizer->normalize($targetVersionRaw);
         $installedVersion = $this->normalizedInstalledVersion();
 
         return $installedVersion === null || version_compare($installedVersion, $targetVersion, '<');

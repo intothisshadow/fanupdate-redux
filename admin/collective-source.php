@@ -29,7 +29,7 @@
  * works even for an installation whose collective_table row hasn't been
  * created by UpgradeRunner's migration yet). The <select> + auto-fill JS
  * below is a pure UI convenience over those same free-text values;
- * FanUpdate::normalizeCollectiveScriptIdentifier()'s
+ * CollectiveScriptNormalizer's
  * passthrough-for-unknown-values behaviour, and how collective_script/
  * col_id/col_subj are actually resolved and read (FanUpdate::
  * resolveCollectiveScriptConfig()), are unchanged by this page.
@@ -61,7 +61,7 @@ $showNav = true;
 // ── Known collective scripts ───────────────────────────────────────────────
 // Mirrors blog-config.sample.php's $coltable defaults. "listingadmin" is
 // deliberately NOT listed here — Listing Admin support is reserved/planned
-// (FanUpdate::normalizeCollectiveScriptIdentifier() already normalises the
+// (CollectiveScriptNormalizer already normalises the
 // identifier correctly) but not yet functional until its Integrated Mode
 // adapter is built, so it isn't offered as a choice yet. An installation
 // somehow already storing "listingadmin" (or any other unrecognised value)
@@ -88,7 +88,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'update' && !$fu->verifyCsrf
         $scriptValue = $selected;
     }
 
-    $scriptValue = FanUpdate::normalizeCollectiveScriptIdentifier($scriptValue);
+    $scriptValue = (new CollectiveScriptNormalizer())->normalize($scriptValue);
     $colId       = isset($_POST['col_id'])   ? clean_input($_POST['col_id'])   : '';
     $colSubj     = isset($_POST['col_subj']) ? clean_input($_POST['col_subj']) : '';
     $collectiveTable = isset($_POST['collective_table']) ? clean_input($_POST['collective_table']) : '';

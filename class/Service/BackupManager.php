@@ -399,13 +399,13 @@ class BackupManager
         if ($free < $required) {
             throw new \RuntimeException(sprintf(
                 'Not enough free disk space for a backup: approximately %s required, %s available.',
-                self::formatBytes($required),
-                self::formatBytes((int) $free)
+                $this->formatBytes($required),
+                $this->formatBytes((int) $free)
             ));
         }
     }
 
-    private static function formatBytes(int $bytes): string
+    private function formatBytes(int $bytes): string
     {
         $units = ['B', 'KB', 'MB', 'GB'];
         $i     = 0;

@@ -93,10 +93,10 @@ class LogService
                 'INSERT INTO `' . $this->table . '` (`event_type`, `username`, `ip`, `message`, `created_at`)
                  VALUES (?, ?, ?, ?, UTC_TIMESTAMP())',
                 [
-                    self::clean($eventType, 32),
-                    self::clean($username, 50),
-                    self::clean($this->anonymizeIps ? self::anonymizeIp($ip) : $ip, 45),
-                    self::clean($message, self::MAX_MESSAGE_CHARS),
+                    $this->clean($eventType, 32),
+                    $this->clean($username, 50),
+                    $this->clean($this->anonymizeIps ? $this->anonymizeIp($ip) : $ip, 45),
+                    $this->clean($message, self::MAX_MESSAGE_CHARS),
                 ]
             );
         } catch (\Throwable) {
@@ -171,7 +171,7 @@ class LogService
         }
     }
 
-    public static function anonymizeIp(string $ip): string
+    public function anonymizeIp(string $ip): string
     {
         if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false) {
             $parts    = explode('.', $ip);
@@ -192,7 +192,7 @@ class LogService
     }
 
     /** Strips control characters (log-forging defence) and caps the length. */
-    public static function clean(string $value, int $maxLength): string
+    public function clean(string $value, int $maxLength): string
     {
         $value = (string) preg_replace('/[\x00-\x1F\x7F]+/', ' ', $value);
 

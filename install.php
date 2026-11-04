@@ -358,7 +358,7 @@ if ($legacy_collective_script === '') {
 }
 
 $setting[29]['optkey']   = 'collective_script';
-$setting[29]['optvalue'] = FanUpdate::normalizeCollectiveScriptIdentifier($legacy_collective_script);
+$setting[29]['optvalue'] = (new CollectiveScriptNormalizer())->normalize($legacy_collective_script);
 $setting[29]['optdesc']  = 'Which collective/fanlisting script this installation is paired with. Supported: "enthusiast" (Enthusiast), "fanatically" (Fanatically). Use "none" for standalone mode, where FanUpdate manages its own categories table entirely with no external script involved. ("listingadmin" is reserved for future Listing Admin support and is not yet functional.) Editable in Admin -> Options -> Collective Source.';
 $setting[29]['version']  = '2.2.1b2';
 

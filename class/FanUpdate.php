@@ -462,7 +462,7 @@ class FanUpdate
             $legacyShorthand = 'n';
         }
 
-        $this->_cfg['collective_script'] = self::normalizeCollectiveScriptIdentifier($legacyShorthand);
+        $this->_cfg['collective_script'] = (new CollectiveScriptNormalizer())->normalize($legacyShorthand);
         $this->_cfg['col_id']            = (string) ($coltable[$legacyShorthand]['id']      ?? '');
         $this->_cfg['col_subj']          = (string) ($coltable[$legacyShorthand]['subject'] ?? '');
     }
@@ -495,28 +495,6 @@ class FanUpdate
         $value = $this->getOpt('show_collective_categories', true);
 
         return !in_array(strtolower((string) $value), ['n', 'no', '0'], true);
-    }
-
-    /**
-     * Normalise a collective_script identifier from the legacy single-letter
-     * shorthand ('n', 'e') to the descriptive string this codebase now
-     * stores and displays ('none', 'enthusiast') — TODO.md's Database
-     * Architecture item. An already-descriptive value, or a custom
-     * identifier for a script this codebase doesn't have a shorthand mapping
-     * for, passes through unchanged (lower-cased/trimmed). Public and static
-     * (a pure string transform, no singleton state) so UpgradeRunner and
-     * install.php can reuse it without taking on a FanUpdate instance
-     * dependency — same precedent as UpdateManager::normalizeVersion().
-     */
-    public static function normalizeCollectiveScriptIdentifier(string $raw): string
-    {
-        return match (strtolower(trim($raw))) {
-            '', 'n', 'no', 'none' => 'none',
-            'e', 'enthusiast'     => 'enthusiast',
-            'f', 'fanatically'    => 'fanatically',
-            'l', 'listingadmin'   => 'listingadmin',
-            default               => strtolower(trim($raw)),
-        };
     }
 
     /**

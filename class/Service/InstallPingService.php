@@ -80,7 +80,7 @@ class InstallPingService
         $config['enabled'] = $enabled;
 
         if ($enabled && empty($config['installUuid'])) {
-            $config['installUuid'] = self::generateUuidV4();
+            $config['installUuid'] = $this->generateUuidV4();
         }
 
         return $this->repository->saveConfig($config);
@@ -193,7 +193,7 @@ class InstallPingService
 
         $fields = [
             'install_uuid' => $installUuid,
-            'version'      => self::normalizeVersion($this->installedVersionRaw),
+            'version'      => $this->normalizeVersion($this->installedVersionRaw),
             'php_version'  => PHP_VERSION,
         ];
 
@@ -212,7 +212,7 @@ class InstallPingService
      * code with the update checker. Returns the input unchanged if no
      * numeric version can be found.
      */
-    private static function normalizeVersion(string $raw): string
+    private function normalizeVersion(string $raw): string
     {
         if (preg_match('/\d+(?:\.\d+){1,3}/', $raw, $m)) {
             return $m[0];
@@ -221,7 +221,7 @@ class InstallPingService
         return $raw;
     }
 
-    private static function generateUuidV4(): string
+    private function generateUuidV4(): string
     {
         $data = random_bytes(16);
         $data[6] = chr((ord($data[6]) & 0x0f) | 0x40); // version 4

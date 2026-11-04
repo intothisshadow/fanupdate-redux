@@ -21,6 +21,8 @@ declare(strict_types=1);
  * any later version.
  ******************************************************************************/
 
+require_once(__DIR__ . '/VersionNormalizer.php');
+
 class UpdateManager
 {
     private readonly string $installedVersion;
@@ -36,22 +38,9 @@ class UpdateManager
         private readonly ?BackupManager $backupManager = null,
         private readonly ?InstallManager $installManager = null,
         private readonly ?RollbackManager $rollbackManager = null,
+        private readonly VersionNormalizer $versionNormalizer = new VersionNormalizer(),
     ) {
-        $this->installedVersion = self::normalizeVersion($installedVersionRaw);
-    }
-
-    /**
-     * Strip any non-numeric prefix (e.g. "Redux " in FU_VERSION's
-     * "Redux 2.1.0") so version_compare() sees a plain version number.
-     * Returns the input unchanged if no numeric version can be found.
-     */
-    public static function normalizeVersion(string $raw): string
-    {
-        if (preg_match('/\d+(?:\.\d+){1,3}/', $raw, $m)) {
-            return $m[0];
-        }
-
-        return $raw;
+        $this->installedVersion = $this->versionNormalizer->normalize($installedVersionRaw);
     }
 
     public function getChannel(): string
@@ -656,7 +645,7 @@ class UpdateManager
             return null;
         }
 
-        return self::normalizeVersion($m[1]);
+        return $this->versionNormalizer->normalize($m[1]);
     }
 
     /**

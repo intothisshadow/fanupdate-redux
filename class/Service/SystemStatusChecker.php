@@ -140,7 +140,7 @@ class SystemStatusChecker
             return new SystemStatusCheck(
                 'Available disk space',
                 'error',
-                'Only ' . self::formatBytes($free) . ' free — likely too little to safely create a backup or install an update.'
+                'Only ' . $this->formatBytes($free) . ' free — likely too little to safely create a backup or install an update.'
             );
         }
 
@@ -148,11 +148,11 @@ class SystemStatusChecker
             return new SystemStatusCheck(
                 'Available disk space',
                 'warning',
-                self::formatBytes($free) . ' free — may be tight for a larger release or backup.'
+                $this->formatBytes($free) . ' free — may be tight for a larger release or backup.'
             );
         }
 
-        return new SystemStatusCheck('Available disk space', 'pass', self::formatBytes($free) . ' free.');
+        return new SystemStatusCheck('Available disk space', 'pass', $this->formatBytes($free) . ' free.');
     }
 
     private function checkTempDirectoryWritable(): SystemStatusCheck
@@ -168,7 +168,7 @@ class SystemStatusChecker
         );
     }
 
-    private static function formatBytes(int $bytes): string
+    private function formatBytes(int $bytes): string
     {
         $units = ['B', 'KB', 'MB', 'GB'];
         $i     = 0;

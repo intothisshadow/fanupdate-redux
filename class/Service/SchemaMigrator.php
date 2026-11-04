@@ -135,6 +135,8 @@ class SchemaMigrator
      */
     public function runPendingSchemaChanges(?callable $onProgress = null): array
     {
+        $this->liftExecutionLimits();
+
         $steps = [];
 
         $steps[] = [
@@ -172,6 +174,20 @@ class SchemaMigrator
         }
 
         return $results;
+    }
+
+    /**
+     * Converting a very large legacy table can take a minute or more, so
+     * keep PHP from stopping mid-run or when the browser disconnects.
+     * set_time_limit() may be disabled on shared hosts, hence the guard.
+     */
+    private function liftExecutionLimits(): void
+    {
+        if (function_exists('set_time_limit')) {
+            set_time_limit(0);
+        }
+
+        ignore_user_abort(true);
     }
 
     /** Invoke $onProgress if one was given — a nullable callable can't be called via the `?->` operator. */

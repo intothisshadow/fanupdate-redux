@@ -32,6 +32,12 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- **Database upgrade no longer times out or aborts mid-run (FP-40)** — the
+  InnoDB/utf8mb4 conversion now lifts PHP's time limit and keeps running if
+  the browser disconnects. Converting a very large legacy site (hundreds of
+  thousands of rows) can take a minute or more; ordinary sites finish in
+  seconds. If a web-server timeout still cuts a run short, run the database
+  update again from Admin → Updates — each table converts all-or-nothing.
 - **Footer link hook classes restored (FP-30)** — the default footer
   template's main/archive links now carry `fu-nav-link`, and the credit link
   `fu-credit-link`, so skins can style them directly. A footer saved earlier

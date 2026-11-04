@@ -109,11 +109,35 @@ class MediaService
             return false;
         }
 
-        $uploadsDir = rtrim($this->installPath, '/') . '/uploads/';
-        @unlink($uploadsDir . $row['file_path']);
-        @unlink($uploadsDir . $row['thumb_path']);
+        foreach ([$row['file_path'], $row['thumb_path']] as $relPath) {
+            $absPath = $this->resolveUploadPath((string) $relPath);
+            if ($absPath !== null && is_file($absPath)) {
+                unlink($absPath);
+            }
+        }
 
         return $this->media->deleteById($id);
+    }
+
+    /**
+     * Absolute path for an uploads/-relative path from the database, or null
+     * if it could escape uploads/ (traversal segments, absolute or Windows
+     * paths, NUL bytes). The DB is trusted less than code, so a tampered row
+     * must never turn a delete into an arbitrary-file delete.
+     */
+    private function resolveUploadPath(string $relPath): ?string
+    {
+        if ($relPath === '' || str_contains($relPath, "\0") || str_contains($relPath, '\\') || str_starts_with($relPath, '/')) {
+            return null;
+        }
+
+        foreach (explode('/', $relPath) as $segment) {
+            if ($segment === '..' || $segment === '.' || $segment === '') {
+                return null;
+            }
+        }
+
+        return rtrim($this->installPath, '/') . '/uploads/' . $relPath;
     }
 
     /**

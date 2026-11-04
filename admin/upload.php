@@ -46,6 +46,7 @@ require_once('../functions.php');
 require_once('../class/Repository/MediaRepositoryInterface.php');
 require_once('../class/Repository/MediaRepository.php');
 require_once('../class/Service/MediaService.php');
+require_once('../class/Service/ImageUploadValidator.php');
 
 $fu = FanUpdate::instance();
 $fu->addOptFromDb();
@@ -115,29 +116,17 @@ if ($_FILES['image']['size'] > $max_bytes) {
     upload_json_error('File is too large. Maximum allowed: ' . round($max_bytes / 1048576, 1) . ' MB.');
 }
 
-// ── MIME validation via finfo (not Content-Type header) ───────────────────────
+// ── image validation (sniffed MIME, header parse, size cap, real decode) ─────
 
-$allowed_mimes = [
-    'image/jpeg' => 'jpg',
-    'image/png'  => 'png',
-    'image/gif'  => 'gif',
-    'image/webp' => 'webp',
-];
+$validator = new ImageUploadValidator();
 
-$finfo     = new finfo(FILEINFO_MIME_TYPE);
-$mime_type = $finfo->file($tmp);
-
-if (!isset($allowed_mimes[$mime_type])) {
-    upload_json_error('File type not allowed. Accepted: JPEG, PNG, GIF, WebP.');
+try {
+    $image = $validator->validate($tmp);
+} catch (InvalidArgumentException $e) {
+    upload_json_error($e->getMessage());
 }
 
-// ── second-pass image validity check ─────────────────────────────────────────
-// getimagesize() returns false on non-image data, catching MIME-spoofed uploads.
-
-$img_info = @getimagesize($tmp);
-if ($img_info === false) {
-    upload_json_error('File does not appear to be a valid image.');
-}
+$mime_type = $image['mime'];
 
 // ── filename sanitisation ─────────────────────────────────────────────────────
 
@@ -149,7 +138,7 @@ $safe_name = $fh->fixFilename($_FILES['image']['name']);
 // Strip any extension the browser sent and re-apply one derived from the
 // validated MIME type — prevents extension tricks like "evil.php.jpg".
 $base_name  = pathinfo($safe_name, PATHINFO_FILENAME);
-$ext        = $allowed_mimes[$mime_type];           // trusted extension
+$ext        = $image['ext'];                        // trusted extension
 $safe_name  = $base_name . '.' . $ext;
 
 // Prepend a unique ID to prevent overwrite collisions.
@@ -218,8 +207,8 @@ $thumb_h_opt = $fu->getOpt('upload_thumb_height');
 $max_thumb_w = ($thumb_w_opt !== false && (int) $thumb_w_opt > 0) ? (int) $thumb_w_opt : 300;
 $max_thumb_h = ($thumb_h_opt !== false && (int) $thumb_h_opt > 0) ? (int) $thumb_h_opt : 300;
 
-$src_w = (int) $img_info[0];
-$src_h = (int) $img_info[1];
+$src_w = $image['width'];
+$src_h = $image['height'];
 
 // Compute constrained-fit dimensions (preserve aspect ratio, no crop)
 if ($src_w <= $max_thumb_w && $src_h <= $max_thumb_h) {
@@ -241,6 +230,7 @@ $src_img = match ($mime_type) {
     'image/png'  => @imagecreatefrompng($dest_path),
     'image/gif'  => @imagecreatefromgif($dest_path),
     'image/webp' => @imagecreatefromwebp($dest_path),
+    'image/avif' => @imagecreatefromavif($dest_path),
     default      => false,
 };
 
@@ -265,6 +255,7 @@ if ($src_img !== false) {
             'image/png'  => imagepng($dst_img, $thumb_path, 7),
             'image/gif'  => imagegif($dst_img, $thumb_path),
             'image/webp' => imagewebp($dst_img, $thumb_path, 85),
+            'image/avif' => imageavif($dst_img, $thumb_path, 60),
             default      => false,
         };
     }

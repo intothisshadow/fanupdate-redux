@@ -9,6 +9,10 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- **AVIF image uploads** — AVIF joins JPEG, PNG, GIF and WebP in the post
+  editor's upload and the Media gallery, with thumbnails, on servers whose
+  PHP image library (GD) supports it; otherwise it is refused with a clear
+  message.
 - **Activity & error logs (FP-46)** — a new **Admin → Logs** page. The
   Activity tab records logins (successes, failures, lockouts), password and
   account changes, entry/category/comment/media/blacklist/settings changes,
@@ -49,6 +53,13 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- **Media delete could remove files outside the uploads folder** — if a
+  media record's stored path had been tampered with (for example `../`), deleting
+  the image would have deleted that file. Such paths are now ignored; only the
+  database row is removed.
+- **Disguised files accepted as images** — an upload only had to *start* like
+  an image (e.g. `GIF89a` followed by PHP code). Uploads must now fully
+  decode as a real image, and images over 50 megapixels are refused.
 - **RSS feed host validation** — the server name used to turn root-relative
   links and images in entries into full URLs is now checked to be a valid
   hostname first; if it isn't, those links are left as they were.

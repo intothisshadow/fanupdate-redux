@@ -37,7 +37,7 @@ This Redux release updates the codebase to **PHP 8.2+** and includes a full admi
   account) for the post body: headings, lists, tables, links, blockquotes,
   a Visual/HTML source toggle, fullscreen, special characters, and more.
   See [Post editor](#post-editor) below.
-- **Image uploads & Media gallery** — upload JPEG, PNG, GIF, or WebP images
+- **Image uploads & Media gallery** — upload JPEG, PNG, GIF, WebP, or AVIF images
   directly from the post editor toolbar, or pick a previously uploaded one from
   the built-in **Choose Existing** picker. Thumbnails are generated
   automatically (GD); clicking a thumbnail on the public blog opens the
@@ -448,7 +448,7 @@ in the options table if you need to change them):
 The post editor's "Insert image" toolbar button opens a modal with two tabs:
 **Upload New** and **Choose Existing**.
 
-Upload New picks one or more local JPEG, PNG, GIF, or WebP files at once.
+Upload New picks one or more local JPEG, PNG, GIF, WebP, or AVIF files at once (WebP and AVIF need PHP's GD extension built with that support).
 Each file is uploaded immediately to `uploads/images/YYYY/MM/` and a
 constrained-fit thumbnail is generated into the `thumbs/` subdirectory at
 the same path, and the upload is recorded in the **Admin → Media** gallery

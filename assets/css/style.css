@@ -330,9 +330,8 @@ ul.subnav a:focus {
     text-decoration: none;
 }
 
-/* Active subnav item — match by position rather than class (no JS needed) */
-ul.subnav li.active a,
-ul.subnav li:first-child a {
+/* Active subnav item — each page marks its own tab with li.active */
+ul.subnav li.active a {
     background: var(--fu-surface);
     color: var(--fu-text);
     font-weight: 500;
@@ -1532,17 +1531,54 @@ div#fanupdate textarea {
 
 /* ── Responsive ───────────────────────────────────────────────────────────── */
 
+#fu-nav-toggle { display: none; }
+
 @media (max-width: 800px) {
     #header-inner { padding: 0 1rem; }
+    #header h1    { margin-right: 0.75rem; }
     #main         { padding: 1.25rem; }
     .dash-grid    { grid-template-columns: 1fr; }
     .stat-grid    { grid-template-columns: 1fr 1fr; }
+    .stat-grid .stat-card:only-child { grid-column: 1 / -1; }
     .col-layout-2,
     .col-layout-12,
     .col-layout-3 { grid-template-columns: 1fr; }
 
-    #nav ul { display: none; }
-    #nav-end { margin-left: 0; }
+    #fu-nav-toggle { display: flex; }
+    #nav-end { margin-left: auto; }
+
+    /* Links collapse into a dropdown under the top bar (see navToggleInit()). */
+    #nav ul {
+        display: none;
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 2px;
+        padding: 0.5rem 1rem 0.75rem;
+        background: var(--fu-topbar);
+        border-bottom: 0.5px solid var(--fu-border-med);
+        box-shadow: 0 6px 12px rgba(0, 0, 0, 0.08);
+    }
+    #nav.nav-open ul { display: flex; }
+    #nav li,
+    #nav li a { width: 100%; }
+    #nav li a { padding: 10px 12px; font-size: 0.95rem; }
 
     .media-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+
+    /* Fieldsets default to min-width: min-content and can't shrink below long unbroken text. */
+    fieldset { min-width: 0; }
+
+    /* Sub-navigation wraps instead of overflowing; the search form takes its own row. */
+    .subnav-bar { padding: 0 1rem; }
+    ul.subnav   { flex-wrap: wrap; height: auto; padding: 4px 0; }
+    ul.subnav li.form { flex: 1 1 100%; margin-left: 0; padding: 4px 0; }
+    ul.subnav li.form form { width: 100%; }
+    ul.subnav li.form input[type="text"] { flex: 1; min-width: 0; }
+
+    /* Wide data tables scroll within themselves rather than widening the page. */
+    table { display: block; max-width: 100%; overflow-x: auto; }
 }

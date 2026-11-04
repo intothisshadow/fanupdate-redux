@@ -106,7 +106,7 @@ $fuAssetVersion = urlencode(FU_VERSION);
 
             <?php $showNav = $showNav ?? ($GLOBALS['showNav'] ?? false); if ($showNav === true) { ?>
             <nav id="nav" aria-label="Main navigation">
-                <ul>
+                <ul id="nav-links">
                     <li><a href="index.php"    class="dashboard"><i class="ti ti-layout-dashboard" aria-hidden="true"></i> Dashboard</a></li>
                     <li><a href="blog.php"      class="entries"><i class="ti ti-pencil" aria-hidden="true"></i> Entries</a></li>
                     <li><a href="comment.php"   class="comments"><i class="ti ti-message-circle" aria-hidden="true"></i> Comments</a></li>
@@ -117,6 +117,9 @@ $fuAssetVersion = urlencode(FU_VERSION);
                 </ul>
 
                 <div id="nav-end">
+                    <button type="button" id="fu-nav-toggle" class="nav-icon-btn" title="Menu" aria-expanded="false" aria-controls="nav-links">
+                        <i class="ti ti-menu-2" aria-hidden="true"></i>
+                    </button>
                     <a href="account.php"            class="nav-icon-btn" title="Account"><i class="ti ti-user" aria-label="Account"></i></a>
                     <a href="credits.php"             class="nav-icon-btn" title="Credits"><i class="ti ti-info-circle" aria-label="Credits"></i></a>
                     <button type="button" id="fu-theme-toggle" class="nav-icon-btn" title="Toggle night theme" aria-pressed="false">

@@ -5,6 +5,25 @@ All notable changes to this project are documented here.
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+- **Admin navigation missing on phones** — below 800px wide the main
+  links (Dashboard, Entries, Comments, Categories, Media, Options, Updates)
+  were hidden with no way to reach them. A menu button now opens them as a
+  dropdown under the top bar (closes on Escape or tapping elsewhere), in
+  both the day and night themes.
+- **Admin pages scrolling sideways on phones** — the Options sub-navigation
+  (Options, Blacklist, Smilies, Templates, Collective Source, Privacy), the
+  Comments filter/search bar, the Entries table and the Updates page were all
+  wider than the screen. Sub-navigation now wraps, tables scroll within
+  themselves, fieldsets can shrink, and the dashboard's Quick links card uses
+  the full width.
+- **Sub-navigation always highlighted its first tab** — on the Options pages
+  and Comments, the first tab (Main / Approved) looked active in addition to
+  the current one. Only the current page's tab is highlighted now.
+
 ## [Redux 2.6.1] — November 3, 2026 — Legacy Charset Upgrade Fixes
 
 ### Fixed

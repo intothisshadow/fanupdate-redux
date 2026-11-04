@@ -141,8 +141,34 @@ function fuCopyButtonInit() {
     });
 }
 
+// ── Mobile navigation toggle ──────────────────────────────────────────────────
+
+function navToggleInit() {
+    const btn = document.getElementById('fu-nav-toggle');
+    const nav = document.getElementById('nav');
+    if (!btn || !nav) return;
+
+    const setOpen = (open) => {
+        nav.classList.toggle('nav-open', open);
+        btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        const icon = btn.querySelector('i');
+        if (icon) {
+            icon.className = open ? 'ti ti-x' : 'ti ti-menu-2';
+        }
+    };
+
+    btn.addEventListener('click', () => setOpen(!nav.classList.contains('nav-open')));
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') { setOpen(false); }
+    });
+    document.addEventListener('click', (e) => {
+        if (!nav.contains(e.target)) { setOpen(false); }
+    });
+}
+
 window.addEventListener('load', () => {
     confirmDeleteInit();
     themeToggleInit();
+    navToggleInit();
     fuCopyButtonInit();
 });

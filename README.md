@@ -375,6 +375,12 @@ can be styled directly instead of relying on inherited `font-size`/
 See the corresponding rules in **Admin → Category → Get Code**'s CSS
 starter.
 
+`.fu-nav-link` and `.fu-credit-link` are part of the *default* footer
+template. A site whose footer was saved before they existed (or that has
+customised it) keeps its stored copy, so add the classes by hand in
+**Admin → Options → Templates → Footer**: `class="fu-nav-link"` on the
+main/archive links and `class="ext fu-credit-link"` on the credit link.
+
 ### Comment form template variables
 
 | Variable | Description |

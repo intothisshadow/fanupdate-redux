@@ -304,8 +304,8 @@ $setting[19]['optkey']   = 'footer_template';
 $setting[19]['optvalue'] = '<div class="archivelink">
 <form action="{{main_url}}" method="get">
 <p>
-<a href="{{main_url}}">main</a> &middot;
-<a href="{{archive_url}}">archive</a> &middot;
+<a class="fu-nav-link" href="{{main_url}}">main</a> &middot;
+<a class="fu-nav-link" href="{{archive_url}}">archive</a> &middot;
 <a class="rss" href="{{rss_url}}">feed</a> &middot;
 <input type="text" name="q" value="" />
 <input type="submit" value="Search" class="button" />
@@ -314,7 +314,7 @@ $setting[19]['optvalue'] = '<div class="archivelink">
 </div><!-- END .archivelink -->
 
 <div class="credit">
-<p>Powered by <a href="{{fanupdate_url}}" target="_blank" class="ext">FanUpdate {{fanupdate_version}}</a></p>
+<p>Powered by <a href="{{fanupdate_url}}" target="_blank" class="ext fu-credit-link">FanUpdate {{fanupdate_version}}</a></p>
 </div><!-- END .credit -->';
 $setting[19]['optdesc']  = 'Put your footer blog navigation here. See readme.txt for template variables.';
 $setting[19]['version']  = 2.1;

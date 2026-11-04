@@ -31,6 +31,11 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- **Footer link hook classes restored (FP-30)** — the default footer
+  template's main/archive links now carry `fu-nav-link`, and the credit link
+  `fu-credit-link`, so skins can style them directly. A footer saved earlier
+  keeps its stored copy; add the classes in Admin → Options → Templates →
+  Footer (see the README's "Nav, category, comment-count, and credit links").
 - **Larger admin text** — the admin panel's base font size went from 15px to
   20px in both the day and night themes; everything scales with it. Screens
   800px wide or narrower keep the original 15px.

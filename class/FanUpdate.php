@@ -1228,8 +1228,8 @@ class FanUpdate
                 '<div class="archivelink">' . "\n"
                 . '<form action="{{main_url}}" method="get">' . "\n"
                 . '<p>' . "\n"
-                . '<a href="{{main_url}}">main</a> &middot;' . "\n"
-                . '<a href="{{archive_url}}">archive</a> &middot;' . "\n"
+                . '<a class="fu-nav-link" href="{{main_url}}">main</a> &middot;' . "\n"
+                . '<a class="fu-nav-link" href="{{archive_url}}">archive</a> &middot;' . "\n"
                 . '<a class="rss" href="{{rss_url}}">feed</a> &middot;' . "\n"
                 . '<input type="text" name="q" value="" />' . "\n"
                 . '<input type="submit" value="Search" class="button" />' . "\n"
@@ -1237,7 +1237,7 @@ class FanUpdate
                 . '</form>' . "\n"
                 . '</div><!-- END .archivelink -->' . "\n\n"
                 . '<div class="credit">' . "\n"
-                . '<p>Powered by <a href="{{fanupdate_url}}" target="_blank" class="ext">FanUpdate {{fanupdate_version}}</a></p>' . "\n"
+                . '<p>Powered by <a href="{{fanupdate_url}}" target="_blank" class="ext fu-credit-link">FanUpdate {{fanupdate_version}}</a></p>' . "\n"
                 . '</div><!-- END .credit -->';
         }
 

@@ -8,40 +8,20 @@ declare(strict_types=1);
  *
  * File-based IP rate limiter for the admin login form.
  *
- * Design goals:
- *  - Zero extra dependencies: no DB, no APCu, no Redis.
- *  - Self-healing: stale lock files are pruned automatically on every call.
- *  - Shared-host friendly: stores state in a writable tmp dir inside the
- *    FanUpdate install; falls back to sys_get_temp_dir() if that is not
- *    writable.
+ * Dependency-free (no DB/APCu/Redis) and self-pruning, suited to shared hosts.
  *
- * Threat model:
- *  - Stops password-spraying and credential-stuffing from a single IP.
- *  - Does NOT protect against distributed attacks (many IPs, one attempt
- *    each) — that requires a WAF or upstream solution.
- *  - IPv6 /64 subnet grouping is intentionally omitted for simplicity; the
- *    admin login surface is low-traffic enough that per-address locking is
- *    sufficient.
+ * Threat model: stops password spraying and credential stuffing from one IP.
+ * It does not stop distributed attacks (needs a WAF), and IPv6 /64 grouping
+ * is omitted since per-address locking suffices for a low-traffic login.
  *
- * Lockout behaviour:
- *  - After MAX_ATTEMPTS failures the IP is locked for LOCKOUT_SECONDS.
- *  - Each subsequent lockout doubles the window (exponential backoff),
- *    capped at MAX_LOCKOUT_SECONDS.
- *  - A successful login resets the counter for that IP immediately.
+ * Lockout: after MAX_ATTEMPTS failures the IP is locked for LOCKOUT_SECONDS;
+ * each further lockout doubles it (capped at MAX_LOCKOUT_SECONDS). A
+ * successful login resets the counter.
  *
- * Lock-file format (JSON):
- *  {
- *    "attempts":  <int>,   // rolling failure count since last success/expiry
- *    "lockouts":  <int>,   // how many times this IP has been locked out
- *    "locked_until": <int> // Unix timestamp; 0 = not currently locked
- *  }
- *
- * Security note on file placement:
- *  Lock files are stored in a directory that MUST NOT be web-accessible.
- *  The default path (fanupdate/data/login_attempts/) is inside the install
- *  directory — if your web root IS the install directory, add a .htaccess
- *  rule denying access to data/, or move the store dir above the web root
- *  by passing a custom $storeDir to the constructor.
+ * Lock files are JSON {attempts, lockouts, locked_until (Unix time, 0 =
+ * unlocked)} and must not be web-accessible. The default store
+ * (data/login_attempts/) gets a protective .htaccess; pass a custom
+ * $storeDir to move it above the web root.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -81,8 +61,6 @@ class LoginRateLimiter
         if ($storeDir !== '') {
             $this->storeDir = rtrim($storeDir, '/\\');
         } else {
-            // Default: <fanupdate-root>/data/login_attempts/
-            // __DIR__ is fanupdate/class/, so go one level up.
             $this->storeDir = dirname(__DIR__) . '/data/login_attempts';
         }
 
@@ -127,8 +105,7 @@ class LoginRateLimiter
         $ip    = $this->currentIp();
         $state = $this->readState($ip);
 
-        // If a previous lockout has naturally expired, reset attempt count
-        // but keep the lockouts counter so backoff remains accurate.
+        // After an expired lockout, reset attempts but keep the lockouts counter for backoff.
         if ($state['locked_until'] > 0 && time() >= $state['locked_until']) {
             $state['attempts']    = 0;
             $state['locked_until'] = 0;
@@ -192,14 +169,12 @@ class LoginRateLimiter
     // ── private helpers ─────────────────────────────────────────────────────
 
     /**
-     * Returns the sanitised client IP address.
-     * Uses REMOTE_ADDR only — never trusts X-Forwarded-For, which is
-     * trivially spoofable and would let an attacker bypass rate limiting.
+     * Client IP from REMOTE_ADDR only; X-Forwarded-For is spoofable and would
+     * let an attacker bypass the limit.
      */
     private function currentIp(): string
     {
         $ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
-        // Validate; fall back to a safe string if the value is garbage
         if (filter_var($ip, FILTER_VALIDATE_IP) === false) {
             $ip = '0.0.0.0';
         }
@@ -207,9 +182,7 @@ class LoginRateLimiter
     }
 
     /**
-     * Derive a safe filename from an IP address.
-     * md5() is fine here — we are not using it for security, just for a
-     * compact, filesystem-safe key.
+     * Filesystem-safe filename for an IP (md5 is a compact key here, not a security measure).
      */
     private function lockFile(string $ip): string
     {
@@ -253,8 +226,7 @@ class LoginRateLimiter
         $file = $this->lockFile($ip);
         $json = json_encode($state, JSON_PRETTY_PRINT);
         if ($json !== false) {
-            // LOCK_EX prevents a race condition where two simultaneous failed
-            // logins from the same IP both read state 0 and both write state 1.
+            // LOCK_EX stops simultaneous failures from overwriting each other's count.
             file_put_contents($file, $json, LOCK_EX);
         }
     }
@@ -298,7 +270,6 @@ class LoginRateLimiter
     private function ensureStoreDir(): void
     {
         if (!is_dir($this->storeDir)) {
-            // 0750: owner rwx, group r-x, world none
             mkdir($this->storeDir, 0750, true);
         }
 

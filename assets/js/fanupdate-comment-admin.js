@@ -8,23 +8,8 @@
  * Copyright (c) 2020 Ekaterina (contributor) http://scripts.robotess.net
  * Copyright (c) 2026 modernised for current browsers
  *
- * Modernisation:
- *  - var → const / let
- *  - onclick assignment → addEventListener
- *  - Removed re-declaration of cmt_id inside second for-loop (was shadowing
- *    outer let; now uses a fresh const per iteration)
- *
- * CSRF protection (added this release):
- *  - approveCmt() has no enclosing <form> (it's a bare link), so it uses the
- *    page-level `fuCsrfToken` global (emitted by admin/header.php) instead.
- *
- * Milestone 3 — Admin UI Cleanup (nested forms):
- *  - Per-row delete used to be an AJAX action wired up here (deleteCmt),
- *    submitted from a per-row <form>. admin/comment.php's per-row "Delete"
- *    is now a plain link to a real server-side confirmation page (see
- *    admin/comment.php for details), so deleteCmt()/deleteCmtCallback() and
- *    the delete-button wiring have been removed — there is nothing left for
- *    this file to intercept via AJAX. "Approve" is unaffected.
+ * approveCmt() has no enclosing <form> (it's a bare link), so it sends the
+ * page-level `fuCsrfToken` global emitted by admin/header.php.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by

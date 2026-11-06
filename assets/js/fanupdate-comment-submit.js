@@ -8,20 +8,9 @@
  * Copyright (c) 2020 Ekaterina (contributor) http://scripts.robotess.net
  * Copyright (c) 2026 modernised for current browsers
  *
- * Modernisation:
- *  - var → const / let
- *  - Removed implicit global leaks (captcha, success, toRemove)
- *  - form.submit listener uses addEventListener
- *  - captcha element check uses optional chaining
- *  - remember_me element check uses optional chaining (field is optional in
- *    some form templates; accessing .checked on undefined threw a TypeError
- *    that silently killed the submit handler before the AJAX call was made)
- *
- * Comment WYSIWYG toolbar removed: the Comment textarea is now a plain
- * <textarea> — no Bold/Italic/Link buttons, no injected toolbar styles, no
- * BBCode-tag insertion. Commenters can still type `[B]`/`[I]`/`[URL=...]`
- * tags by hand if the comment renderer still parses them server-side; this
- * only removes the client-side insertion buttons and toolbar chrome.
+ * The captcha and remember_me fields are optional in some form templates, so
+ * they are accessed with optional chaining; a TypeError would silently kill
+ * the submit handler before the AJAX call.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by

@@ -5,96 +5,23 @@ declare(strict_types=1);
 /*****************************************************************************
  * FanUpdate — UpgradeRunner
  *
- * Non-interactive post-install database migrations for the Admin Update
- * Manager (TODO.md "1. Admin Update Manager", Installation Engine "Post
- * Install" > "Run upgrade scripts"), extended (TODO.md item "10.
- * Admin-Panel Database Update Runner") to also drive schema migrations via
- * an injected SchemaMigrator — see that class's docblock for what it
- * covers (Categories Support's standalone_category_table, the InnoDB/
- * utf8mb4 engine/charset migration).
+ * Non-interactive post-install migrations for the Admin Update Manager:
+ * option housekeeping (obsolete keys removed, new defaults seeded, gated on
+ * `_db_version`), schema changes via an injected SchemaMigrator, and
+ * one-time migrations of legacy blog-config.php / option values.
  *
- * install.php's own version-gated migration blocks (pre-2.2b, pre-2.2b3,
- * pre-2.2.1b2, and a final "from any version" block) are interactive —
- * they read $_POST-submitted values for newly introduced options via a
- * rendered form, since the original install/upgrade flow always asks the
- * admin to review each new option's value before saving it. That's not
- * compatible with an automated, unattended install triggered by the Admin
- * Update Manager, and those specific version thresholds predate FanUpdate
- * Redux's PHP 8.2+ baseline by well over a decade — no installation capable
- * of running this updater at all could still be that old. This class
- * deliberately does not port them.
+ * install.php's interactive version-gated blocks are deliberately not
+ * ported: they need a form, and their thresholds predate the PHP 8.2+
+ * baseline. To extend: add new option keys to NEW_DEFAULT_OPTIONS and
+ * retired ones to OBSOLETE_OPTION_KEYS.
  *
- * What IS a real, ongoing concern for every future release is the general
- * pattern install.php's last block demonstrates: obsolete option keys
- * should be cleaned up, and options a newer release introduces should get
- * a sensible default automatically rather than being silently absent
- * (which would make `getOpt()` return false everywhere that option is
- * read) — an automated update can't pause and ask the admin to fill in a
- * form the way install.php's UI does. runPendingUpgrades() below implements
- * exactly that pattern, non-interactively, and is meant to be extended by
- * each future release: add newly-introduced option keys to
- * self::NEW_DEFAULT_OPTIONS and anything that becomes obsolete to
- * self::OBSOLETE_OPTION_KEYS.
+ * Each one-time migration has its own independent gate (and ignores
+ * `_db_version`), so an install already on the current version still picks
+ * it up exactly once.
  *
- * hasPendingUpgrades()/runPendingUpgrades() now consider THREE independent
- * things "pending": the option/version housekeeping above (gated by
- * comparing stored `_db_version` against the target version, as before), a
- * SchemaMigrator's own hasPendingSchemaChanges() when one is injected, and
- * (TODO.md's Database Architecture item — "Move collective-script
- * configuration from blog-config.php into the database") a one-time
- * migration of the legacy collective_script/col_id/col_subj values out of
- * blog-config.php and into the options table, when the caller supplies
- * them. Any one alone is enough to make something "pending";
- * runPendingUpgrades() runs whichever ones actually apply. The
- * collective-script migration is independent of `_db_version` for the same
- * reason the schema migration is: an installation already on the current
- * version needs this to run exactly once regardless of what its version
- * history looks like.
- *
- * collective_table has its own independent one-time migration, gated and
- * run separately from collective_script/col_id/col_subj above (see
- * collectiveTableMigrationPending()/migrateLegacyCollectiveTable()) —
- * discovered after the fact when an installation that had already migrated
- * collective_script (e.g. by switching it via Admin -> Options -> Collective
- * Source) still had no way to change collective_table at all, silently
- * leaving Categories/Entries pointed at the wrong table after switching to
- * an integrated script. Keeping the two gates independent means an
- * installation that already migrated collective_script still picks up
- * collective_table on its next admin page load once this ships.
- *
- * The FP-19 timezone migration (timezoneMigrationPending()/
- * migrateLegacyTimezoneOffset()) follows the same independent-gate pattern
- * but needs no constructor-injected legacy value: the legacy
- * 'timezone_offset' value already lives in the options table itself (it's
- * been a real, editable option since Redux 2.2b3), so the migration reads
- * it straight from the repository instead.
- *
- * The FP-25 entry_template `.fu-entry` wrapper migration
- * (entryTemplateMigrationPending()/migrateLegacyEntryTemplateWrapper())
- * follows the timezone migration's no-constructor-value pattern too: every
- * existing installation's `entry_template` option row already holds
- * self::OLD_DEFAULT_ENTRY_TEMPLATE (install.php seeded it verbatim, and
- * FanUpdate::__construct()/FanUpdate_Post::printPost() used the identical
- * string as their in-code fallback, before this migration shipped — see
- * TODO.md's FP-25). The gate is a plain string-equality check against that
- * exact stock value: an installation whose entry_template has ever been
- * edited — even by one character — no longer matches, so this never
- * clobbers a real customization the way a version-gated backfill might.
- * Once migrated, the row holds self::NEW_DEFAULT_ENTRY_TEMPLATE and the
- * equality check permanently fails on that installation, same idempotency
- * guarantee as every other migration here.
- *
- * Why this matters architecturally: InstallManager::installUpdate() copies
- * a new release's files onto disk, but PHP has no way to "hot reload"
- * already-`require`d classes mid-request — the currently running process
- * keeps using whatever UpgradeRunner was loaded at the start of the
- * request, not whatever the just-copied files now contain. So this can
- * only correctly apply the migrations *this* release's author already
- * knew about when it shipped; a future release must ship its own updated
- * copy of this file (with its own new entries) and have that copy actually
- * run in a *fresh* HTTP request made after the file copy — never
- * mid-request, in the same call that performed the copy. See
- * admin/update.php's `run-upgrades` GET action for how that's arranged.
+ * PHP cannot hot-reload classes mid-request, so a release's migrations must
+ * run in a fresh request after the file copy (see admin/update.php's
+ * `run-upgrades` action).
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -102,19 +29,13 @@ declare(strict_types=1);
  * any later version.
  ******************************************************************************/
 
-// Required here rather than relying on caller load order: UpgradeRunner is
-// reached via functions.php's fu_build_upgrade_runner() on every admin page.
 require_once(__DIR__ . '/VersionNormalizer.php');
 require_once(__DIR__ . '/CollectiveScriptNormalizer.php');
 
 class UpgradeRunner
 {
     /**
-     * Option keys no longer used by any part of the current codebase.
-     * Deleting them is purely tidiness — nothing reads them — so this list
-     * is safe to extend freely; deleting a key that was already gone is a
-     * silent no-op (deleteOptionIfExists() returns false, no message is
-     * added).
+     * Option keys nothing reads any more; deleting an already-gone key is a no-op.
      *
      * @var array<int, string>
      */
@@ -125,33 +46,22 @@ class UpgradeRunner
     ];
 
     /**
-     * Options a release introduced that need a sensible default on any
-     * installation upgrading from before that release — extend this when
-     * a future release adds a new option `getOpt()` should never just
-     * silently return false for. Empty for the current release cycle;
-     * the mechanism exists and is tested so a future release can add
-     * entries here with confidence it will actually run.
+     * Options that upgrading installs need seeded with a default. Fresh
+     * installs get theirs from install.php's $setting[] instead.
      *
      * @var array<string, array{value: string, description: string}>
      */
     private const NEW_DEFAULT_OPTIONS = [
-        // FP-23: official FanUpdate Redux news feed shown on the Dashboard
-        // (NewsFeedService). Fresh installs get this from install.php's own
-        // $setting[] array instead — this entry only matters for installs
-        // upgrading from before FP-23 that never re-run install.php.
         'news_feed_url' => [
             'value'       => 'https://coding.unloved-heart.net/update-blog/rss.php?c=4',
             'description' => 'RSS feed URL shown on the Dashboard as "FanUpdate Redux News". Leave blank to hide the Dashboard widget entirely.',
         ],
-        // FP-37: a missing row already behaves as "y" (see
-        // FanUpdate::showCollectiveCategories()); this just makes the toggle
-        // appear in Admin -> Options -> Main.
+        // A missing row already behaves as "y"; seeding just surfaces the toggle in Options.
         'show_collective_categories' => [
             'value'       => 'y',
             'description' => 'Show categories from your collective script (Enthusiast, Fanatically, ...) alongside FanUpdate\'s own in the category list and entry category picker. Turn off to list only FanUpdate\'s own categories. Has no effect when no collective script is configured.',
         ],
-        // FP-46: admin event log (Admin -> Logs). Missing rows already
-        // behave as these defaults; seeding makes them editable in Options.
+        // Missing rows already behave as these defaults; seeding makes them editable.
         'log_retention_days' => [
             'value'       => '90',
             'description' => 'Number of days to keep entries in the Admin → Logs activity log. Older entries are removed automatically. Use 0 to keep them forever.',
@@ -162,14 +72,7 @@ class UpgradeRunner
         ],
     ];
 
-    /**
-     * FP-25: the stock entry_template value every installation had before
-     * this migration shipped — verbatim from install.php's pre-FP-25
-     * $setting[14]['optvalue'] (and the identical in-code fallback in
-     * FanUpdate::__construct()/FanUpdate_Post::printPost()). Used only for
-     * the exact string-equality check in entryTemplateMigrationPending() —
-     * never written anywhere.
-     */
+    /** The pre-`.fu-entry` stock entry_template; only used for the equality check, never written. */
     private const OLD_DEFAULT_ENTRY_TEMPLATE =
         '<h2><a href="{{url}}" title="permanent link to this post">{{title}}</a></h2>
 
@@ -177,12 +80,7 @@ class UpgradeRunner
 
 {{body}}';
 
-    /**
-     * FP-25: the new default, wrapping each post in `<div class="fu-entry">`
-     * for per-entry card styling — see class/FanUpdate.php's/
-     * class/FanUpdate_Post.php's matching in-code fallback and
-     * install.php's matching fresh-install seed.
-     */
+    /** The current default; keep in sync with FanUpdate's in-code fallback and install.php's seed. */
     private const NEW_DEFAULT_ENTRY_TEMPLATE =
         '<div class="fu-entry">
 <h2><a href="{{url}}" title="permanent link to this post">{{title}}</a></h2>
@@ -204,16 +102,7 @@ class UpgradeRunner
     ) {
     }
 
-    /**
-     * Cheap check for whether runPendingUpgrades() would actually do
-     * anything right now — the stored `_db_version` is behind
-     * $targetVersionRaw, a SchemaMigrator (when injected) reports pending
-     * schema changes, or the legacy collective_script migration (when a
-     * legacy value was supplied) hasn't run yet. Safe to call on every
-     * admin page load (e.g. the Dashboard notice) — no writes, and both
-     * the SchemaMigrator check and the collective_script check
-     * (repository->getOptionValue()) are similarly cheap single reads.
-     */
+    /** Whether runPendingUpgrades() would do anything. Read-only and cheap enough for every admin page load. */
     public function hasPendingUpgrades(string $targetVersionRaw): bool
     {
         if ($this->isVersionBehind($targetVersionRaw)) {
@@ -240,17 +129,11 @@ class UpgradeRunner
     }
 
     /**
-     * Bring the installed database schema/options up to $targetVersionRaw,
-     * if it isn't already. Safe to call unconditionally on every install
-     * (including a fresh one, and repeatedly) — it always checks
-     * `_db_version` (and, when a SchemaMigrator is injected, schema state)
-     * first and does nothing for whichever part is already current.
+     * Brings schema/options up to $targetVersionRaw. Idempotent: each part
+     * is skipped when already current.
      *
-     * @param callable(string, int, int): void|null $onProgress Forwarded
-     *        to SchemaMigrator::runPendingSchemaChanges() when schema
-     *        changes are actually pending — see that method's docblock.
-     *        Not used for the option/version housekeeping below, which is
-     *        fast enough not to need step-by-step progress reporting.
+     * @param callable(string, int, int): void|null $onProgress Forwarded to
+     *        SchemaMigrator::runPendingSchemaChanges().
      */
     public function runPendingUpgrades(string $targetVersionRaw, ?callable $onProgress = null): UpgradeResult
     {
@@ -311,29 +194,14 @@ class UpgradeRunner
         return new UpgradeResult($installedVersion ?? 'unknown', $targetVersion, $messages, gmdate('c'));
     }
 
-    /**
-     * Whether the one-time legacy collective_script/col_id/col_subj
-     * migration (TODO.md's Database Architecture item) still needs to run:
-     * the caller supplied a legacy value to migrate FROM, and the options
-     * table doesn't already have a migrated collective_script row.
-     */
+    /** A legacy collective_script was supplied and no options row exists yet. */
     private function collectiveScriptMigrationPending(): bool
     {
         return $this->legacyCollectiveScript !== null
             && $this->repository->getOptionValue('collective_script') === null;
     }
 
-    /**
-     * One-time migration of blog-config.php's legacy collective_script/
-     * $coltable values into the options table, normalising the shorthand
-     * ('e', 'n') to the descriptive identifier this codebase now stores
-     * ('enthusiast', 'none') — see CollectiveScriptNormalizer.
-     * Only ever runs once per installation: collectiveScriptMigrationPending()
-     * gates on the options table not already having a collective_script row,
-     * so a subsequent call is a safe no-op regardless of whether
-     * blog-config.php's legacy values are still present or have since been
-     * removed.
-     */
+    /** Moves blog-config.php's collective_script/$coltable values into the options table, normalising shorthand ('e' → 'enthusiast'). */
     private function migrateLegacyCollectiveScript(): string
     {
         $normalized = $this->collectiveScriptNormalizer->normalize((string) $this->legacyCollectiveScript);
@@ -356,14 +224,9 @@ class UpgradeRunner
     }
 
     /**
-     * Whether the one-time legacy collective_table migration still needs to
-     * run: the caller supplied a legacy value to migrate FROM, and the
-     * options table doesn't already have a collective_table row. Gated
-     * independently of collectiveScriptMigrationPending() — an installation
-     * can easily have already migrated collective_script (e.g. by changing
-     * it via Admin -> Options -> Collective Source) while still never
-     * having had a collective_table row at all, since that setting was
-     * never exposed anywhere until now.
+     * A legacy collective_table was supplied and no options row exists yet.
+     * Gated separately from collective_script: that may already be migrated
+     * while collective_table never had a row.
      */
     private function collectiveTableMigrationPending(): bool
     {
@@ -372,15 +235,7 @@ class UpgradeRunner
             && $this->repository->getOptionValue('collective_table') === null;
     }
 
-    /**
-     * One-time migration of blog-config.php's legacy
-     * $fanupdate['collective_table'] value into the options table. Only
-     * ever runs once per installation: collectiveTableMigrationPending()
-     * gates on the options table not already having a collective_table row,
-     * so a subsequent call is a safe no-op. Once migrated, the value is
-     * freely editable via Admin -> Options -> Collective Source, same as
-     * collective_script/col_id/col_subj.
-     */
+    /** Moves blog-config.php's legacy collective_table into the options table. */
     private function migrateLegacyCollectiveTable(): string
     {
         $this->repository->setOptionValue(
@@ -392,14 +247,7 @@ class UpgradeRunner
         return 'Migrated collective_table configuration from blog-config.php into the database (collective_table = "' . $this->legacyCollectiveTable . '").';
     }
 
-    /**
-     * Whether the one-time FP-19 timezone_offset -> timezone migration still
-     * needs to run: an old-style timezone_offset row still exists, and the
-     * new 'timezone' key doesn't have one yet. Unlike the collective_*
-     * migrations above, this one needs no constructor-injected legacy
-     * value — the legacy value already lives in the options table itself,
-     * left over from before this release.
-     */
+    /** A legacy timezone_offset row exists and no 'timezone' row does yet. */
     private function timezoneMigrationPending(): bool
     {
         return $this->repository->getOptionValue('timezone_offset') !== null
@@ -407,14 +255,8 @@ class UpgradeRunner
     }
 
     /**
-     * One-time migration of the legacy 'timezone_offset' (whole-hour GMT
-     * difference) to a real IANA 'timezone' identifier, via
-     * fu_migrate_legacy_timezone_offset()'s best-effort offset->zone map
-     * (functions.php). Always leaves an explicit message telling the admin
-     * to double check the result — a fixed offset cannot be mapped back to
-     * an exact zone with certainty, since several zones share any given
-     * offset and most also observe daylight saving time that
-     * timezone_offset never accounted for.
+     * Converts the legacy GMT offset to an IANA zone (best-effort guess, so
+     * the returned message always asks the admin to review it).
      */
     private function migrateLegacyTimezoneOffset(): string
     {
@@ -433,27 +275,10 @@ class UpgradeRunner
     }
 
     /**
-     * FP-25: whether entry_template still holds the exact stock value it
-     * shipped with before this migration existed. False for any
-     * installation that has ever saved a different entry_template — through
-     * Admin -> Options -> Templates, a fresh install already seeded with
-     * the new default by a current install.php, or a previous run of this
-     * same migration — so this is safe to leave permanently enabled rather
-     * than gating it behind `_db_version`.
-     *
-     * Compares after normalizeTemplateWhitespace() rather than raw ===:
-     * install.php's own interactive form (admin/get-code.php... no,
-     * install.php's option-review screen — see its `<textarea
-     * name="value[]">` for every `*template*` option key) round-trips the
-     * default value through the browser as part of every interactive
-     * install, and browsers normalise textarea content to CRLF line
-     * endings on submit regardless of how the server originally rendered
-     * it (install.php's own PHP source, and this class's constants below,
-     * use plain LF). A raw === comparison against LF-only constants would
-     * silently never match on virtually any real interactively-installed
-     * site — discovered live on a production installation that updated to
-     * the version shipping this migration but never received it, despite
-     * never having customized entry_template at all.
+     * Whether entry_template still equals the old stock default, so any
+     * customised template is never touched. Compared after whitespace
+     * normalisation because browsers submit textareas with CRLF line
+     * endings, which install.php's option-review form round-trips.
      */
     private function entryTemplateMigrationPending(): bool
     {
@@ -463,26 +288,13 @@ class UpgradeRunner
             && $this->normalizeTemplateWhitespace($stored) === $this->normalizeTemplateWhitespace(self::OLD_DEFAULT_ENTRY_TEMPLATE);
     }
 
-    /**
-     * Collapses CRLF/CR line endings to LF and trims leading/trailing
-     * whitespace, so entryTemplateMigrationPending()'s comparison is
-     * resilient to the line-ending normalization described in that
-     * method's docblock — without weakening the check into anything that
-     * would match genuinely different content. Only whitespace shape is
-     * normalized; the actual markup/text must still match exactly.
-     */
+    /** Normalises line endings and outer whitespace only; the markup must still match exactly. */
     private function normalizeTemplateWhitespace(string $value): string
     {
         return trim(str_replace(["\r\n", "\r"], "\n", $value));
     }
 
-    /**
-     * One-time swap of the stock entry_template for the `.fu-entry`-wrapped
-     * version. Only ever runs when entryTemplateMigrationPending() is true,
-     * i.e. the stored value is still byte-for-byte the old stock default —
-     * see that method's docblock for why a real customization can never be
-     * matched here.
-     */
+    /** Swaps the stock entry_template for the `.fu-entry`-wrapped default. */
     private function migrateLegacyEntryTemplateWrapper(): string
     {
         $this->repository->setOptionValue(

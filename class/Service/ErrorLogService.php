@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 /*****************************************************************************
- * FanUpdate — ErrorLogService (FP-46)
+ * FanUpdate — ErrorLogService
  *
  * File-based application error log, one JSON object per line in
  * {logDir}/error.log. Deliberately NOT database-backed: database failures

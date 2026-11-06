@@ -5,24 +5,12 @@ declare(strict_types=1);
 /*****************************************************************************
  * FanUpdate — SystemStatusChecker
  *
- * Runs a set of environment diagnostics relevant to the Admin Update
- * Manager (see TODO.md, "System Status") — the shared-hosting assumptions
- * used throughout this feature (no shell access, uncertain cURL/ZIP
- * availability, uncertain disk space) mean an install can fail for
- * environment reasons that have nothing to do with the release itself;
- * this gives the admin a place to check for those before (or after)
- * something goes wrong, rather than only finding out via a failed install.
+ * Environment diagnostics for the Admin Update Manager, so an admin can spot
+ * host problems (no ZIP/cURL, low disk space) before an install fails.
  *
- * Each check returns a SystemStatusCheck with a status of 'pass',
- * 'warning', or 'error':
- *  - 'error' means the corresponding Admin Update Manager feature will not
- *    work at all (e.g. no ZIP extension: backups/installs/rollbacks are
- *    all impossible).
- *  - 'warning' means a fallback exists but isn't ideal (e.g. no cURL:
- *    GitHubUpdateProvider/DownloadManager both fall back to
- *    file_get_contents() with a stream context, which works but is
- *    slightly slower and depends on allow_url_fopen).
- *  - 'pass' means the check found nothing to flag.
+ * Each SystemStatusCheck is 'pass', 'warning' (a fallback exists, e.g.
+ * file_get_contents() without cURL, which needs allow_url_fopen) or 'error'
+ * (the feature cannot work, e.g. no ZIP extension).
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by

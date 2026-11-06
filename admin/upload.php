@@ -29,11 +29,8 @@
  *  - getimagesize() used as a second-pass image validity check
  *  - Max filesize enforced in PHP (independent of php.ini upload_max_filesize)
  *
- * Also records the upload in the Media gallery (Admin -> Media, TODO.md
- * item "4. UI - Create an Image/File Manager") via MediaService, so it
- * appears in the "choose existing image" picker without a filesystem scan.
- * Skipped (not fatal) if media_table isn't configured — installations that
- * predate this feature.
+ * Also records the upload in the Media gallery via MediaService (skipped,
+ * not fatal, if media_table isn't configured).
  *
  * Copyright (c) 2026 FanUpdate Redux
  * GNU General Public License v3 or later.
@@ -135,15 +132,15 @@ $fh = new FileHandler();
 
 $safe_name = $fh->fixFilename($_FILES['image']['name']);
 
-// Strip any extension the browser sent and re-apply one derived from the
-// validated MIME type — prevents extension tricks like "evil.php.jpg".
+// Re-apply an extension derived from the validated MIME type to defeat tricks
+// like "evil.php.jpg".
 $base_name  = pathinfo($safe_name, PATHINFO_FILENAME);
-$ext        = $image['ext'];                        // trusted extension
+$ext        = $image['ext'];
 $safe_name  = $base_name . '.' . $ext;
 
-// Prepend a unique ID to prevent overwrite collisions.
-$unique     = uniqid('', true);                     // e.g. "6660aef3e8d41.2345"
-$unique     = preg_replace('/[^a-zA-Z0-9]/', '', $unique); // strip the dot
+// Unique prefix prevents overwrite collisions.
+$unique     = uniqid('', true);
+$unique     = preg_replace('/[^a-zA-Z0-9]/', '', $unique);
 $final_name = $unique . '_' . $safe_name;
 
 // ── destination directories ───────────────────────────────────────────────────
@@ -165,8 +162,7 @@ foreach ([$img_dir, $thumb_dir] as $dir) {
         if (!mkdir($dir, 0755, true)) {
             upload_json_error('Could not create upload directory.');
         }
-        // Drop an index.html in every new directory to prevent directory listing
-        // on servers where Options -Indexes is not set globally.
+        // Prevents directory listing where Options -Indexes isn't set globally.
         @file_put_contents($dir . '/index.html', '');
     }
 }
@@ -210,9 +206,8 @@ $max_thumb_h = ($thumb_h_opt !== false && (int) $thumb_h_opt > 0) ? (int) $thumb
 $src_w = $image['width'];
 $src_h = $image['height'];
 
-// Compute constrained-fit dimensions (preserve aspect ratio, no crop)
+// Constrained fit: preserve aspect ratio, no crop.
 if ($src_w <= $max_thumb_w && $src_h <= $max_thumb_h) {
-    // Image already fits within the bounding box — no resize needed.
     $thumb_w = $src_w;
     $thumb_h = $src_h;
 } else {
@@ -261,9 +256,7 @@ if ($src_img !== false) {
     }
 }
 
-// If GD thumbnail generation failed for any reason, fall back to copying the
-// original as the "thumbnail" so the insert still works — it just won't be
-// resized. This should never happen on a normal PHP+GD install.
+// If GD fails, use the original as the thumbnail (unresized).
 if (!$thumb_ok || !file_exists($thumb_path)) {
     @copy($dest_path, $thumb_path);
 }
@@ -274,10 +267,8 @@ $url   = $install_url . '/uploads/images/' . $year . '/' . $month . '/'         
 $thumb = $install_url . '/uploads/images/' . $year . '/' . $month . '/thumbs/' . $final_name;
 
 // ── record in the Media gallery (Admin -> Media) ──────────────────────────────
-// Non-fatal if this fails: the file is already saved and the upload itself
-// succeeded (the JS still gets a usable URL to insert) — it just won't show
-// up in the gallery. Paths stored are relative to uploads/, matching
-// MediaService's docblock.
+// Non-fatal on failure: the file is saved and usable, it just won't be in the gallery.
+// Stored paths are relative to uploads/.
 
 $mediaTableOpt = (string) $fu->getOpt('media_table');
 if ($mediaTableOpt !== '') {

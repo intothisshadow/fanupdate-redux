@@ -35,17 +35,7 @@ require_once(__DIR__ . '/class/Service/ErrorLogService.php');
 
 // _____________________________________________ BOOLEAN (Y/N) OPTIONS
 
-/**
- * Canonical list of option keys that render as an on/off toggle switch
- * (admin/options.php's ".fu-toggle" markup) instead of a plain text field
- * — shared by admin/options.php's Main list and install.php's fresh-install
- * form so both render these identically. Previously admin/options.php
- * detected a boolean option purely by sniffing its stored description for
- * the substring "y or n"; now that install.php's own descriptions for
- * these seven no longer say that (the toggle itself makes it obvious — see
- * fu_is_yn_option() below), an explicit list is the single source of truth
- * instead of description text neither page can rely on staying in sync.
- */
+/** Option keys rendered as on/off toggles; shared by admin/options.php and install.php. */
 const FU_YN_OPTION_KEYS = [
     'comments_on',
     'email_new_comments',
@@ -57,56 +47,30 @@ const FU_YN_OPTION_KEYS = [
     'log_anonymize_ips',
 ];
 
-/**
- * Whether $optkey should render as a toggle switch rather than a text
- * field. Checks FU_YN_OPTION_KEYS first; falls back to sniffing $desc for
- * "y or n" (case-insensitive) so a custom option added later by hand
- * (following the original convention) still renders as a toggle without
- * needing a code change here.
- */
+/** Whether $optkey renders as a toggle; also honours the legacy "y or n" description convention. */
 function fu_is_yn_option(string $optkey, string $desc): bool
 {
     return in_array($optkey, FU_YN_OPTION_KEYS, true) || stripos($desc, 'y or n') !== false;
 }
 
-/**
- * Human-readable label from a raw option key, e.g. 'comments_on' ->
- * 'Comments on'. Replaces underscores with spaces and capitalises the
- * first character — every option key is already lowercase snake_case, so
- * that alone produces sentence case with no further lowercasing needed.
- * The raw key is still used in hidden inputs, `id`/`name`/`for` attributes,
- * and POST processing — only the visible label text is affected.
- *
- * Originally admin/options.php-only; shared here so install.php's
- * fresh-install form (previously showing raw keys like `comments_on`
- * and `date_format` as its visible labels) can use the same helper
- * instead of a second, drifting copy.
- */
+/** Display label for an option key, e.g. 'comments_on' -> 'Comments on'. */
 function fu_option_label(string $key): string
 {
     return ucfirst(str_replace('_', ' ', $key));
 }
 
 // _____________________________________________ TIMEZONE OPTION
-//
-// FP-19 — the 'timezone' option stores a real IANA identifier (e.g.
-// 'Europe/Helsinki') instead of the legacy integer 'timezone_offset' (hours
-// from GMT), so display dates account for daylight saving time correctly.
-// Shared by admin/options.php's Main list and install.php's fresh-install
-// form, which both render this key as a searchable <select> grouped by
-// region rather than a plain text field.
+// Stores an IANA identifier (not a fixed offset) so daylight saving is handled.
 
-/** The option key that render as a timezone dropdown instead of a plain text field. */
+/** The option key rendered as a timezone dropdown. */
 const FU_TIMEZONE_OPTION_KEY = 'timezone';
 
 /** Fallback used whenever no timezone is configured, or the stored value is invalid. */
 const FU_DEFAULT_TIMEZONE = 'UTC';
 
 /**
- * Every IANA timezone identifier PHP knows about, grouped by region
- * (Africa, America, Asia, Europe, Oceania, ...) for <optgroup> rendering.
- * Identifiers with no '/' (UTC, and a handful of legacy zones under
- * DateTimeZone::ALL) are grouped under 'Other'.
+ * IANA identifiers grouped by region for <optgroup> rendering; those with
+ * no '/' (e.g. UTC) go under 'Other'.
  *
  * @return array<string, array<int, string>>
  */
@@ -124,11 +88,7 @@ function fu_timezone_identifiers_grouped(): array
     return $groups;
 }
 
-/**
- * Human-friendly label for a timezone identifier, e.g.
- * "Europe/Helsinki (UTC+02:00)". The offset reflects daylight saving time
- * as it stands right now — it is a display label only, never stored.
- */
+/** Display label such as "Europe/Helsinki (UTC+02:00)", using the current DST offset. Never stored. */
 function fu_timezone_label(string $tz): string
 {
     try {
@@ -171,14 +131,8 @@ function fu_format_utc_in_timezone(string $utcDatetime, string $tz, string $form
 }
 
 /**
- * Best-effort mapping from a legacy whole-hour 'timezone_offset' value to a
- * single representative IANA zone, used only for the one-time migration off
- * that option (FP-19). A fixed hour offset is inherently ambiguous — many
- * zones share the same standard offset, and most also observe daylight
- * saving time the old option never accounted for at all — so this is a
- * reasonable guess, not an exact reconstruction; the admin is always
- * notified to review Options -> Timezone after migration regardless of
- * whether a mapping was found.
+ * Representative IANA zone per legacy whole-hour 'timezone_offset', for the
+ * one-time migration only. A fixed offset is ambiguous, so this is a guess.
  *
  * @var array<int, string>
  */
@@ -212,12 +166,7 @@ const FU_LEGACY_OFFSET_TIMEZONE_MAP = [
     14  => 'Pacific/Kiritimati',
 ];
 
-/**
- * Resolve a legacy 'timezone_offset' value (hours from GMT, possibly
- * fractional — e.g. 5.5 for India) to the closest matching IANA identifier,
- * or FU_DEFAULT_TIMEZONE when the (rounded) offset has no entry in
- * FU_LEGACY_OFFSET_TIMEZONE_MAP.
- */
+/** Maps a legacy hour offset (possibly fractional, rounded) to an IANA zone, else FU_DEFAULT_TIMEZONE. */
 function fu_migrate_legacy_timezone_offset(float $offsetHours): string
 {
     $rounded = (int) round($offsetHours);
@@ -226,18 +175,8 @@ function fu_migrate_legacy_timezone_offset(float $offsetHours): string
 }
 
 // _____________________________________________ DATE FORMAT OPTION
-//
-// FP-21 — the 'date_format' option previously rendered as a plain text input — a
-// raw PHP date() format string (e.g. 'M j, Y') with no indication of what
-// the syntax actually produces. Shared by admin/options.php's Main list and
-// install.php's fresh-install form, which both render this key as a
-// <select> of common presets (each labelled with a live example) plus a
-// "Custom..." option that unlocks a paired free-text input. Unlike
-// FU_TIMEZONE_OPTION_KEY, there is no fixed enumerable domain of valid
-// date() format strings — any string is technically valid, since
-// unrecognised characters are simply echoed literally — so this key still
-// allows free-text entry via the "Custom" fallback rather than restricting
-// input to only the curated list below.
+// Rendered as a preset <select> plus a "Custom" free-text fallback, since any
+// string is a valid date() format.
 
 /** The option key that renders as a date-format preset dropdown instead of a plain text field. */
 const FU_DATE_FORMAT_OPTION_KEY = 'date_format';
@@ -246,10 +185,7 @@ const FU_DATE_FORMAT_OPTION_KEY = 'date_format';
 const FU_DATE_FORMAT_CUSTOM_VALUE = '__custom__';
 
 /**
- * Curated shortlist of common PHP date() format strings for the date_format
- * dropdown. Deliberately not exhaustive — anything not in this list still
- * works fine via the "Custom" fallback; this just covers the formats most
- * admins actually want without needing to know date() syntax at all.
+ * Common date() formats for the dropdown; anything else works via "Custom".
  *
  * @return array<int, string>
  */
@@ -269,12 +205,7 @@ function fu_date_format_presets(): array
     ];
 }
 
-/**
- * Live example of what $format looks like right now, e.g. 'M j, Y' ->
- * 'Aug 13, 2026'. Every string is a technically-valid date() format
- * (unrecognised characters pass through literally), so this never fails —
- * it exists purely as a dropdown-option preview aid.
- */
+/** Preview of $format applied to now, e.g. 'M j, Y' -> 'Aug 13, 2026'. */
 function fu_date_format_example(string $format): string
 {
     return (new DateTime())->format($format);
@@ -294,7 +225,7 @@ function fu_is_known_date_format_preset(string $format): bool
 
 // _____________________________________________ ERROR REPORTING
 
-/** Directory for the file-based application error log (FP-46). FU_ERROR_LOG_DIR overrides it, e.g. in tests. */
+/** Directory for the file-based error log; FU_ERROR_LOG_DIR overrides it (e.g. in tests). */
 function fu_error_log_directory(): string
 {
     return defined('FU_ERROR_LOG_DIR') ? (string) FU_ERROR_LOG_DIR : __DIR__ . '/data/logs';
@@ -350,10 +281,9 @@ function myErrorHandler(int $errno, string $errstr, string $errfile, int $errlin
 
         case E_WARNING:
         case E_USER_WARNING:
-            // Suppress "table doesn't exist" warnings silently during install/version-detection.
-            // These are expected on a fresh install and must not appear above the page header.
+            // Must not render above the page header on a fresh install.
             if (str_contains($errstr, "doesn't exist") || str_contains($errstr, "does not exist")) {
-                return true; // swallow silently
+                return true;
             }
             echo '<p class="error"><strong>WARNING:</strong> ' . $errstr . '</p>' . "\n";
             break;
@@ -421,16 +351,9 @@ function is_url(string $url): bool
 // _____________________________________________ SECURITY
 
 /**
- * Whether install.php is still present under $installPath (TODO.md item
- * "13. Dashboard"). install.php deletes itself automatically after a
- * successful fresh install or upgrade, but that self-deletion can fail
- * silently (e.g. a non-writable directory) — see install.php's own
- * "Could not auto-delete install.php" fallback message. Left in place, it's
- * a real security risk: anyone who finds the URL can attempt to re-run it
- * against a live installation. Used by admin/index.php's Dashboard notice
- * and admin/update.php's Updates-page notice so an admin who never saw (or
- * missed) that one-time message still gets reminded on every subsequent
- * page load until the file is actually gone.
+ * Whether install.php is still under $installPath. Its self-deletion can
+ * fail silently, and a leftover copy is a security risk, so the admin
+ * notices use this to keep warning until it is gone.
  */
 function fu_install_script_exists(string $installPath): bool
 {
@@ -444,22 +367,10 @@ function fu_install_script_exists(string $installPath): bool
 }
 
 /**
- * Builds the SchemaMigrator + UpgradeRunner pair used to check for (and,
- * from admin/update.php, actually run) pending database migrations —
- * TODO.md item "10. Admin-Panel Database Update Runner". Extracted here so
- * every caller (admin/header.php's global pending-upgrades banner,
- * admin/update.php's own check-and-run action) builds the exact same
- * UpgradeRunner instead of duplicating this construction — previously
- * admin/index.php and admin/update.php each had their own copy, with
- * comments on each pointing at the other's "identical construction" as the
- * reason to keep them in sync by hand.
- *
- * Reads $fanupdate/$coltable directly (the raw blog-config.php globals,
- * always available by the time this runs — every caller requires
- * blog-config.php before functions.php) rather than through FanUpdate's own
- * getOpt() fallback, for the same reason admin/update.php's original
- * construction did: it keeps UpgradeRunner decoupled from the FanUpdate
- * singleton (see UpgradeRunner's own class docblock).
+ * Builds the SchemaMigrator + UpgradeRunner used to check for and run
+ * pending migrations, so every caller constructs them identically. Legacy
+ * values come from the raw blog-config.php globals ($fanupdate/$coltable)
+ * to keep UpgradeRunner decoupled from the FanUpdate singleton.
  */
 function fu_build_upgrade_runner(FanUpdate $fu): UpgradeRunner
 {
@@ -506,20 +417,9 @@ function fu_build_upgrade_runner(FanUpdate $fu): UpgradeRunner
 }
 
 /**
- * Whether a configured table reference exists, supporting an optional
- * schema-qualified form ("other_db.table_name") for a collective_table
- * living in a separate database on the same MySQL server (TODO.md's
- * Database Architecture item — "same server, different schema" support).
- * A plain `SHOW TABLES LIKE` only ever checks the connection's current
- * database, so a schema-qualified reference needs an explicit
- * information_schema lookup instead; a bare table name keeps using the
- * original SHOW TABLES LIKE check, unchanged from before this existed.
- *
- * Used by install.php's collective_table existence check. Requires the
- * connected DB user to have been granted privileges on the second schema
- * too — a hosting-side prerequisite this function cannot verify or set up,
- * only surface as a clear error if it's missing (see install.php's call
- * site).
+ * Whether a table exists, accepting a schema-qualified "other_db.table"
+ * reference (SHOW TABLES only sees the current database, so that form uses
+ * information_schema). The DB user needs privileges on the other schema.
  */
 function fu_table_exists(SqlConnection $db, string $tableRef): bool
 {
@@ -681,7 +581,6 @@ function wptexturize(string $text): string
     ];
 
     foreach ($textarr as $curl) {
-        // PHP 8.2: use $curl[0] instead of deprecated $curl{0}
         if (isset($curl[0]) && $curl[0] !== '<' && $next) {
             $curl = str_replace($static_characters, $static_replacements, $curl);
             $curl = preg_replace($dynamic_characters, $dynamic_replacements, $curl);
@@ -788,19 +687,7 @@ function wpautop(string $pee, bool $br = true, bool $allowHeading = false): stri
 // ── PHP Markdown (modified subset) ──────────────────────────────────────────
 // Copyright (c) 2004-2007 Michel Fortin, based on Markdown by John Gruber.
 // BSD licence — see original file header for full terms.
-//
-// Restored 2026-08-13: previously deleted as "confirmed dead code" during a
-// Credits-page audit, on the mistaken belief that nothing called it — that
-// check only verified no file OUTSIDE functions.php referenced doHeaders()/
-// doLists() by name. It missed that wpautop() itself (a few lines above,
-// lines ~661/664) calls both directly as part of its own pipeline, and
-// wpautop() is very much alive — FanUpdate_Post::getBodyFormatted()/
-// getTemplate() and FanUpdate_Comment::getBodyFormatted() all call it for
-// every post/comment render, admin and public alike. Deleting this made
-// every single one of those calls fatal ("Call to undefined function
-// doLists()") until caught and restored here. The credit for this code in
-// version.php's FU_LIBRARIES ("PHP Markdown", Michel Fortin) was correct all
-// along and has been restored too — it was never actually dead.
+// Not dead code: wpautop() above calls doHeaders()/doLists() directly.
 
 $tab_width  = 4;
 $list_level = 0;
@@ -837,7 +724,6 @@ function doHeaders(string $text): string
 
 function _doHeaders_callback_setext(array $matches): string
 {
-    // PHP 8.2: use $matches[2][0] instead of deprecated $matches[2]{0}
     $level = $matches[2][0] === '=' ? 3 : 4;
     return "\n<h{$level}>" . $matches[1] . "</h{$level}>\n\n";
 }

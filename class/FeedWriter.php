@@ -33,7 +33,6 @@ require_once(__DIR__ . '/FeedItem.php');
 
 class FeedWriter
 {
-    // ── explicitly declared properties ─────────────────────────────────────
     public array  $channels      = [];
     public array  $items         = [];
     public array  $namespaces    = [];

@@ -51,18 +51,15 @@ const FU_LICENCE     = 'GNU General Public License v3 or later';
 const FU_LICENCE_URL = 'https://www.gnu.org/licenses/gpl-3.0.html';
 
 // ── update provider (Admin Update Manager) ──────────────────────────────────
-// Fixed, not user-editable — only the release channel and an optional
-// GitHub token are configurable from admin/update.php. See
-// class/Update/GitHubUpdateProvider.php.
+// Fixed, not user-editable; only the channel and an optional GitHub token are
+// configurable (admin/update.php).
 
 const FU_UPDATE_PROVIDER_OWNER = 'intothisshadow';
 const FU_UPDATE_PROVIDER_REPO  = 'fanupdate-redux';
 
 // ── install ping (Opt-In Anonymous Install Ping — see admin/privacy.php,
 // class/Service/InstallPingService.php) ─────────────────────────────────────
-// Deliberately separate from the update provider above — the install ping
-// must remain completely independent of update checking (own endpoint, own
-// request code, functions regardless of whether update checks are enabled).
+// Independent of the update provider above (own endpoint and request code).
 
 const FU_INSTALL_PING_URL = 'https://coding.unloved-heart.net/fanupdate-redux/install-tracking-server/ping.php';
 
@@ -109,24 +106,11 @@ const FU_CONTRIBUTORS = [
 ];
 
 // ── third-party library credits ──────────────────────────────────────────────
-// Used by credits.php. Original entries sourced from readme.txt by Jenny
-// Ferenc; Redux-era additions (Parsedown, TinyMCE, Tablesort) cross-checked
-// against docs/THIRD-PARTY-LICENSES.md, which is the authoritative license
-// record for every vendored dependency — keep both in sync when either
-// changes. The Silk icon set entry was removed (replaced by Tabler Icons,
-// confirmed unused). The Standardista entry is rescoped, not removed —
-// its `css` utility object is still genuinely used even though its
-// table-sorting code (the actual "Standardista Table Sorting" feature) was
-// replaced by Tablesort.
-//
-// The Michel Fortin "PHP Markdown" entry below was WRONGLY removed on
-// 2026-08-13 and has since been restored — it was mistaken for dead code
-// during a Credits-page audit that only checked for callers of doHeaders()/
-// doLists() outside functions.php, missing that wpautop() itself calls both
-// as part of its own pipeline. wpautop() is called by every post/comment
-// render (FanUpdate_Post/FanUpdate_Comment), so the "dead code" removal
-// briefly made every one of those calls fatal until caught. See
-// docs/CHANGELOG.md for the full incident.
+// Used by credits.php. docs/THIRD-PARTY-LICENSES.md is the authoritative
+// licence record for vendored dependencies; keep both in sync.
+// Standardista is credited only for the `css` utility object still in use
+// (its table sorting was replaced by Tablesort). "PHP Markdown" stays
+// because wpautop() calls doHeaders()/doLists() on every post and comment.
 
 const FU_LIBRARIES = [
     [

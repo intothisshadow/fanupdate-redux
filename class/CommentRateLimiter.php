@@ -8,22 +8,15 @@ declare(strict_types=1);
  *
  * File-based per-IP rate limiter for the public comment form.
  *
- * Design mirrors LoginRateLimiter: zero extra dependencies, file-based,
- * self-healing, shared-host friendly.
+ * Mirrors LoginRateLimiter's design (dependency-free, file-based, self-pruning).
  *
- * Limits:
- *  - MAX_COMMENTS_PER_WINDOW comments from a single IP within WINDOW_SECONDS
- *    are allowed before the IP is temporarily blocked.
- *  - A blocked IP is refused for BLOCK_SECONDS (default 10 minutes).
- *    The block is NOT exponential — unlike brute-force login attacks, comment
- *    spam from real humans should be given a short cooldown, not a growing one.
+ * MAX_COMMENTS_PER_WINDOW comments per IP within WINDOW_SECONDS are allowed,
+ * then the IP is blocked for BLOCK_SECONDS. The block is deliberately not
+ * exponential: this targets spam bursts, not brute force, so a short
+ * cooldown suffices.
  *
- * Lock-file format (JSON):
- *  {
- *    "count":       <int>,   // submissions this window
- *    "window_start": <int>,  // Unix timestamp when the current window began
- *    "blocked_until": <int>  // Unix timestamp; 0 = not currently blocked
- *  }
+ * Lock files are JSON {count, window_start, blocked_until} with Unix times
+ * (blocked_until 0 = not blocked).
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -99,7 +92,7 @@ class CommentRateLimiter
         $state = $this->readState($ip);
         $now   = time();
 
-        // Expire a previous block that has naturally lapsed
+        // Clear a lapsed block.
         if ($state['blocked_until'] > 0 && $now >= $state['blocked_until']) {
             $state['blocked_until'] = 0;
             $state['count']         = 0;

@@ -5,19 +5,13 @@ declare(strict_types=1);
 /*****************************************************************************
  * FanUpdate — NewsFeedService
  *
- * Cache-first fetch for the Dashboard "FanUpdate Redux News" widget
- * (FP-23), mirroring UpdateManager's cache-first/check-when-due pattern
- * (class/Service/UpdateManager.php's getStatusSummary()/
- * runAutomaticCheckIfDue()) — the Dashboard is the highest-traffic admin
- * page, so a slow or unreachable remote feed must never make it hang or
- * error. refreshIfDue() always returns something renderable: a fresh fetch
- * when the cache is stale and reachable, the existing cache when it's
- * still fresh, and a graceful fall-back to whatever is cached (even if
- * stale) when the live fetch fails — it never throws to the caller.
+ * Cache-first fetch for the Dashboard "FanUpdate Redux News" widget, in the
+ * style of UpdateManager. The Dashboard is the busiest admin page, so a slow
+ * or unreachable feed must never hang or break it: refreshIfDue() always
+ * returns something renderable and never throws.
  *
- * Depends on NewsFeedRepositoryInterface/NewsFeedFetcherInterface rather
- * than the concrete classes, so it can be unit tested with fakes/mocks for
- * both — no database and no real network call needed in tests.
+ * Depends on the repository and fetcher interfaces, so tests need no database
+ * or network.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -36,8 +30,7 @@ class NewsFeedService
     }
 
     /**
-     * Cached items only — no network call. Safe to call on every admin page
-     * load.
+     * Cached items only (no network call).
      *
      * @return array<int, array{title: string, link: string, date: string, description: string}>
      */
@@ -49,15 +42,9 @@ class NewsFeedService
     }
 
     /**
-     * Cache hit for the SAME feed URL, within $maxAgeSeconds → return
-     * cached items untouched, no network call. Cache stale, missing, or
-     * for a DIFFERENT feed URL (an admin just changed news_feed_url) →
-     * fetch live; on success, persist and return the fresh items; on
-     * failure, fall back to whatever is cached for this URL (even if
-     * stale) rather than throwing — or an empty list if the cache belongs
-     * to a different (now-abandoned) URL, since serving a stale result
-     * from a feed the admin no longer configured would be more confusing
-     * than showing nothing.
+     * Returns the cache if it is for this URL and within $maxAgeSeconds.
+     * Otherwise fetches live and persists; on failure falls back to this
+     * URL's stale cache, or [] if the cache is for a different, abandoned URL.
      *
      * @return array<int, array{title: string, link: string, date: string, description: string}>
      */

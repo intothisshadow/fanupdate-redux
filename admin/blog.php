@@ -6,25 +6,19 @@
  * Blog entry CRUD (add/edit/preview/delete, single and bulk) and the entry
  * list with category filter and search. Delegates persistence to
  * BlogService/BlogRepository; this page parses/sanitises $_POST and $_GET,
- * enforces CSRF, and renders. The category dropdown/filter delegate to
- * CategoryService::listForDropdown() (Categories Support/hybrid), which
- * shows both standalone and collective-sourced categories together — see
- * CategoryService's class docblock.
+ * enforces CSRF, and renders. Category dropdowns come from
+ * CategoryService::listForDropdown() (standalone and collective together).
  *
- * Destructive actions (single and bulk delete) go through a dedicated
- * server-side confirmation view with its own <form>, so they work with
- * JavaScript disabled. The entry list uses a single outer <form> (bulk
- * delete); per-row delete is a plain link to the confirmation view rather
- * than a nested <form>, since nested forms are invalid HTML5.
+ * Deletes (single and bulk) use a server-side confirmation view with its own
+ * <form>, so they work without JavaScript. Per-row delete is a link, not a
+ * nested <form> (invalid HTML5).
  *
- * Notes on non-obvious behaviour:
- *  - The body is cleaned with clean_input(..., allowtags: true) since it is
- *    HTML (images, links, formatting from the TinyMCE editor — TODO.md item
- *    "FP-18. Implement TinyMCE Editor" — see assets/js/fanupdate-tinymce.js)
- *    and must not be stripped.
- *  - New-entry dates default to gmdate(...) (UTC) to match the
- *    UTC_TIMESTAMP() comparator used in show-blog.php; a local-time default
- *    would hide new entries on servers whose PHP timezone is ahead of UTC.
+ * Non-obvious behaviour:
+ *  - The body is HTML from the TinyMCE editor, so it is cleaned with
+ *    clean_input(..., allowtags: true).
+ *  - New-entry dates default to gmdate() (UTC) to match show-blog.php's
+ *    UTC_TIMESTAMP() comparison; a local default would hide new entries on
+ *    servers ahead of UTC.
  ******************************************************************************/
 
 declare(strict_types=1);
@@ -49,13 +43,7 @@ $blogService = new BlogService(new BlogRepository(
     (string) $fu->getOpt('comments_table')
 ));
 
-// Categories Support (hybrid): the category dropdown/filter below must
-// show both standalone and collective-sourced categories together — see
-// CategoryService's class docblock. Mirrors admin/category.php's
-// construction exactly. hasCollectiveScript() checks the descriptive
-// collective_script identifier ("none"/"enthusiast"/etc. — see TODO.md's
-// Database Architecture item) rather than getOpt()'s generic y/n truthy
-// mapping.
+// Constructed exactly as in admin/category.php.
 $standaloneTable = $fu->hasCollectiveScript() ? ((string) $fu->getOpt('standalone_category_table') ?: null) : null;
 
 $categoryService = new CategoryService(new CategoryRepository(
@@ -90,12 +78,9 @@ if (isset($_POST['action']) && !$fu->verifyCsrfOrFail()) {
 } elseif (isset($_POST['action'])) {
 
     $clean['title']      = isset($_POST['title'])      ? clean_input($_POST['title'])            : '';
-    // allowtags=true: the body is HTML — images, links, bold, etc. must be preserved.
-    // clean_input() without this flag calls strip_tags(), which silently strips every
-    // <a>, <img>, <strong>, etc. on save, breaking the WYSIWYG output.
+    // allowtags=true: without it strip_tags() would remove the WYSIWYG markup.
     $clean['body']       = isset($_POST['body'])        ? clean_input($_POST['body'], true)       : '';
-    // Category is a checkbox list (name="cat[]") — an entry may belong to
-    // any number of categories, including none.
+    // Checkbox list (cat[]): any number of categories, including none.
     $clean['cat']        = [];
     if (isset($_POST['cat']) && is_array($_POST['cat'])) {
         $clean['cat'] = array_values(array_unique(array_filter(
@@ -105,8 +90,7 @@ if (isset($_POST['action']) && !$fu->verifyCsrfOrFail()) {
     }
     $clean['is_public']    = isset($_POST['is_public'])     ? (int) $_POST['is_public']         : 0;
     $clean['comments_on'] = isset($_POST['comments_on'])   ? (int) $_POST['comments_on']       : 0;
-    // 'id' is scalar for single-entry actions (add/update/delete/preview) and an
-    // array (id[]) for bulk-delete actions — never both on the same request.
+    // 'id' is scalar for single-entry actions, id[] for bulk delete.
     $clean['id']         = (isset($_POST['id']) && !is_array($_POST['id'])) ? (int) $_POST['id'] : 0;
     $clean['date']       = isset($_POST['date'])        ? clean_input($_POST['date'])        : '';
 
@@ -122,12 +106,9 @@ if (isset($_POST['action']) && !$fu->verifyCsrfOrFail()) {
     if ($_POST['action'] === 'preview') {
 
         $showform = true;
-        // Preview is rendered below the form using $clean values
 
     } elseif ($_POST['action'] === 'add') {
 
-        // blog table has no cat_id column — category is stored in catjoin,
-        // linked by BlogService::createEntry() after a successful insert.
         $newEntryId = $blogService->createEntry([
             'title'       => $clean['title'],
             'body'        => $clean['body'],
@@ -215,10 +196,7 @@ if (isset($_POST['action']) && !$fu->verifyCsrfOrFail()) {
     }
 } elseif (isset($_GET['action']) && $_GET['action'] === 'new') {
     $showform = true;
-    // gmdate() writes UTC — must match the UTC_TIMESTAMP() comparator in
-    // show-blog.php. Using date() (server local time) causes new entries to
-    // appear in the future on servers whose PHP timezone is ahead of UTC,
-    // which hides them from the front-end query until the clock catches up.
+    // UTC, to match show-blog.php's UTC_TIMESTAMP() comparison.
     $clean['date'] = gmdate('Y-m-d H:i:s');
 }
 
@@ -279,10 +257,7 @@ if ($showform) {
                     <fieldset>
                         <legend>Category</legend>
                         <?php
-                        // Determine the currently checked categories:
-                        // - On POST (preview/retry): $clean['cat'] is set (int[])
-                        // - On edit (GET ?id=N): $clean['cat_ids'] is resolved from catjoin
-                        // - On new (GET ?action=new): neither is set → none checked
+                        // Checked: $clean['cat'] after a POST, $clean['cat_ids'] on edit, none on new.
                         $selected_cats = array_map('intval', $clean['cat'] ?? $clean['cat_ids'] ?? []);
                         ?>
                         <ul id="categories" class="catlist select_all">
@@ -364,12 +339,8 @@ if ($showform) {
     </form>
 
     <?php
-    // Advanced, rarely-tuned settings not exposed in Admin -> Options (same
-    // precedent as upload_max_filesize/upload_thumb_width/upload_thumb_height
-    // in admin/upload.php) — override by adding an editor_min_height/
-    // editor_max_height row directly to the options table if the defaults
-    // below don't suit. TODO.md item "FP-18. Implement TinyMCE Editor" —
-    // "Make editor height configurable".
+    // Advanced settings not in Admin -> Options: add editor_min_height /
+    // editor_max_height rows to the options table to override the defaults.
     $editor_min_height_opt = $fu->getOpt('editor_min_height');
     $editor_max_height_opt = $fu->getOpt('editor_max_height');
     $editor_min_height     = ($editor_min_height_opt !== false && (int) $editor_min_height_opt > 0) ? (int) $editor_min_height_opt : 300;
@@ -527,21 +498,14 @@ if ($showform) {
                         echo '<td><a href="blog.php?id=' . $post->getID() . '">'
                             . htmlspecialchars($post->getTitle(), ENT_QUOTES, 'UTF-8') . '</a></td>';
                         echo '<td>' . htmlspecialchars($post->getCategoryString(), ENT_QUOTES, 'UTF-8') . '</td>';
-                        // data-sort: the raw stored UTC datetime (already lexicographically
-                        // sortable) rather than the display text — Tablesort sorts by this
-                        // attribute when present, so column sorting is correct regardless of
-                        // which date_format preset is configured (see docs/CHANGELOG.md).
+                        // data-sort holds the raw UTC datetime so Tablesort works for any date_format.
                         echo '<td class="hint small" data-sort="' . htmlspecialchars($post->getDate(), ENT_QUOTES, 'UTF-8') . '">'
                             . htmlspecialchars($post->getDateFormatted(), ENT_QUOTES, 'UTF-8') . '</td>';
                         echo '<td><a href="comment.php?entry=' . $post->getID() . '" title="See comments">'
                             . (int) $row['num_comments'] . '</a></td>';
                         echo '<td>' . $public_badge . '</td>';
-                        // Drafts have no meaningful front-end page to view —
-                        // show-blog.php's WHERE is_public > 0 excludes them
-                        // entirely, so their id would just render an empty
-                        // page rather than a real 404. Cell is left empty
-                        // (not omitted) to keep every row's column count
-                        // matching the header's colspan="3" Actions group.
+                        // Drafts have no front-end page; keep the empty cell so the
+                        // column count matches the header's colspan="3".
                         echo '<td class="form">' . ($post->isPublic()
                             ? '<a href="' . htmlspecialchars($post->getUrl(), ENT_QUOTES, 'UTF-8') . '" class="button" target="_blank" rel="noopener noreferrer" title="View \'' . htmlspecialchars($post->getTitle(), ENT_QUOTES, 'UTF-8') . '\' on the live site">View</a>'
                             : '') . '</td>';

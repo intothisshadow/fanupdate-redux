@@ -2,26 +2,12 @@
 /*****************************************************************************
  * FanUpdate — admin/update.php
  *
- * Admin Update Manager: checks the configured update provider (GitHub, via
- * GitHubUpdateProvider) for the newest release on the selected channel,
- * shows the result, and lets the admin configure the channel and an
- * optional GitHub token for higher API rate limits.
- *
- * This page checks for updates, can download a release's ZIP asset into a
- * protected temporary directory, create/manage backups of the current
- * installation, install a downloaded release over the live site (with an
- * automatic rollback attempt if the install itself fails, and a
- * non-interactive post-install database migration step), can install a
- * release ZIP an admin uploads directly instead — FP-33, useful when this
- * server can't reach GitHub, or to install a build that isn't published as
- * a release — through the exact same validated backup/install/rollback
- * pipeline, can restore any listed backup manually, run any pending
- * database updates on demand (for installations updated by replacing files
- * over FTP by hand, rather than through either install flow above —
- * TODO.md item "10. Admin-Panel Database Update Runner"), and shows a
- * System Status panel (PHP version, ZIP/cURL availability, file
- * permissions, disk space, temp directory writability). No SSH/Composer/
- * Git/shell commands are used or assumed; every step runs entirely in PHP.
+ * Admin Update Manager: checks GitHub for the newest release on the selected
+ * channel, downloads it, manages backups, installs a downloaded or uploaded
+ * release ZIP (with automatic rollback on failure), restores backups, runs
+ * pending database updates on demand (for installs updated by hand over
+ * FTP), and shows a System Status panel. Everything runs in PHP, with no
+ * shell commands.
  ******************************************************************************/
 
 declare(strict_types=1);
@@ -63,16 +49,11 @@ $githubToken = (!empty($config['githubToken']) && is_string($config['githubToken
 $provider = new GitHubUpdateProvider(FU_UPDATE_PROVIDER_OWNER, FU_UPDATE_PROVIDER_REPO, $githubToken);
 
 // ── download temp directory ──────────────────────────────────────────────
-// Not under uploads/ — this holds release archives being staged for
-// install, not user content, so it is fully denied to web requests (not
-// just script execution) rather than served like uploads/images/ is.
+// Holds staged release archives, so it is fully denied to web requests.
 $install_path_opt = $fu->getOpt('install_path');
 $install_path      = ($install_path_opt !== false && (string) $install_path_opt !== '')
     ? rtrim((string) $install_path_opt, '/')
     : dirname(__DIR__);
-// TODO.md item "13. Dashboard" — install.php normally self-deletes after a
-// successful run, but that can fail silently (e.g. a non-writable
-// directory) — see fu_install_script_exists()'s docblock in functions.php.
 $installScriptStillHere = fu_install_script_exists($install_path);
 $update_tmp_dir = $install_path . '/fu-update-tmp';
 
@@ -94,9 +75,7 @@ if (is_dir($update_tmp_dir)) {
 $downloadManager = new DownloadManager($update_tmp_dir);
 
 // ── backups directory ────────────────────────────────────────────────────
-// Contains full copies of blog-config.php (DB credentials included), so
-// it gets the same fully-denied guard as the update temp directory above —
-// not the script-execution-only guard uploads/ uses.
+// Contains copies of blog-config.php (DB credentials): fully denied like the temp directory.
 $backup_dir = $install_path . '/fu-backups';
 
 if (!is_dir($backup_dir)) {
@@ -130,25 +109,16 @@ $rollbackManager = new RollbackManager(
 
 $systemStatusChecker = new SystemStatusChecker($install_path, $update_tmp_dir);
 
-// Categories Support (hybrid) + Database Engine & Charset Migration (TODO.md
-// items 6/9), plus the legacy collective_script/col_id/col_subj/
-// collective_table one-time migrations — see fu_build_upgrade_runner()
-// (functions.php) for the full construction, shared with admin/header.php's
-// global pending-upgrades banner so both build the exact same UpgradeRunner.
+// Shared with admin/header.php's pending-upgrades banner.
 $upgradeRunner = fu_build_upgrade_runner($fu);
 
 $updateManager = new UpdateManager($provider, $updateRepository, FU_VERSION, $downloadManager, $backupManager, $installManager, $rollbackManager);
 
-// ─────────────────────────────────────────────────────────────────────────────
-// POST handlers
-// ─────────────────────────────────────────────────────────────────────────────
+// ── POST handlers ────────────────────────────────────────────────────────
 
 if (($_GET['action'] ?? '') === 'run-upgrades') {
-    // Reached only via the redirect above, right after a successful install
-    // — a fresh request, so UpgradeRunner here is the copy from the
-    // just-installed release, not whatever was loaded when the install POST
-    // started (see the redirect's comment, and UpgradeRunner's class
-    // docblock, for why that distinction matters).
+    // Reached via redirect after an install: a fresh request, so UpgradeRunner is
+    // the just-installed release's copy.
     if (isset($_GET['installed_version'])) {
         $removedFiles = (int) ($_GET['removed_files'] ?? 0);
         $fu->addSuccess(
@@ -207,8 +177,7 @@ if ($action === 'check') {
         if ($clearToken) {
             unset($config['githubToken']);
         } elseif ($token !== '') {
-            // Blank field means "leave the saved token unchanged" — only
-            // overwrite it when a new value was actually typed in.
+            // A blank field leaves the saved token unchanged.
             $config['githubToken'] = $token;
         }
 
@@ -257,15 +226,9 @@ if ($action === 'check') {
         $result = $updateManager->installLatestRelease();
 
         if ($result['ok']) {
-            // Redirect to a fresh request rather than falling through to the
-            // normal page render below — InstallManager just overwrote every
-            // PHP file on disk including this one, but PHP has no way to
-            // "hot reload" classes already loaded into this running process.
             $fu->logEvent(LogService::UPDATE_ACTION, 'Installed update: ' . (string) $result['version'] . '.');
-            // A fresh request (?action=run-upgrades) re-requires everything
-            // from the newly-copied files, so UpgradeRunner (and everything
-            // else) actually reflects the version that was just installed.
-            // See UpgradeRunner's class docblock for the full rationale.
+            // Redirect rather than render: PHP can't hot-reload the classes already
+            // loaded, so a fresh request is needed to use the newly copied files.
             header(
                 'Location: update.php?action=run-upgrades'
                 . '&installed_version=' . rawurlencode((string) $result['version'])
@@ -279,14 +242,7 @@ if ($action === 'check') {
         $fu->addErr('Install failed: ' . htmlspecialchars((string) $result['error'], ENT_QUOTES, 'UTF-8'));
     }
 } elseif ($action === 'upload_install') {
-    // FP-33 — install a release ZIP the admin uploaded directly, for a
-    // server that can't reach the configured update provider, or to
-    // install a specific build that isn't published as a release at all.
-    // Same $_FILES validation pattern admin/upload.php uses for image
-    // uploads (error-code mapping, is_uploaded_file() check) before
-    // handing off to UpdateManager::installUploadedRelease(), which runs
-    // the exact same backup/install/auto-rollback pipeline
-    // installLatestRelease() does.
+    // Install an admin-uploaded release ZIP (for servers that can't reach GitHub).
     if (!$fu->verifyCsrfOrFail()) {
         // Invalid/missing CSRF token — error already queued.
     } elseif (!isset($_FILES['update_zip']) || $_FILES['update_zip']['error'] === UPLOAD_ERR_NO_FILE) {
@@ -308,10 +264,7 @@ if ($action === 'check') {
 
         if ($result['ok']) {
             $fu->logEvent(LogService::UPDATE_ACTION, 'Installed uploaded release: ' . (string) $result['version'] . '.');
-            // Same redirect InstallManager's provider-download path uses —
-            // a fresh request is required so the post-install DB-migration
-            // step (?action=run-upgrades) runs against the just-installed
-            // files, not the ones already loaded into this request.
+            // Fresh request so the DB migration runs against the new files.
             header(
                 'Location: update.php?action=run-upgrades'
                 . '&installed_version=' . rawurlencode((string) $result['version'])
@@ -332,11 +285,7 @@ if ($action === 'check') {
         $fu->addSuccess('Maintenance mode disabled.');
     }
 } elseif ($action === 'run_db_upgrade') {
-    // TODO.md item "10. Admin-Panel Database Update Runner" — for an
-    // installation updated by manual file upload rather than through the
-    // GitHub-release Install flow above (which already runs this
-    // automatically via the run-upgrades redirect), this is the only
-    // other place pending schema/option changes ever get applied.
+    // For installs updated by hand; the Install flow runs this via the run-upgrades redirect.
     if (!$fu->verifyCsrfOrFail()) {
         // Invalid/missing CSRF token — error already queued.
     } else {
@@ -450,8 +399,7 @@ function fu_update_check_badge(string $status): string
 }
 
 // ── Install confirmation view (GET, read-only) ─────────────────────────────
-// Reached via a link, not a form — shows the Installation Summary and warns
-// about backups/maintenance mode before the real "install" POST form.
+// Reached via a link; warns about backups/maintenance mode before the "install" POST form.
 if (($_GET['action'] ?? '') === 'install-progress') {
     header('Content-Type: application/json; charset=utf-8');
     header('Cache-Control: no-store');
@@ -527,10 +475,7 @@ if (($_GET['action'] ?? '') === 'confirm-install') {
                 var btn   = form.querySelector('input[type="submit"]');
                 if (btn) { btn.disabled = true; btn.value = 'Installing…'; }
                 if (panel) { panel.style.display = 'block'; }
-                // Polls while the install POST above is still in flight — the
-                // browser keeps running this page's JS until the response
-                // actually arrives and navigation replaces the document, so
-                // this naturally stops itself once the install finishes.
+                // Polls until the response replaces the document.
                 setInterval(function () {
                     fetch('update.php?action=install-progress', { cache: 'no-store' })
                         .then(function (r) { return r.json(); })
@@ -553,8 +498,7 @@ if (($_GET['action'] ?? '') === 'confirm-install') {
 }
 
 // ── Rollback confirmation view (GET, read-only) ────────────────────────
-// Reached via a link from the Backups table, not a form — confirms which
-// backup will be restored before the real "rollback" POST form.
+// Reached via a link; confirms which backup will be restored before the POST form.
 if (($_GET['action'] ?? '') === 'confirm-rollback') {
     $targetPath = (string) ($_GET['backup_path'] ?? '');
     $target     = null;
@@ -682,12 +626,9 @@ $fu->reportErrors();
     <?php
 }
 
-// ── Database Updates (TODO.md item "10. Admin-Panel Database Update Runner") ──
-// Hidden entirely when nothing's pending. Covers installations updated by
-// manual file upload (no GitHub release involved) that would otherwise
-// have no way to run pending schema/option migrations from the admin
-// panel at all — install.php is the only other place this logic runs,
-// and it deletes itself after a successful run.
+// ── Database Updates ──
+// Hidden when nothing is pending. Lets manually updated installs run migrations,
+// since install.php deletes itself after running.
 if ($upgradeRunner->hasPendingUpgrades(FU_VERSION)) {
     ?>
     <div class="page-header" id="database-updates">
@@ -726,9 +667,7 @@ if ($upgradeRunner->hasPendingUpgrades(FU_VERSION)) {
                 var btn   = form.querySelector('input[type="submit"]');
                 if (btn) { btn.disabled = true; btn.value = 'Running…'; }
                 if (panel) { panel.style.display = 'block'; }
-                // Same polling endpoint the install/rollback confirmation pages
-                // use — UpdateManager::runPendingUpgrades() reports progress
-                // through the same cached-state mechanism.
+                // Same progress endpoint as the install/rollback pages.
                 setInterval(function () {
                     fetch('update.php?action=install-progress', { cache: 'no-store' })
                         .then(function (r) { return r.json(); })
@@ -810,12 +749,9 @@ if ($upgradeRunner->hasPendingUpgrades(FU_VERSION)) {
     <button type="submit" name="action" value="check" class="update" title="Check GitHub for a newer release, accesskey s" accesskey="s">Check</button>
 </form>
 
-<!-- ── Install from Uploaded ZIP (FP-33) ─────────────────────────────────── -->
-<!-- Always shown, independent of the GitHub check above — a server may not
-     be able to reach GitHub at all, or an admin may want to install a
-     specific build that was never published as a release. Runs through the
-     exact same backup/install/auto-rollback pipeline as the GitHub-fetched
-     "Install now" flow further down this page. -->
+<!-- ── Install from Uploaded ZIP ─────────────────────────────────── -->
+<!-- Always shown: the server may not reach GitHub, or the build may be unpublished.
+     Uses the same backup/install/rollback pipeline as "Install now". -->
 
 <div class="page-header">
     <h2>Install from uploaded ZIP</h2>
@@ -871,9 +807,7 @@ if ($upgradeRunner->hasPendingUpgrades(FU_VERSION)) {
                 var btn   = form.querySelector('input[type="submit"]');
                 if (btn) { btn.disabled = true; btn.value = 'Uploading & installing…'; }
                 if (panel) { panel.style.display = 'block'; }
-                // Same polling endpoint the install/rollback confirmation pages
-                // use — installUploadedRelease() reports progress through the
-                // same cached-state mechanism, via the shared performInstall().
+                // Same progress endpoint as the install/rollback pages.
                 setInterval(function () {
                     fetch('update.php?action=install-progress', { cache: 'no-store' })
                         .then(function (r) { return r.json(); })
@@ -967,13 +901,7 @@ if ($upgradeRunner->hasPendingUpgrades(FU_VERSION)) {
     <?php
     $notes = trim((string) ($summary['latestNotes'] ?? ''));
     if ($notes !== '') {
-        // TODO.md item "8. Implement Full Markdown Rendering for GitHub
-        // Release Notes" — full GitHub Flavored Markdown rendering via
-        // ReleaseNotesRenderer (Parsedown, safe mode), replacing the old
-        // htmlspecialchars() + wpautop()/doHeaders()/doLists() pipeline,
-        // which only ever produced paragraphs/headers/lists/auto-linking.
-        // ReleaseNotesRenderer does its own escaping internally (Parsedown's
-        // safe mode) — the raw, un-escaped notes are passed in directly.
+        // The renderer escapes internally (Parsedown safe mode), so pass the raw notes.
         $releaseNotesRenderer = new ReleaseNotesRenderer();
         ?>
         <div class="fu-release-notes" style="max-height:360px; overflow-y:auto; padding:1rem; background:var(--fu-surface); border:0.5px solid var(--fu-border-med); border-radius:var(--fu-radius); margin-top:0.75rem;">

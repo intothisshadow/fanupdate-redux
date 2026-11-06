@@ -3,20 +3,15 @@
  * FanUpdate — admin/options.php
  *
  * General site options: lists and updates all editable option-table rows
- * (excluding templates, credentials, private/internal keys, and the
- * collective-source keys collective_script/col_id/col_subj, which have
- * their own pages or are never user-editable — see admin/collective-source.php
- * for the latter). Delegates persistence to OptionService/OptionRepository;
- * this page parses/sanitises $_POST, enforces CSRF, and renders. y/n options
- * render as toggle switches.
+ * (excluding templates, credentials, private keys, and the collective-source
+ * keys, which have their own page). Delegates persistence to
+ * OptionService/OptionRepository; this page sanitises $_POST, enforces CSRF,
+ * and renders. y/n options render as toggle switches.
  *
- * Also auto-detects and corrects install_path on every page load: if the
- * stored value no longer resolves to a directory that actually looks like
- * this installation (missing entirely, or a real directory that doesn't
- * contain this app's own files — e.g. left over from a domain move where
- * the old directory is still physically present but is no longer the live
- * install), it is corrected automatically. A manually-set install_path that
- * still resolves to a real copy of this installation is left alone.
+ * Also corrects install_path on every load when the stored value is missing
+ * or points at a directory that isn't this installation (e.g. a stale copy
+ * left after a domain move). A manual value that still resolves to a real
+ * copy of this installation is left alone.
  ******************************************************************************/
 
 declare(strict_types=1);
@@ -38,23 +33,12 @@ $optionService = new OptionService(new OptionRepository(
 
 $showNav = true;
 
-// ── Deny-list: keys that must never be edited on this page ────────────────
-// (private keys starting with _ are filtered in the SQL query below;
-//  these are additional explicit exclusions)
+// ── Deny-list: keys that must never be edited here ────────────────────────
+// (private "_" keys are already filtered in the SQL query)
 $disallow = ['admin_password', 'admin_username', 'admin_email', 'version'];
 
-// fu_is_yn_option() (boolean-toggle detection) lives in functions.php now,
-// shared with install.php's fresh-install form — see FU_YN_OPTION_KEYS.
-
-// fu_option_label() (human-readable label from an option key, e.g.
-// 'comments_on' -> 'Comments on') now lives in functions.php, shared with
-// install.php's fresh-install form.
-
 // ── Helper: detect this server's actual install directory ────────────────
-// Mirrors the path normalisation install.php applies when it first writes
-// install_path: strip the DreamHost "/.username" quirk and normalise
-// backslashes to forward slashes on Windows dev environments. admin/options.php
-// lives one directory below the install root, hence dirname(__DIR__).
+// Same normalisation as install.php (DreamHost "/.username" quirk, Windows slashes).
 function fu_detect_install_path(): string {
     $dir = dirname(__DIR__);
     $dir = (string) preg_replace('#/\.([a-z]+)#', '', $dir);
@@ -62,15 +46,8 @@ function fu_detect_install_path(): string {
 }
 
 // ── Helper: does a directory actually look like a FanUpdate Redux install? ──
-// A plain is_dir() check only proves *some* directory exists at the stored
-// path — it says nothing about whether it's still *this* installation. A
-// stale install_path left over from a domain move can keep pointing at a
-// real, but abandoned, directory indefinitely (confirmed live: this was the
-// actual root cause of a BackupManager "empty archive" failure on July 18,
-// 2026 — see docs/CHANGELOG.md's [Unreleased] "Fixed" entry). Checked the
-// same way InstallManager validates an extracted release before installing
-// over the live site: version.php/index.php present, plus admin/ and
-// class/ directories.
+// is_dir() alone can't tell a stale, abandoned directory from this installation, so
+// check for the same files InstallManager requires of a release.
 function fu_looks_like_install_path(string $dir): bool {
     if (!is_dir($dir)) {
         return false;
@@ -112,12 +89,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'update' && !$fu->verifyCsrf
 
         $value = clean_input((string) ($values[$id] ?? ''));
 
-        // FP-19: 'timezone' must be a real IANA identifier — a hand-edited
-        // or tampered value would otherwise silently break every date
-        // display (FanUpdate_Post/FanUpdate_Comment::getDateFormatted()
-        // already falls back to UTC for an invalid stored value, but
-        // rejecting it here means the admin finds out immediately instead
-        // of dates quietly reverting to UTC).
+        // Reject an invalid timezone now rather than letting dates silently revert to UTC.
         if ($key === FU_TIMEZONE_OPTION_KEY && !fu_is_valid_timezone($value)) {
             $fu->addErr('<strong>' . htmlspecialchars($value, ENT_QUOTES, 'UTF-8') . '</strong> is not a recognised timezone — timezone not updated.');
             continue;
@@ -139,21 +111,10 @@ if (isset($_POST['action']) && $_POST['action'] === 'update' && !$fu->verifyCsrf
 }
 
 // ── Auto-detect install path ───────────────────────────────────────────────
-// If the site has been moved to a different server, directory, or domain (a
-// plain file copy, unlike a real "migration" tool, never updates
-// install_path), the stored value stops pointing at a directory that's
-// still actually this installation. That covers two distinct cases, both
-// checked by fu_looks_like_install_path(): the stored path no longer exists
-// at all, OR it exists but is some other (possibly stale/abandoned)
-// directory that isn't this app — e.g. left over from an old domain that
-// was never cleaned up after a move, which otherwise defeats this exact
-// auto-correction silently (confirmed live as the root cause of a
-// BackupManager "empty archive" failure — see docs/CHANGELOG.md). When
-// either happens, silently correct install_path to match this server's real
-// location, same as install.php auto-detects it on first install. A
-// manually-entered install_path is left alone as long as it still resolves
-// to a real copy of this installation — that's the override escape hatch
-// for non-standard setups (e.g. a symlinked path).
+// A plain file copy to a new server/domain never updates install_path. If the stored
+// path is missing or isn't this installation (fu_looks_like_install_path()), correct
+// it. A manual value that still resolves to a real copy is kept, as the override for
+// non-standard setups such as symlinks.
 $detectedInstallPath = fu_detect_install_path();
 $storedInstallPath   = (string) $fu->getOpt('install_path', true);
 
@@ -176,13 +137,7 @@ if ($storedInstallPath !== '' && $storedInstallPath !== $detectedInstallPath && 
 // ── Load options (exclude templates, admin_email, private keys) ───────────
 $rows = $optionService->listEditableOptions();
 
-// listEditableOptions() sorts alphabetically, which already puts
-// 'date_format' before 'timezone' (d < t) but not necessarily adjacent to
-// it — other options can sort in between. Both are date/time-related and
-// their dropdowns (FU_DATE_FORMAT_OPTION_KEY/FU_TIMEZONE_OPTION_KEY below)
-// read more naturally next to each other, so timezone is moved to
-// immediately follow date_format here; every other option keeps its
-// existing alphabetical position.
+// Options are alphabetical; move timezone next to date_format since the two read together.
 $dateFormatIndex = null;
 $timezoneIndex   = null;
 foreach ($rows as $i => $row) {
@@ -269,7 +224,6 @@ $fu->reportErrors();
             <?php endif; ?>
 
             <?php elseif ($optkey === FU_DATE_FORMAT_OPTION_KEY):
-                // FP-21: preset dropdown + "Custom" fallback — see functions.php.
                 $isKnownDateFormatPreset = fu_is_known_date_format_preset((string) $row['optvalue']);
             ?>
 
@@ -350,7 +304,5 @@ $fu->reportErrors();
 </form>
 
 <?php
-// Toggle state-label live update (.fu-toggle__input) is wired globally by
-// assets/js/fanupdate.js, loaded on every admin page (and install.php) via
-// header.php — no per-page inline script needed here anymore.
+// Toggle labels are wired globally by assets/js/fanupdate.js.
 $fu->getFooter();

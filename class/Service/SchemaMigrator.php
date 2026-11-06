@@ -5,48 +5,19 @@ declare(strict_types=1);
 /*****************************************************************************
  * FanUpdate — SchemaMigrator
  *
- * Database schema migrations shared between install.php and the admin
- * panel (TODO.md item "10. Admin-Panel Database Update Runner"). Extracted
- * from install.php, where this logic previously lived inline as two
- * top-level functions (fu_table_has_mis_encoded_utf8()/
- * fu_migrate_table_engine_and_charset()) plus a standalone_category_table
- * creation block — duplicated here would mean two copies that could drift
- * apart, and install.php self-deletes after a successful run, so there was
- * previously no way to run this again from the admin panel for an
- * installation updated by manual file upload instead of through the Admin
- * Update Manager's GitHub-release flow.
+ * Idempotent schema migrations shared by install.php and the admin panel:
+ *  - standalone_category_table: created only when a collective script is
+ *    configured (see CategoryRepository::STANDALONE_ID_OFFSET).
+ *  - media_table and the event log table: created once a name is configured.
+ *  - MyISAM -> InnoDB and latin1 -> utf8mb4, as one ALTER per table (either
+ *    change alone rebuilds it). tableHasMisEncodedUtf8() decides between a
+ *    plain CONVERT and a binary-intermediate reinterpretation.
  *
- * Covers three migrations, all idempotent (safe to call repeatedly/on an
- * already-migrated installation — each does nothing once its target state
- * is reached):
- *
- *  - Categories Support's standalone_category_table (TODO.md item
- *    "6. Categories Support") — created only when a collective script is
- *    configured; see CategoryRepositoryInterface's class docblock for why
- *    it's needed and CategoryRepository::STANDALONE_ID_OFFSET for the
- *    AUTO_INCREMENT seed.
- *  - The Media gallery's media_table (TODO.md item "4. UI - Create an
- *    Image/File Manager") — created for every installation once a table
- *    name is configured, regardless of collective_script (see
- *    ensureMediaTable()).
- *  - The Database Engine & Charset Migration (TODO.md item "9. Database
- *    Engine & Charset Migration") — MyISAM -> InnoDB, latin1 -> utf8mb4,
- *    combined into one ALTER TABLE per table since either change alone
- *    triggers a full table rebuild. See tableHasMisEncodedUtf8()'s
- *    docblock for the mis-encoded-UTF-8 safety check that decides between
- *    a plain CONVERT and a binary-intermediate reinterpretation per table.
- *
- * Table names and the collective table's column name (colSubj) are
- * injected via the constructor rather than read from FanUpdate::getOpt()
- * internally, so this class has no dependency on the FanUpdate singleton
- * and can be constructed with a mock SqlConnection in a unit test — same
- * pattern as every other Repository/Service class in this codebase.
- * collectiveScriptConfigured/standaloneCategoryTable together determine
- * whether collective_table is ours to migrate (standalone mode only — see
- * migrationSteps()) and whether standalone_category_table applies at all.
- * mediaTable is unconditional — nullable only so an installation that
- * predates this feature (no media_table set in blog-config.php) is a no-op
- * rather than an error.
+ * Table names are injected rather than read from the FanUpdate singleton,
+ * so the class is unit-testable with a mock SqlConnection. Optional tables
+ * are nullable so installs predating them are a no-op, and collective_table
+ * is migrated only in standalone mode (otherwise it belongs to the
+ * external script).
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -74,14 +45,7 @@ class SchemaMigrator
     ) {
     }
 
-    /**
-     * Cheap read-only check — an information_schema lookup per managed
-     * table, no writes — for whether runPendingSchemaChanges() would
-     * actually do anything right now. Safe to call on every Dashboard
-     * page load (see admin/index.php's existing update-availability
-     * notice, which follows the same "cheap enough for every load"
-     * pattern).
-     */
+    /** Read-only (one information_schema lookup per table): whether runPendingSchemaChanges() would do anything. */
     public function hasPendingSchemaChanges(): bool
     {
         if (
@@ -119,18 +83,11 @@ class SchemaMigrator
     }
 
     /**
-     * Run every pending schema change: the Categories Support table
-     * creation (if applicable) followed by the InnoDB/utf8mb4 conversion
-     * for each managed table, in that order. Each already-converted table
-     * is a no-op (see tableNeedsMigration()) and contributes no entry to
-     * the returned list — only tables an actual change was attempted for
-     * are included, whether that attempt succeeded or failed.
+     * Creates missing tables, then converts each managed table. Only tables
+     * where a change was attempted (successfully or not) appear in the result.
      *
-     * @param callable(string, int, int): void|null $onProgress Called at
-     *        each step boundary as (message, stepNumber, totalSteps) —
-     *        same pattern as InstallManager::installUpdate()/
-     *        RollbackManager::rollbackTo(). Exceptions from $onProgress
-     *        itself are not caught — it should never throw.
+     * @param callable(string, int, int): void|null $onProgress Called as
+     *        (message, step, totalSteps); must not throw.
      * @return list<array{table: string, ok: bool, message: string}>
      */
     public function runPendingSchemaChanges(?callable $onProgress = null): array
@@ -176,11 +133,7 @@ class SchemaMigrator
         return $results;
     }
 
-    /**
-     * Converting a very large legacy table can take a minute or more, so
-     * keep PHP from stopping mid-run or when the browser disconnects.
-     * set_time_limit() may be disabled on shared hosts, hence the guard.
-     */
+    /** Large tables can take minutes to convert; guard against timeouts and disconnects. */
     private function liftExecutionLimits(): void
     {
         if (function_exists('set_time_limit')) {
@@ -190,7 +143,7 @@ class SchemaMigrator
         ignore_user_abort(true);
     }
 
-    /** Invoke $onProgress if one was given — a nullable callable can't be called via the `?->` operator. */
+    /** Calls $onProgress if given (a nullable callable can't use `?->`). */
     private function notifyProgress(?callable $onProgress, string $message, int $step, int $total): void
     {
         if ($onProgress !== null) {
@@ -200,13 +153,7 @@ class SchemaMigrator
 
     // ── Categories Support: standalone_category_table ─────────────────────
 
-    /**
-     * Creates standalone_category_table when a collective script is
-     * configured and it doesn't already exist. Returns null (no-op) in
-     * standalone mode, when no table name is configured, or when the
-     * table already exists — the AUTO_INCREMENT seed only needs to happen
-     * once, at creation time.
-     */
+    /** Creates standalone_category_table if a collective script is configured; null when nothing to do. */
     private function ensureStandaloneCategoryTable(): ?array
     {
         if (
@@ -243,16 +190,7 @@ class SchemaMigrator
 
     // ── Media gallery: media_table ──────────────────────────────────────────
 
-    /**
-     * Creates the media table (Admin -> Media, TODO.md item "4. UI - Create
-     * an Image/File Manager") when a table name is configured and it doesn't
-     * already exist. Unlike standalone_category_table, this applies to every
-     * installation regardless of collective_script — the Media gallery isn't
-     * tied to categories integration. Returns null (no-op) when no table
-     * name is configured (installations that predate this feature and
-     * haven't set media_table in blog-config.php) or the table already
-     * exists.
-     */
+    /** Creates the media table for every install (regardless of collective_script); null when unconfigured or present. */
     private function ensureMediaTable(): ?array
     {
         if (
@@ -288,7 +226,7 @@ class SchemaMigrator
         ];
     }
 
-    // ── Event log: log_table (FP-46) ────────────────────────────────────────
+    // ── Event log: log_table ────────────────────────────────────────
 
     /** Creates the admin event log table; a no-op when unconfigured or already present. */
     private function ensureLogTable(): ?array
@@ -327,14 +265,8 @@ class SchemaMigrator
     // ── engine/charset migration ────────────────────────────────────────────
 
     /**
-     * Every table this class knows how to migrate, with the text columns
-     * to scan for mis-encoded UTF-8 and the exact binary-intermediate
-     * MODIFY statements to use for each if found. collective_table is
-     * only included in standalone mode ($collectiveScriptConfigured ===
-     * false) — in integrated mode that table belongs to the external
-     * collective script, not to FanUpdate, so altering its engine/charset
-     * is out of scope. standalone_category_table is only included when a
-     * name is actually configured.
+     * Every migratable table, with the text columns to scan for mis-encoded
+     * UTF-8 and the binary-intermediate MODIFY statements to use if found.
      *
      * @return list<array{table: string, textColumns: list<string>, reinterpretSql: list<string>}>
      */
@@ -371,9 +303,7 @@ class SchemaMigrator
             ];
         }
 
-        // No text columns (entry_id/cat_id/collective_id are all integers)
-        // — no mis-encoding risk possible, so no reinterpret path is
-        // needed; the safe combined CONVERT path handles it unconditionally.
+        // Integer columns only: no mis-encoding risk, so plain CONVERT suffices.
         $defs[] = ['table' => $this->catjoinTable, 'textColumns' => [], 'reinterpretSql' => []];
 
         $defs[] = [
@@ -451,17 +381,10 @@ class SchemaMigrator
     }
 
     /**
-     * Convert $table to ENGINE=InnoDB and utf8mb4 in one combined ALTER
-     * TABLE (both trigger a full table rebuild on their own, so combining
-     * avoids rebuilding twice), skipping whichever half is already done.
-     * Returns null (no-op, no message needed) when $table doesn't exist
-     * on this installation, or is already InnoDB/utf8mb4.
-     *
-     * When mis-encoded UTF-8 is detected in $textColumns (see
-     * tableHasMisEncodedUtf8()), uses $reinterpretSql instead of a plain
-     * CONVERT — reinterprets the existing bytes rather than transcoding
-     * them, since transcoding already-UTF-8 bytes a second time produces
-     * mojibake.
+     * Converts $table to InnoDB/utf8mb4 in one ALTER (skipping whichever
+     * half is done); null if missing or already converted. When mis-encoded
+     * UTF-8 is detected, $reinterpretSql reinterprets the bytes instead,
+     * since transcoding them again would produce mojibake.
      *
      * @param list<string> $textColumns
      * @param list<string> $reinterpretSql
@@ -496,9 +419,8 @@ class SchemaMigrator
                 }
             }
 
-            // FULLTEXT indexes block the VARBINARY/BLOB step (error 1283), so
-            // drop them in the first ALTER and re-add them in the last; each
-            // ALTER stays all-or-nothing.
+            // FULLTEXT indexes block the VARBINARY/BLOB step (error 1283): drop
+            // them in the first ALTER, re-add in the last.
             $fulltext   = $this->fulltextIndexes($table);
             $lastClause = count($reinterpretSql) - 1;
 
@@ -520,10 +442,8 @@ class SchemaMigrator
                 }
             }
 
-            // The MODIFYs leave the table's own default charset at latin1 (so
-            // it would keep reporting as pending) and the columns on the
-            // server's default utf8mb4 collation. Columns are already
-            // utf8mb4, so this changes no bytes.
+            // The MODIFYs leave the table default at latin1 (it would stay "pending");
+            // columns are already utf8mb4, so this changes no bytes.
             if (!$this->db->Execute('ALTER TABLE `' . $table . '` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci')) {
                 return ['table' => $table, 'ok' => false, 'message' => 'Table ' . $table . ' could not be finalised as utf8mb4.'];
             }
@@ -581,16 +501,10 @@ class SchemaMigrator
     }
 
     /**
-     * Scan up to $limit rows of $table's $columns for a value that is
-     * both non-ASCII and valid UTF-8 — the signature of content that was
-     * written into a latin1-declared column by a connection that was
-     * actually sending UTF-8 (a common legacy-mysqli-era mistake; genuine
-     * latin1 text with high-byte characters essentially never
-     * coincidentally forms valid multi-byte UTF-8 sequences). Returns
-     * false — safe to convert with a plain CONVERT TO CHARACTER SET —
-     * when no such value is found, whether because the table is empty,
-     * its content is plain ASCII, or any high-byte content present is
-     * genuinely non-UTF-8.
+     * Scans up to $limit rows for a value that is both non-ASCII and valid
+     * UTF-8: the signature of UTF-8 written into a latin1 column (genuine
+     * latin1 almost never forms valid multi-byte sequences). False means a
+     * plain CONVERT is safe.
      *
      * @param list<string> $columns
      */
@@ -600,9 +514,8 @@ class SchemaMigrator
             return false;
         }
 
-        // CAST ... AS BINARY returns the stored bytes; a plain SELECT would
-        // let the connection's charset convert latin1 to valid UTF-8 and
-        // hide the very difference being tested for.
+        // CAST AS BINARY reads the stored bytes; a plain SELECT would convert
+        // latin1 to UTF-8 and hide what is being tested for.
         $colList = implode(', ', array_map(static fn (string $c): string => 'CAST(`' . $c . '` AS BINARY) AS `' . $c . '`', $columns));
         $query   = 'SELECT ' . $colList . ' FROM `' . $table . '` LIMIT ' . $limit;
 

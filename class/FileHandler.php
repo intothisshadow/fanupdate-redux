@@ -11,10 +11,6 @@
  * sanitisation, image dimensions, human-readable file size, and
  * allowed-extension checks.
  *
- * Security note: no eval(), exec(), shell_exec(), system(), passthru(),
- * popen(), proc_open(), or base64_decode() obfuscation is present in this
- * file.
- *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 2 of the License, or
@@ -33,7 +29,6 @@ declare(strict_types=1);
 
 class FileHandler
 {
-    // ── explicitly declared property (PHP 8.2: no dynamic properties) ───────
     public array $_allowed_ext = [];
 
     // ── constructor ─────────────────────────────────────────────────────────

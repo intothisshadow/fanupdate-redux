@@ -3,21 +3,15 @@
 /*****************************************************************************
  * FanUpdate — admin/media.php
  *
- * Media gallery (TODO.md item "4. UI - Create an Image/File Manager"):
- * browse every image uploaded through the WYSIWYG editor's "insert image"
- * button (admin/upload.php), delete one or several (checkbox select + confirm step), and — via the JSON ?action=list
- * endpoint below — supply the "choose existing image" picker in the
- * WYSIWYG toolbar (assets/js/fanupdate-admin.js) with paginated results.
- * Delegates storage/business logic to MediaService/MediaRepository; this
- * page only parses/sanitises $_GET/$_POST, enforces CSRF, and renders.
+ * Media gallery: browse images uploaded through admin/upload.php, delete one
+ * or several (select + confirm), and, via the JSON ?action=list endpoint,
+ * feed the WYSIWYG "choose existing image" picker. Delegates to
+ * MediaService; this page sanitises input, enforces CSRF and renders.
  *
- * Deletion has no "is this image still referenced by a post?" check —
- * deliberately: scanning every post body for a URL match can't use an
- * index and doesn't scale to the "tens of thousands of images" performance
- * target this feature was built against (see CLAUDE.md's Performance
- * section). A post that already embedded a deleted image simply ends up
- * with a broken <img> src, same as manually deleting a file from
- * uploads/images/ always could.
+ * Deletion deliberately doesn't check whether a post still references the
+ * image: scanning post bodies can't use an index and wouldn't scale to tens
+ * of thousands of images. A deleted image leaves a broken <img>, as removing
+ * the file by hand always did.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by

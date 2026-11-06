@@ -6,35 +6,22 @@ declare(strict_types=1);
  *
  * Copyright (c) 2026 by Ariane (contributor)
  *
- * FP-22 — Emergency admin password reset. Run this directly in a browser — no login
- * required — when the admin password is lost and admin/account.php (which
- * requires the current password to change it) is out of reach.
+ * Emergency admin password reset: run it in a browser, without logging in,
+ * when the password is lost and admin/account.php (which needs the current
+ * password) is out of reach.
  *
- * Trust model: identical to install.php. Reading blog-config.php's database
- * credentials to connect and writing a new admin_password hash IS the
- * authentication here — anyone who can reach this file already has
- * filesystem access next to blog-config.php (FTP/file manager), which means
- * full control of the installation regardless. There is no separate
- * identity check to perform. The IP rate limiter below (same mechanism as
- * the login form, separate lockout store) only slows down someone probing
- * this file's URL who does NOT have that access.
+ * Trust model is the same as install.php: reaching this file implies
+ * filesystem access next to blog-config.php, which already means full
+ * control, so there is no separate identity check. The IP rate limiter only
+ * slows down probing by someone without that access.
  *
- * Pre-existing-row vs. no-row: admin_username/admin_password are options
- * table rows (see AccountRepository) on every install built after admin
- * credentials moved into the database (see docs/CHANGELOG.md's "Admin
- * credentials moved from blog-config.php into the database" entry) — the
- * normal case, handled with a plain UPDATE via AccountRepository, exactly
- * like admin/account.php's own password change. An install that predates
- * that change may never have had those rows written at all (credentials
- * used to live directly in blog-config.php, which FanUpdate::login() no
- * longer reads). An UPDATE against a row that doesn't exist matches zero
- * rows and returns success with nothing actually changed — so that case is
- * detected explicitly up front and handled with an INSERT of both rows
- * instead, asking for a username as well as a password.
+ * Admin credentials are options rows (see AccountRepository), normally
+ * updated in place. An old install may have no such rows, and an UPDATE
+ * against a missing row silently changes nothing, so that case is detected
+ * up front and both rows are INSERTed (asking for a username too).
  *
- * Like install.php, this file deletes itself after a successful reset so it
- * does not sit on the server as a standing, unauthenticated way to overwrite
- * the admin password.
+ * Like install.php, the file deletes itself after a successful reset so it
+ * never remains as an unauthenticated way to overwrite the password.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by

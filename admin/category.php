@@ -2,18 +2,12 @@
 /*****************************************************************************
  * FanUpdate — admin/category.php
  *
- * Category CRUD and listing. As of Categories Support (hybrid), standalone
- * (FanUpdate-managed) and collective-sourced (synced from an external
- * collective script) categories coexist in the same list rather than being
- * mutually exclusive modes — see CategoryService's class docblock for the
- * full business rule. Delegates persistence to CategoryService/
- * CategoryRepository; this page only parses/sanitises $_POST and $_GET,
- * enforces CSRF, and renders.
+ * Category CRUD and listing. Standalone and collective-sourced categories
+ * share one list (see CategoryService for the rules). Delegates persistence
+ * to CategoryService; this page sanitises input, enforces CSRF and renders.
  *
  * $hybridMode (a collective script is configured) controls whether the
- * "Source" column/badges are shown at all — a plain standalone
- * installation (collective_script = 'n') never had a source distinction
- * to show and its list is rendered exactly as before.
+ * "Source" column and badges are shown.
  ******************************************************************************/
 
 declare(strict_types=1);
@@ -28,12 +22,7 @@ $fu = FanUpdate::instance();
 $fu->addOptFromDb();
 $fu->login();
 
-// A collective script is configured whenever hasCollectiveScript() is true
-// (collective_script is stored as a descriptive identifier — "none",
-// "enthusiast", etc. — see TODO.md's Database Architecture item; "none"
-// means standalone). This page doesn't need to know which script it is,
-// only whether one exists; $collectiveScript (the raw descriptive value)
-// is kept for fanupdate_category_source_label()'s use below.
+// Only whether a script exists matters here; the raw value feeds fanupdate_category_source_label().
 $collectiveScript = (string) $fu->getOpt('collective_script', true);
 $hybridMode       = $fu->hasCollectiveScript();
 $standaloneTable  = $hybridMode ? ((string) $fu->getOpt('standalone_category_table') ?: null) : null;
@@ -50,11 +39,8 @@ $categoryService = new CategoryService(new CategoryRepository(
 ));
 
 /**
- * Human-readable label for a category's source, for the list's "Source"
- * column and the edit form's read-only notice. Falls back to a generic
- * "Collective" label for an unrecognised collective_script shorthand
- * rather than guessing — see the pending shorthand-to-descriptive-string
- * rename noted above.
+ * Label for a category's source (list column and edit notice); a generic
+ * "Collective" for an unrecognised collective_script.
  */
 function fanupdate_category_source_label(bool $isStandalone, mixed $collectiveScript): string
 {
@@ -92,9 +78,6 @@ if (isset($_POST['action']) && !$fu->verifyCsrfOrFail()) {
 
     if ($_POST['action'] === 'add') {
 
-        // Always creates a standalone category now, regardless of whether
-        // a collective script is configured — see CategoryService's class
-        // docblock.
         $result = $categoryService->createCategory($clean);
 
         if ($result['standalone_insert_ok'] === false) {
@@ -120,10 +103,7 @@ if (isset($_POST['action']) && !$fu->verifyCsrfOrFail()) {
 
     } elseif ($_POST['action'] === 'delete' && $clean['cat_id'] !== null) {
 
-        // deleteCategory() itself refuses (returns false, touches nothing)
-        // for a collective-sourced category — see CategoryService's class
-        // docblock. Surface a clearer message for that case than the
-        // generic failure one.
+        // deleteCategory() refuses collective categories; show a clearer message for that.
         if ($categoryService->deleteCategory($clean['cat_id'])) {
             $fu->logEvent(LogService::CATEGORY_CHANGED, 'Category #' . $clean['cat_id'] . ' deleted.');
             $fu->addSuccess('Category deleted.');
@@ -135,11 +115,7 @@ if (isset($_POST['action']) && !$fu->verifyCsrfOrFail()) {
 
     } elseif ($_POST['action'] === 'confirm-delete-orphan' && isset($_POST['orphan_cat_id'])) {
 
-        // Integrated Mode (Fanatically/Enthusiast/Listing Admin): the admin
-        // has reviewed the "deleted upstream" notice below and explicitly
-        // confirmed removing this category's FanUpdate-side settings row.
-        // confirmDeleteOrphanedCategory() re-checks the category is
-        // genuinely orphaned before touching anything.
+        // The admin confirmed removing this settings row; the service re-checks it is orphaned.
         $orphanCatId = (int) $_POST['orphan_cat_id'];
 
         if ($categoryService->confirmDeleteOrphanedCategory($orphanCatId)) {
@@ -150,15 +126,8 @@ if (isset($_POST['action']) && !$fu->verifyCsrfOrFail()) {
     }
 }
 
-// Integrated Mode (Fanatically/Enthusiast/Listing Admin): categories
-// synced from the collective script are always listed live (listAll()/
-// listForDropdown() query the collective table directly), so the only
-// thing that can go stale is a settings row left behind for a category
-// deleted upstream. Checked on every load of this page — one indexed
-// LEFT JOIN, same "cheap enough for every page load" bar as the Dashboard's
-// other notices — and surfaced below so the admin can review and confirm
-// removal, per TODO.md's "notify the user and request confirmation before
-// deleting the corresponding category in FanUpdate" requirement.
+// Collective categories are listed live, so the only stale data is a settings
+// row left for a category deleted upstream; surfaced below for confirmation.
 $orphanedCategoryIds = $hybridMode ? $categoryService->listOrphanedCollectiveCategoryIds() : [];
 
 // Load for edit
@@ -176,8 +145,6 @@ if (isset($_GET['id']) && is_numeric($_GET['id'])) {
     }
 } elseif (isset($_GET['action']) && $_GET['action'] === 'new') {
     $showform = true;
-    // New categories are always standalone — see CategoryService's class
-    // docblock.
     $isStandaloneCategory = true;
 }
 

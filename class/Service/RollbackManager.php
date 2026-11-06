@@ -5,52 +5,25 @@ declare(strict_types=1);
 /*****************************************************************************
  * FanUpdate — RollbackManager
  *
- * Restores a previously created BackupManager archive over the live
- * installation. Part of the Admin Update Manager's Rollback System (see
- * TODO.md) — runs entirely in PHP with no shell/Composer/Git dependency,
- * per the shared-hosting assumptions in TODO.md's "Update System
- * Assumptions".
+ * Restores a BackupManager archive over the live installation, in pure PHP.
+ * rollbackTo() runs, in order:
+ *  1. Validate the archive exists and passes ZipArchive::CHECKCONS.
+ *  2. Enable maintenance mode (same flag file as InstallManager).
+ *  3. Extract to staging, rejecting Zip Slip / absolute / traversal names.
+ *     Backups have no wrapper folder, so there is no root detection.
+ *  4. Copy files back, skipping InstallManager's preserved paths (defence in
+ *     depth; backups never contain them).
+ *  5. Reset OPcache, disable maintenance mode, delete staging (always).
  *
- * rollbackTo() does, in order:
- *  1. Validate the backup archive exists and passes ZIP integrity
- *     validation (ZipArchive::CHECKCONS).
- *  2. Enable maintenance mode (the same flag file InstallManager uses —
- *     see its class docblock for why this is a simple flag rather than a
- *     full public-facing takeover).
- *  3. Extract it into a scratch staging directory, validating every entry
- *     name against Zip Slip / absolute-path / traversal attacks first.
- *     Unlike InstallManager there is no wrapping-root-folder detection to
- *     do — BackupManager always writes paths relative to the install
- *     directory's own top level, with no extra wrapper.
- *  4. Copy every file back over the live installation, skipping the same
- *     preserved paths InstallManager does (uploads/, blog-config.php,
- *     fu-update-tmp/, fu-backups/, .git/, data/) — a backup never
- *     contains these anyway (BackupManager excludes them when creating
- *     one), but the check stays as defence in depth.
- *  5. Reset OPcache, then disable maintenance mode and delete the staging
- *     directory (always, even on failure, via a `finally` block).
+ * This deliberately duplicates some of InstallManager's logic: each ZIP
+ * service owns its own small integrity/path helpers, and restore differs
+ * enough from install that a shared base class would add more coupling than
+ * it saves.
  *
- * This intentionally duplicates a good part of InstallManager's
- * extraction/validation/copy/maintenance-mode logic rather than sharing a
- * base class — each Zip-handling service in this codebase (DownloadManager,
- * BackupManager, InstallManager) already owns its own small ZIP-integrity
- * and path-safety helpers rather than factoring out a shared one, and a
- * restore-from-backup operation is different enough from an install
- * (no wrapper-folder detection, different structural guarantees about
- * what the archive contains) that sharing a base class would trade a
- * small amount of duplication for a more tangled inheritance relationship.
- *
- * After a successful restore, this also overwrites InstallManager's file
- * manifest (InstallManager::MANIFEST_FILENAME) with the restored file
- * list — see InstallManager's class docblock for the full "Remove
- * obsolete files" rationale. Without this, a rollback followed by a
- * later install could leave the manifest describing a version that's no
- * longer actually on disk, which wouldn't cause anything unsafe (it can
- * only make a later obsolete-file check under-delete a stale leftover,
- * never delete something it shouldn't), but is worth avoiding anyway.
- * RollbackManager itself does not remove obsolete files — that's scoped
- * to InstallManager only, since "restore exactly what was backed up" is
- * rollback's whole point, not "also clean up anything not in it".
+ * After a restore the InstallManager manifest is overwritten with the
+ * restored file list, so a later install doesn't compare against a version
+ * no longer on disk. Rollback never removes obsolete files; it restores
+ * exactly what was backed up.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -76,16 +49,11 @@ class RollbackManager
     private array $preserve;
 
     /**
-     * @param string $installDir The live installation directory to restore into.
-     * @param string $stagingDir Scratch directory the backup is extracted
-     *        into; created (recursively) on first use and deleted again
-     *        once the rollback completes (successfully or not).
-     * @param string $maintenanceFlagPath Path to the maintenance-mode flag
-     *        file, typically "{install_path}/.fu-maintenance" — the same
-     *        one InstallManager uses.
-     * @param array<int, string>|null $preserve Top-level names under
-     *        $installDir that are never overwritten. Defaults to
-     *        self::DEFAULT_PRESERVE.
+     * @param string $installDir Live installation directory to restore into.
+     * @param string $stagingDir Scratch extraction directory; deleted after every rollback.
+     * @param string $maintenanceFlagPath Maintenance flag file (shared with InstallManager).
+     * @param array<int, string>|null $preserve Top-level names never overwritten
+     *        (defaults to DEFAULT_PRESERVE).
      */
     public function __construct(
         private readonly string $installDir,
@@ -97,15 +65,11 @@ class RollbackManager
     }
 
     /**
-     * Restore a backup archive (as produced by BackupManager::createBackup())
-     * over the live installation.
+     * Restores a BackupManager archive over the live installation.
      *
-     * @param callable(string, int, int): void|null $onProgress Called at
-     *        each phase boundary as (message, stepNumber, totalSteps) —
-     *        same contract as InstallManager::installUpdate()'s.
-     * @throws \RuntimeException on a missing/invalid archive, an unsafe
-     *         entry name, an archive that doesn't look like a FanUpdate
-     *         Redux installation, or an I/O failure while copying.
+     * @param callable(string, int, int): void|null $onProgress Same contract as
+     *        InstallManager::installUpdate().
+     * @throws \RuntimeException on a bad archive, unsafe entry name, non-installation tree, or I/O failure.
      */
     public function rollbackTo(string $backupPath, string $version, ?callable $onProgress = null): RollbackResult
     {
@@ -157,7 +121,7 @@ class RollbackManager
         }
     }
 
-    /** Invoke $onProgress if one was given — a nullable callable can't be called via the `?->` operator, so this is the null check instead. */
+    /** Calls $onProgress if given (a nullable callable can't use `?->`). */
     private function notifyProgress(?callable $onProgress, string $message, int $step, int $total): void
     {
         if ($onProgress !== null) {
@@ -166,8 +130,7 @@ class RollbackManager
     }
 
     // ── maintenance mode ─────────────────────────────────────────────────────
-    // Same flag file InstallManager uses; see that class's docblock for why
-    // this is a simple flag rather than a full public-facing takeover.
+    // Same flag file as InstallManager.
 
     public function enableMaintenanceMode(): void
     {
@@ -198,12 +161,10 @@ class RollbackManager
     }
 
     /**
-     * Extract $backupPath into $this->stagingDir, validating every entry
-     * name first, then confirm the result looks like a real installation.
+     * Validates entry names, extracts into staging, and checks the result
+     * looks like an installation.
      *
-     * @throws \RuntimeException on an unsafe entry name, an unopenable
-     *         archive, or a tree that doesn't look like a FanUpdate Redux
-     *         installation.
+     * @throws \RuntimeException on an unsafe name, unopenable archive, or non-installation tree.
      */
     private function extractAndValidate(string $backupPath): void
     {
@@ -239,10 +200,7 @@ class RollbackManager
         }
     }
 
-    /**
-     * Reject Zip Slip / absolute-path / directory-traversal entry names
-     * before anything is extracted.
-     */
+    /** Rejects Zip Slip, absolute-path and traversal entry names. */
     private function assertSafeEntryName(string $name): void
     {
         if ($name === '' || str_starts_with($name, '/') || str_starts_with($name, '\\')) {
@@ -278,11 +236,9 @@ class RollbackManager
     // ── file installation ────────────────────────────────────────────────────
 
     /**
-     * Copy every file from the staging directory into $this->installDir,
-     * skipping preserved paths.
+     * Copies every non-preserved file from staging into the install.
      *
-     * @return array<int, string> Relative path of every file copied —
-     *         becomes the new InstallManager file manifest.
+     * @return array<int, string> Relative paths copied (the new manifest).
      */
     private function installFiles(): array
     {
@@ -324,8 +280,7 @@ class RollbackManager
     }
 
     /**
-     * Overwrite InstallManager's file manifest with the file list this
-     * restore just wrote — see the class docblock for why.
+     * Overwrites InstallManager's manifest with the restored file list.
      *
      * @param array<int, string> $manifest
      */

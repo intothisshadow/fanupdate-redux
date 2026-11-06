@@ -5,13 +5,9 @@ declare(strict_types=1);
 /*****************************************************************************
  * FanUpdate — NewsFeedRepository
  *
- * Data access for the Dashboard "FanUpdate Redux News" widget's (FP-23)
- * cache, stored as a single JSON blob under a private key in the options
- * table (see NewsFeedRepositoryInterface for why). The table name is
- * injected via the constructor rather than read from FanUpdate::getOpt()
- * internally, so this class has no dependency on the FanUpdate singleton
- * and can be constructed with a mock SqlConnection in a unit test — same
- * pattern as UpdateRepository/OptionRepository.
+ * Data access for the Dashboard news widget's cache (a JSON blob under a
+ * private options key; see NewsFeedRepositoryInterface). The table name is
+ * injected, so the class is testable with a mock SqlConnection.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by

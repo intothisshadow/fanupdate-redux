@@ -1253,13 +1253,9 @@ div#fanupdate textarea {
 
 /* ── Release notes (rendered Markdown — Admin → Updates) ────────────────── */
 /*
- * Styles the GitHub Flavored Markdown output of ReleaseNotesRenderer
- * (TODO.md item "8. Implement Full Markdown Rendering for GitHub Release
- * Notes"). Headers/paragraphs/lists/code/tables already inherit sensible
- * defaults from the base rules above — this section only adds what isn't
- * covered elsewhere: task-list checkboxes, blockquotes, and a couple of
- * spacing tweaks so nested elements don't look cramped inside the scrolling
- * release-notes panel.
+ * Styles ReleaseNotesRenderer's Markdown output. Base rules cover most
+ * elements; this adds task-list checkboxes, blockquotes and spacing tweaks
+ * for the scrolling release-notes panel.
  */
 
 .fu-release-notes h1,

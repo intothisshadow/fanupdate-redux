@@ -1,6 +1,6 @@
 <?php
 /*****************************************************************************
- * FanUpdate — admin/logs.php (FP-46)
+ * FanUpdate — admin/logs.php
  *
  * Two tabs: "Activity" (the database-backed admin event log, filterable and
  * paginated) and "Errors" (the file-based PHP error log, newest first).

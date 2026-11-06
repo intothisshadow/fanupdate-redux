@@ -7,53 +7,21 @@
  * Copyright (c) 2020 Ekaterina (contributor) http://scripts.robotess.net
  * Copyright (c) 2026 modernised for current browsers
  *
- * Modernisation summary (vs. original 2005–2007 code):
- *  - Replaced Dean Edwards' addEvent/handleEvent/removeEvent IE-compat shim
- *    with native addEventListener / removeEventListener.
- *  - Replaced getXmlHttpObject() + XMLHttpRequest-based makeRequest() with
- *    the Fetch API (fetch()).
- *  - Deleted getXmlHttpObject() entirely (was only an IE ActiveXObject fallback).
- *  - Replaced createElement() XHTML-namespace helper with document.createElement().
- *  - Replaced getEventTarget() quirksmode shim with e.target (standard since IE9).
- *  - All var → const / let.
- *  - Eliminated global variable leaks (el, top, input, url, datDate1, etc.).
- *  - css.getElementsByClass() uses querySelectorAll() internally (this
- *    utility object still traces back to Neil Crosby's standardista-
- *    table-sorting.js, MIT 2006 — see its own docblock below — even though
- *    the table-sorting code itself has since been replaced; see next line).
- *  - css.addClassToElement() / removeClassFromElement() use classList.
- *  - Standardista's table-sorting code (the actual sort/zebra logic, not
- *    the css utility object above) replaced with Tablesort — see
- *    docs/CHANGELOG.md.
+ * Modernised from the original 2005–2007 code (native events and fetch(), no
+ * IE shims). The `css` utility object still traces back to Neil Crosby's
+ * standardista-table-sorting.js (MIT, 2006); table sorting itself is Tablesort.
  *
- * WYSIWYG toolbar (wysiwygButton()/makeWysiwyg()/formatText()/insertLink())
- * removed: it was shared infrastructure for admin/blog.php's post editor
- * (superseded by TinyMCE — TODO.md item "FP-18. Implement TinyMCE Editor",
- * see assets/js/fanupdate-tinymce.js) and the public comment form's
- * bold/italic/link toolbar (assets/js/fanupdate-comment-submit.js, removed
- * per a direct request — the comment form is now a plain <textarea>).
- * Confirmed via a full-codebase search that neither caller remained before
- * deleting.
+ * Lightbox: fuLightboxInit() wires every <a class="fu-lightbox"> to a
+ * full-screen overlay (#fu-lightbox-overlay, created once and reused).
+ * Escape or a click outside the image closes it; arrow keys and Prev/Next
+ * buttons step through the images in the same .fu-entry (hidden for a single
+ * image). Scoped styles are injected into <head> so it works on public pages
+ * without the admin stylesheet. Called by FanUpdate::printBlog() after posts
+ * render.
  *
- * Lightbox:
- *  - fuLightboxInit(): scans document for <a class="fu-lightbox"> elements and
- *    wires a click handler that opens a full-screen overlay displaying the
- *    linked full-size image. The overlay (#fu-lightbox-overlay) is created once
- *    and reused. Keyboard: Escape closes; click outside the image closes;
- *    Left/Right arrow keys step to the previous/next image when the clicked
- *    image's nearest .fu-entry ancestor contains more than one fu-lightbox
- *    link (Prev/Next buttons do the same, hidden entirely for single-image
- *    entries). Self-contained scoped styles are injected into <head> on first
- *    call so the
- *    lightbox works on public pages without the admin stylesheet being loaded.
- *    Called by FanUpdate::printBlog() via an inline <script> after posts are
- *    rendered, mirroring the pattern used for the comment form scripts.
- *    Bug fix: overlay.style.display is set to 'none' immediately on creation
- *    so it is always hidden until explicitly opened, regardless of whether the
- *    admin stylesheet (which supplies display:flex via .fu-lb-visible) is loaded.
- *    Without this inline 'none', the injected CSS rule display:flex made the
- *    overlay a full-screen transparent layer covering the page from load time,
- *    intercepting mouse events and showing a zoom-out cursor over all content.
+ * The overlay is set to display:none inline on creation: otherwise the
+ * injected display:flex rule would cover the page from load, intercepting
+ * mouse events.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -273,16 +241,11 @@ window.addEventListener('load', () => {
 // ── Date-format preset dropdown ──────────────────────────────────────────────
 
 /**
- * FP-21 — the 'date_format' option's <select> (admin/options.php's Main list and
- * install.php's fresh-install form — see FU_DATE_FORMAT_OPTION_KEY in
- * functions.php) is a preset picker only; it carries no `name` and never
- * submits. The actual submitted value always comes from the paired text
- * input named in data-target, which stays hidden — same self-contained
- * single-control look as the timezone dropdown above, no redundant "here's
- * what you picked" field shown underneath — unless "Custom..." (value
- * '__custom__' — must match FU_DATE_FORMAT_CUSTOM_VALUE in functions.php)
- * is selected, which reveals it for free-text entry. Choosing a preset
- * copies its value into the input and makes it read-only again.
+ * The date_format <select> (admin/options.php, install.php) is a preset picker
+ * only and never submits. The value comes from the paired text input named in
+ * data-target, hidden unless "Custom..." ('__custom__', matching
+ * FU_DATE_FORMAT_CUSTOM_VALUE in functions.php) is selected. Choosing a preset
+ * copies it into the input and makes it read-only again.
  */
 window.addEventListener('load', () => {
     document.querySelectorAll('.fu-date-format-select').forEach(function (select) {
@@ -683,11 +646,8 @@ function fuLightboxInit() {
 
             fuLbUpdateImage();
 
-            // Lock body scroll while the overlay is open. On long pages this
-            // also sidesteps a mobile-browser quirk where a scrollable
-            // document behind a position:fixed overlay lets the layout
-            // viewport used to size that overlay drift out of sync with the
-            // visual viewport, leaving the centered image rendered off-screen.
+            // Lock body scroll; on mobile a scrollable page behind a fixed overlay can
+            // desync the layout and visual viewports, pushing the image off-screen.
             const scrollY = window.scrollY;
             document.body.style.position = 'fixed';
             document.body.style.top = `-${scrollY}px`;
@@ -705,11 +665,8 @@ function fuLightboxInit() {
 
 // ── Sortable admin tables (Tablesort) ────────────────────────────────────────
 /**
- * Replaces the previous hand-maintained Standardista Table Sorting code
- * (2006, Neil Crosby) with Tablesort (vendored:
- * assets/vendor/tablesort/tablesort.js, loaded before this file — see
- * admin/header.php) — see docs/CHANGELOG.md for why (a real date-sorting
- * bug plus missing aria-sort/keyboard accessibility).
+ * Uses the vendored Tablesort (assets/vendor/tablesort/tablesort.js, loaded
+ * before this file by admin/header.php).
  *
  * Tablesort itself handles click/Enter-key sort triggers, aria-sort,
  * role="columnheader", data-sort-method="none" columns, and the data-sort

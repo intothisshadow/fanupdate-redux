@@ -21,7 +21,6 @@ declare(strict_types=1);
 
 class FanUpdate_Comment
 {
-    // ── explicitly declared properties (PHP 8.2: no dynamic properties) ────
     public array     $params = [];
     public FanUpdate $fu;
 
@@ -122,11 +121,7 @@ class FanUpdate_Comment
         return (string) ($this->params['added'] ?? '');
     }
 
-    /**
-     * Return the date formatted for display, adjusted to the admin's
-     * configured IANA timezone — see FanUpdate_Post::getDateFormatted() for
-     * full explanation (FP-19).
-     */
+    /** Formats the date in the admin's configured timezone (see FanUpdate_Post::getDateFormatted()). */
     public function getDateFormatted(string $format = ''): string
     {
         if ($format === '') {
@@ -245,11 +240,8 @@ class FanUpdate_Comment
         $template = str_replace('{{date}}', $this->getDateFormatted(), $template);
         $template = str_replace('{{body}}', $this->getBodyFormatted(), $template);
 
-        // "fu-comment" follows the fu- prefix convention used elsewhere
-        // (fu-entry, fu-lightbox); "comment" is kept alongside it
-        // permanently for backward compatibility — unlike entry_template,
-        // this wrapper isn't DB-configurable, so every existing skin's
-        // `div.comment`/`.comment` CSS must keep matching forever.
+        // Keep "comment" alongside "fu-comment": this wrapper isn't DB-configurable,
+        // so existing skins' `.comment` CSS must keep matching.
         echo '<div id="comment' . $this->getID() . '" class="comment fu-comment">' . "\n";
         echo $template . "\n";
         echo "</div>\n";

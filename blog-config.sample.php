@@ -67,21 +67,13 @@ $fanupdate['dbpass']		= 'pass';
 // Otherwise, leave this as FanUpdate's own categories table name (created
 // automatically on fresh install) or enter a custom one.
 //
-// Separate-database support (TODO.md's Database Architecture item): if your
-// collective script's database lives in a different database/schema than
-// this one (common on shared hosting, which usually gives you one MySQL
-// server but a small quota of separate databases), you can schema-qualify
-// this value instead of moving everything into one database, e.g.:
+// Separate-database support: if your collective script lives in a different
+// database on the SAME MySQL server, schema-qualify the table, e.g.:
 //   $fanupdate['collective_table'] = 'enthusiast_db.owned';
-// This only works when both databases are on the SAME MySQL server, and the
-// dbuser above must be GRANTed privileges on that other database too (ask
-// your host, or set it up yourself if you manage the server) — FanUpdate
-// connects once, using the credentials above, and simply qualifies this one
-// table reference; it does not open a second connection. dbhost/dbname/
-// dbuser/dbpass above always describe FanUpdate's OWN database — only this
-// one setting (the externally-owned collective table) can point elsewhere.
-// This value is also freely editable later from Admin -> Options ->
-// Collective Source, same as collective_script/col_id/col_subj.
+// The dbuser above must be granted privileges on that database too.
+// FanUpdate still uses one connection, and dbhost/dbname/dbuser/dbpass always
+// describe its own database. This value is also editable later in
+// Admin -> Options -> Collective Source.
 
 $fanupdate['collective_table']	= 'blog_category';
 

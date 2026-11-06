@@ -25,11 +25,10 @@ declare(strict_types=1);
  ******************************************************************************/
 
 // ── Spam-gate constants ───────────────────────────────────────────────────────
-// Minimum seconds between form render and form submit.
-// Real humans take at least 3 seconds; bots submit instantly.
+// Minimum seconds between form render and submit; bots submit instantly.
 define('FU_MIN_COMMENT_SECONDS', 3);
 
-// Window in seconds for the duplicate-comment check (5 minutes).
+// Duplicate-comment window (5 minutes).
 define('FU_DUPE_WINDOW', 5 * 60);
 
 $clean['entry'] = '';
@@ -53,12 +52,11 @@ if (isset($_POST['submit_comment'])) {
     $result_string = '';
 
     // ── SILENT BOT GATES ─────────────────────────────────────────────────────
-    // These four checks run before any DB access or user-visible error messages.
-    // On failure: produce a fake-success response so bots get no signal.
+    // Run before any DB access; failures get a fake-success response so bots get no signal.
 
     $bot_detected = false;
 
-    // 1. Honeypot — hidden field that real users never fill in
+    // 1. Honeypot: a hidden field real users never fill in
     if (!$bot_detected && !empty($_POST['fax'])) {
         $bot_detected = true;
     }
@@ -98,14 +96,12 @@ if (isset($_POST['submit_comment'])) {
     }
 
     if ($bot_detected) {
-        // Return a plausible fake-success so bots/scrapers get no signal.
         if ($_POST['submit_comment'] === 'ajax') {
             echo "<!-- SUCCESS do not remove -->\n";
             echo "<h3>Thank You</h3>\n";
             echo '<p>Thank you for your comment. In an effort to reduce spam, your comment has been held for moderation and will not appear on the site until it has been approved.</p>' . "\n";
             exit;
         }
-        // Non-AJAX: redirect back silently
         $return_url = !empty($clean['returnto']) ? $clean['returnto'] : '/';
         [$return_page] = explode('#', $return_url);
         header('Location: ' . $return_page);
@@ -124,8 +120,7 @@ if (isset($_POST['submit_comment'])) {
 
         $fu->addErr('Your comment is blank. You must have something to say!');
 
-        // an update install may be swapping files right now — reject rather
-        // than risk a request straddling old and new code mid-write
+        // An install may be swapping files; avoid a request straddling old and new code.
     } elseif ($fu->isMaintenanceModeEnabled()) {
 
         $fu->addErr('Comments are temporarily unavailable while the site is being updated. Please try again in a few minutes.');
@@ -133,9 +128,7 @@ if (isset($_POST['submit_comment'])) {
 
         $fu->addOptFromDb();
 
-        // find entry — GetRecord() executes, fetches one row, and frees the
-        // result atomically. Do NOT call NumRows() after GetRecord(); the
-        // result is already freed by then and NumRows() would return 0.
+        // GetRecord() frees the result, so NumRows() after it would return 0.
         $sql_entry = (int)$clean['entry'];
 
         $query_check = 'SELECT * FROM ' . $fu->getOpt('blog_table') . '
@@ -156,12 +149,8 @@ if (isset($_POST['submit_comment'])) {
                 // check captcha, if enabled
                 if ($fu->getOpt('captcha_on')) {
 
-                    // Set Secure + SameSite=Lax before session_start() so the
-                    // PHPSESSID cookie is sent correctly over HTTPS. Without
-                    // Secure the cookie set by captcha.php (which also calls
-                    // session_start() with these same params) won't arrive
-                    // here when the page was originally loaded over HTTP and
-                    // Firefox auto-upgraded the AJAX POST to HTTPS.
+                    // Must match captcha.php's cookie params (Secure + Lax), or the session
+                    // cookie is lost when Firefox upgrades an HTTP page's AJAX POST to HTTPS.
                     session_set_cookie_params([
                         'lifetime' => 0,
                         'path'     => '/',
@@ -178,8 +167,7 @@ if (isset($_POST['submit_comment'])) {
                         $pass_captcha = false;
                         $fu->addErr('The text you entered does not match the captcha image. Please try again.');
                     } else {
-                        // Only destroy the session on success — keeps the
-                        // session alive so the user can retry on failure.
+                        // Destroyed only on success so a failed attempt can retry.
                         setcookie(session_name(), '', time() - 36000, '/');
                         $_SESSION = [];
                         session_destroy();
@@ -190,8 +178,7 @@ if (isset($_POST['submit_comment'])) {
 
                     $pass_blacklist = true;
 
-                    // check whole comment against blacklist
-                    // normalize to lower case
+                    // Blacklist check runs on the whole comment, lower-cased.
                     $test_comment = strtolower($clean['name'] . ' ' . $clean['email'] . ' ' . $clean['url'] . ' ' . $clean['comment']);
 
                     $query_check = 'SELECT * FROM ' . $fu->getOpt('blacklist_table');
@@ -303,15 +290,12 @@ if (isset($_POST['submit_comment'])) {
                         $clean['comment'] = str_replace('[Q]', '<blockquote>', $clean['comment']);
                         $clean['comment'] = str_replace('[/Q]', '</blockquote>', $clean['comment']);
 
-                        // Require that bbcode links be valid URLS -- no XSS -- thanks for the heads up, Jem!
+                        // BBCode links must be valid absolute URLs (prevents XSS).
                         $clean['comment'] = preg_replace("!\[URL=([\w]+?://[\w#$%&~/.\-;:=,?@\[\]+]+)](.*?)\[/URL]!", "<a href=\"\\1\">\\2</a>", $clean['comment']);
                         $clean['comment'] = preg_replace("!\[URL]([\w]+?://[\w#$%&~/.\-;:=,?@\[\]+]+)\[/URL]!", "<a href=\"\\1\">\\1</a>", $clean['comment']);
 
-                        // Notes:
-                        //  secure   = true   — site is HTTPS-only
-                        //  httponly = false  — must stay JS-readable so the comment form can pre-fill
-                        //                      name/email/url fields on return visits
-                        //  samesite = Lax    — Lax not Strict: Strict would break cross-page remembrance
+                        // Cookie flags: httponly is off so JS can pre-fill the comment form;
+                        // SameSite=Lax (not Strict) so it survives cross-page navigation.
 
                         if ($clean['remember_me'] === 'y') {
 
@@ -352,12 +336,8 @@ if (isset($_POST['submit_comment'])) {
 
                         $clean['comment_id'] = $fu->db->GetLastSequence();
 
-                        // ── Record this submission for duplicate and rate-limit tracking ──
-                        // Do this AFTER a successful INSERT so partial/failed attempts are
-                        // not counted. Both the dupe file and the rate limiter are updated.
-
-                        // Duplicate guard: write the hash of this comment so identical
-                        // resubmissions within FU_DUPE_WINDOW are silently discarded.
+                        // Record for dupe/rate-limit tracking only after a successful INSERT,
+                        // so failed attempts aren't counted.
                         $dupe_key  = 'fu_last_comment_' . md5($_SERVER['REMOTE_ADDR'] ?? '');
                         $dupe_file = sys_get_temp_dir() . '/' . $dupe_key . '.json';
                         file_put_contents(
@@ -366,7 +346,6 @@ if (isset($_POST['submit_comment'])) {
                             LOCK_EX
                         );
 
-                        // Rate limiter: count this successful submission.
                         if (isset($commentRateLimiter)) {
                             $commentRateLimiter->recordSubmission();
                         } else {
@@ -414,7 +393,6 @@ if (isset($_POST['submit_comment'])) {
                             $mailheaders = 'From: "FanUpdate ' . $fu->getOpt('version') . '" <' . $fu->getOpt('admin_email') . ">\r\n";
 
                             if ($points >= $fu->getOpt('points_pending_threshold', true)) {
-                                // Cast to string: getOpt() returns mixed; mail() expects string $to.
                                 @mail((string)($fu->getOpt('admin_email') ?: ''), $subject, $msg, $mailheaders);
                             }
                         }

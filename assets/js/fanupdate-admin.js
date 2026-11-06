@@ -10,30 +10,8 @@
  * Copyright (c) 2020 Ekaterina (contributor) http://scripts.robotess.net
  * Copyright (c) 2026 modernised for current browsers
  *
- * Modernisation:
- *  - var → const / let
- *  - Replaced for loop with querySelectorAll + forEach
- *  - onclick assignment → addEventListener
- *  - new Array() → array literal
- *
- * TinyMCE editor (TODO.md item "FP-18. Implement TinyMCE Editor"):
- *  - The hand-rolled WYSIWYG toolbar (myWysiwyg/wysiwygButton SVG icons,
- *    fuImageButtonClick()/fuOpenImageModal()/fuBuildImageModal()/
- *    fuUploadImage()/fuInsertImage() and friends) that used to live in this
- *    file has been removed — admin/blog.php's post-body textarea (its only
- *    caller; confirmed via a full-codebase search before deleting) is now a
- *    self-hosted TinyMCE 7 instance instead, initialised by the new
- *    assets/js/fanupdate-tinymce.js (loaded only on that page, not
- *    globally, since TinyMCE's assets have no reason to load anywhere
- *    else). See that file for the replacement image-upload/Choose Existing
- *    picker logic and docs/CHANGELOG.md for the full removal note.
- *  - fanupdate.js's makeWysiwyg()/wysiwygButton()/formatText()/insertLink()
- *    were kept alive at first (still used by the public comment form's own
- *    lightweight BBCode-ish toolbar), but that toolbar was removed shortly
- *    after per a direct request — the comment form is now a plain
- *    <textarea> (see assets/js/fanupdate-comment-submit.js) — leaving those
- *    fanupdate.js functions with no callers anywhere, so they were deleted
- *    too.
+ * The post editor is TinyMCE (assets/js/fanupdate-tinymce.js), loaded only
+ * on admin/blog.php.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -62,8 +40,7 @@ function confirmDelete(e) {
  *
  * Elements carrying [data-skip-confirm] are skipped: these are pages where a
  * dedicated server-side confirmation view already exists (see admin/blog.php
- * and admin/comment.php, Milestone 3), so a second JS-only dialog on top of
- * it would just be redundant friction.
+ * and admin/comment.php), so a second JS dialog would be redundant.
  */
 function confirmDeleteInit() {
     css.getElementsByClass(document, 'delete', '*').forEach(el => {

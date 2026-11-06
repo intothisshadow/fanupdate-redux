@@ -5,77 +5,32 @@ declare(strict_types=1);
 /*****************************************************************************
  * FanUpdate — InstallManager
  *
- * Extracts a downloaded release ZIP and installs it over the live
- * installation. Part of the Admin Update Manager's Installation Engine
- * (see TODO.md) — runs entirely in PHP with no shell/Composer/Git
- * dependency, per the shared-hosting assumptions in TODO.md's "Update
- * System Assumptions".
+ * Extracts a release ZIP and installs it over the live installation, in
+ * pure PHP (no shell/Composer/Git). installUpdate() runs, in order:
+ *  1. Enable maintenance mode.
+ *  2. Extract into a staging directory, rejecting Zip Slip / absolute /
+ *     traversal entry names before anything is written.
+ *  3. Strip a single wrapping root directory (GitHub source ZIPs have one).
+ *  4. Validate the tree looks like a FanUpdate Redux release.
+ *  5. Copy files over the install, skipping preserved paths (uploads,
+ *     backups, blog-config.php, ...).
+ *  6. Delete install.php: this flow never executes it, so its self-delete
+ *     would never run and it would reappear after every update.
+ *  7. Remove obsolete files (see below).
+ *  8. Reset OPcache.
+ *  9. Disable maintenance mode and delete staging (always, via `finally`).
  *
- * installUpdate() does, in order:
- *  1. Enable maintenance mode (a flag file — see below).
- *  2. Extract the archive into a scratch staging directory, validating
- *     every entry name against Zip Slip / absolute-path / traversal
- *     attacks before anything is written to disk.
- *  3. Auto-detect and strip a single wrapping root directory — GitHub's
- *     auto-generated source ZIPs (zipball_url, tag archive links) always
- *     wrap the whole tree in one folder (e.g. "fanupdate-redux-2.2.0/");
- *     a release built with a dedicated packaging step might not.
- *  4. Validate the resulting tree actually looks like a FanUpdate Redux
- *     release (version.php/index.php files and admin//class/ directories
- *     present) — a defence against installing an unrelated or corrupt
- *     archive.
- *  5. Copy every file over the live installation, skipping anything under
- *     a preserved path (uploads/, this tool's own temp/backup
- *     directories, blog-config.php, .git/) so user content and local
- *     configuration are never touched.
- *  6. Delete install.php from the live installation, if the just-copied
- *     release shipped one — every release ships install.php (it's part of
- *     the source tree build-release.sh packages), but this flow never
- *     executes it, so its own self-delete-on-success code never runs.
- *     Without this step, install.php would silently reappear on disk after
- *     every single update, quietly reintroducing exactly the security
- *     exposure the Dashboard/Updates "install.php still present" notice
- *     (see fu_install_script_exists() in functions.php) exists to warn
- *     about — worth actually fixing rather than just re-detecting each
- *     time.
- *  7. Remove obsolete files — see below for how this stays safe.
- *  8. Reset OPcache, if loaded — the only cache layer present in this
- *     codebase, and the one most likely to keep serving stale bytecode
- *     after files have just been overwritten on disk.
- *  9. Disable maintenance mode and delete the staging directory.
+ * Maintenance mode is a flag file ({install_path}/.fu-maintenance), not a
+ * page-wide takeover, because the public scripts are embedded in host
+ * pages. process.php checks it and rejects comments mid-install.
  *
- * Maintenance mode is a simple flag file
- * ({install_path}/.fu-maintenance) — not a full public-facing takeover.
- * The public-facing scripts (show-blog.php, show-cat.php, rss.php,
- * rss-comments.php) are designed to be embedded inline in a host page's
- * own template rather than rendered as standalone pages, so a page-wide
- * maintenance banner doesn't fit their architecture; process.php (the one
- * write path that could collide badly with an in-progress file swap)
- * checks FanUpdate::isMaintenanceModeEnabled() and rejects new comment
- * submissions while it's set. The flag is always cleared in a `finally`
- * block, even when the install fails, so a failed run can never leave
- * the site permanently locked out of new comments.
+ * Obsolete-file removal can never delete admin-added files: each install
+ * writes a manifest ({install_path}/.fu-manifest.json) of the paths it
+ * copied, and only paths in the previous manifest but absent from the new
+ * release are removed. With no prior manifest nothing is removed.
+ * RollbackManager updates the same manifest after a restore.
  *
- * "Remove obsolete files" is scoped carefully so it can never delete
- * anything an admin added themselves: after every successful install,
- * a manifest ({install_path}/.fu-manifest.json) listing every relative
- * path this tool itself just copied is written to disk. On the *next*
- * install, the previous run's manifest is read first; only paths that
- * appear in that old manifest but are absent from the new release are
- * ever considered for removal — a file that was never recorded in any
- * manifest (because an admin added it, or because it predates this
- * mechanism entirely) is never a candidate, regardless of whether the
- * new release happens to ship a file at that path or not. When no prior
- * manifest exists yet (e.g. the very first install performed through the
- * Admin Update Manager on an existing installation), there is nothing to
- * compare against, so nothing is removed that run — tracking simply
- * begins from that point forward. RollbackManager updates the same
- * manifest after a successful restore, so a rollback followed by a later
- * install doesn't leave the manifest describing a version that's no
- * longer actually on disk.
- *
- * Running database upgrade scripts is a separate concern — see
- * UpgradeRunner and TODO.md's "Run upgrade scripts" item.
+ * Database upgrades are separate; see UpgradeRunner.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -88,12 +43,7 @@ class InstallManager
     private const REQUIRED_FILES = ['version.php', 'index.php'];
     private const REQUIRED_DIRS  = ['admin', 'class'];
 
-    /**
-     * Filename (relative to $installDir) of the manifest listing every
-     * relative path this tool itself installed — see the class docblock
-     * for the full "Remove obsolete files" safety rationale. Shared with
-     * RollbackManager, which updates the same file after a restore.
-     */
+    /** Manifest of installed paths (relative to $installDir); shared with RollbackManager. */
     public const MANIFEST_FILENAME = '.fu-manifest.json';
 
     private const DEFAULT_PRESERVE = [
@@ -109,15 +59,11 @@ class InstallManager
     private array $preserve;
 
     /**
-     * @param string $installDir The live installation directory to install into.
-     * @param string $stagingDir Scratch directory the archive is extracted
-     *        into; created (recursively) on first use and deleted again
-     *        once the install completes (successfully or not).
-     * @param string $maintenanceFlagPath Path to the maintenance-mode flag
-     *        file, typically "{install_path}/.fu-maintenance".
-     * @param array<int, string>|null $preserve Top-level names under
-     *        $installDir that are never overwritten or removed. Defaults
-     *        to self::DEFAULT_PRESERVE.
+     * @param string $installDir Live installation directory.
+     * @param string $stagingDir Scratch directory for extraction; deleted after every install.
+     * @param string $maintenanceFlagPath Maintenance-mode flag file path.
+     * @param array<int, string>|null $preserve Top-level names never overwritten or removed
+     *        (defaults to DEFAULT_PRESERVE).
      */
     public function __construct(
         private readonly string $installDir,
@@ -131,15 +77,10 @@ class InstallManager
     /**
      * Install a downloaded release ZIP over the live installation.
      *
-     * @param callable(string, int, int): void|null $onProgress Called at
-     *        each phase boundary as (message, stepNumber, totalSteps) —
-     *        e.g. for a live progress display during the (synchronous)
-     *        install request. Never called with the final outcome; the
-     *        caller reports that itself once installUpdate() returns or
-     *        throws. Exceptions from $onProgress itself are not caught —
-     *        it should never throw.
-     * @throws \RuntimeException on any validation or I/O failure. Always
-     *         disables maintenance mode before returning or throwing.
+     * @param callable(string, int, int): void|null $onProgress Called at each
+     *        phase boundary as (message, step, totalSteps); must not throw.
+     * @throws \RuntimeException on any validation or I/O failure. Maintenance
+     *         mode is always disabled first.
      */
     public function installUpdate(string $zipPath, string $version, ?callable $onProgress = null): InstallResult
     {
@@ -153,9 +94,7 @@ class InstallManager
         $this->enableMaintenanceMode();
 
         try {
-            // Read *before* anything is copied — the old manifest describes
-            // what's on disk right now, from the install this is about to
-            // replace.
+            // Must be read before any file is copied.
             $oldManifest = $this->loadManifest();
 
             $this->notifyProgress($onProgress, 'Preparing staging directory', 2, $totalSteps);
@@ -193,7 +132,7 @@ class InstallManager
         }
     }
 
-    /** Invoke $onProgress if one was given — a nullable callable can't be called via the `?->` operator, so this is the null check instead. */
+    /** Calls $onProgress if given (a nullable callable can't use `?->`). */
     private function notifyProgress(?callable $onProgress, string $message, int $step, int $total): void
     {
         if ($onProgress !== null) {
@@ -232,15 +171,10 @@ class InstallManager
     }
 
     /**
-     * Extract $zipPath into $this->stagingDir, validate every entry name
-     * first, then resolve and validate the release's source root.
+     * Validates entry names, extracts into staging, and resolves the source
+     * root (staging itself or its single wrapping subdirectory).
      *
-     * @return string Absolute path to the release's source root — either
-     *         $this->stagingDir itself, or a single wrapping subdirectory
-     *         within it.
-     * @throws \RuntimeException on an invalid archive, an unsafe entry
-     *         name, or a tree that doesn't look like a FanUpdate Redux
-     *         release.
+     * @throws \RuntimeException on an invalid archive, unsafe entry name, or non-release tree.
      */
     private function extractAndValidate(string $zipPath): string
     {
@@ -274,10 +208,7 @@ class InstallManager
         }
         $zip->close();
 
-        // GitHub's auto-generated source ZIPs (zipball_url, tag archive
-        // links) always wrap the whole tree in a single top-level folder.
-        // A dedicated release asset might not. Detect the single-wrapper
-        // case and use it as the real source root.
+        // GitHub source ZIPs wrap everything in one folder; dedicated release assets may not.
         $sourceRoot = $this->stagingDir;
         if (count($topLevelNames) === 1) {
             $wrapper = array_key_first($topLevelNames);
@@ -292,17 +223,14 @@ class InstallManager
         return $sourceRoot;
     }
 
-    /**
-     * Reject Zip Slip / absolute-path / directory-traversal entry names
-     * before anything is extracted.
-     */
+    /** Rejects Zip Slip, absolute-path and traversal entry names. */
     private function assertSafeEntryName(string $name): void
     {
         if ($name === '' || str_starts_with($name, '/') || str_starts_with($name, '\\')) {
             throw new \RuntimeException('The release archive contains an unsafe absolute path: ' . $name);
         }
 
-        // Windows drive-letter absolute paths (e.g. "C:\...").
+        // Windows drive letters, e.g. "C:\...".
         if (preg_match('#^[A-Za-z]:[\\\\/]#', $name)) {
             throw new \RuntimeException('The release archive contains an unsafe absolute path: ' . $name);
         }
@@ -314,10 +242,7 @@ class InstallManager
         }
     }
 
-    /**
-     * Confirm $sourceRoot actually contains a FanUpdate Redux release —
-     * defence against installing an unrelated or corrupt archive.
-     */
+    /** Guards against installing an unrelated or corrupt archive. */
     private function assertLooksLikeARelease(string $sourceRoot): void
     {
         foreach (self::REQUIRED_FILES as $file) {
@@ -336,11 +261,9 @@ class InstallManager
     // ── file installation ────────────────────────────────────────────────────
 
     /**
-     * Copy every file from $sourceRoot into $this->installDir, skipping
-     * preserved paths.
+     * Copies every non-preserved file from $sourceRoot into the install.
      *
-     * @return array<int, string> Relative path of every file copied —
-     *         this becomes the new manifest.
+     * @return array<int, string> Relative paths copied (the new manifest).
      */
     private function installFiles(string $sourceRoot): array
     {
@@ -382,23 +305,13 @@ class InstallManager
     }
 
     /**
-     * Delete install.php from the live installation if the just-copied
-     * release shipped one — see the class docblock for why this flow
-     * never runs install.php's own self-delete-on-success code. Every
-     * release ships install.php, so without this the file would silently
-     * reappear on disk after every single update. Best-effort, same as
-     * removeObsoleteFiles(): a file that can't be removed (e.g. a
-     * permissions issue) is simply left in place rather than failing the
-     * whole install over cleanup — the Dashboard/Updates notice still
-     * catches that case.
+     * Best-effort delete of install.php; a failure leaves it in place (the
+     * admin notice still flags it) rather than failing the install.
      *
      * @param array<int, string> $manifest
-     * @return array{0: bool, 1: array<int, string>} Whether the file was
-     *         actually removed, and $manifest with 'install.php' dropped
-     *         (whether or not the delete itself succeeded — a leftover
-     *         install.php should never be treated as an "obsolete file" by
-     *         removeObsoleteFiles() on some future install just because a
-     *         past delete attempt failed).
+     * @return array{0: bool, 1: array<int, string>} Whether it was removed, and
+     *         $manifest without 'install.php' either way, so a failed delete
+     *         is never later treated as an obsolete file.
      */
     private function removeInstallScript(array $manifest): array
     {
@@ -413,11 +326,8 @@ class InstallManager
     }
 
     /**
-     * Delete every path present in $oldManifest but absent from
-     * $newManifest — see the class docblock for why this can never touch
-     * a file that wasn't recorded in a previous manifest. Best-effort: a
-     * file that can't be removed (e.g. a permissions issue) is simply
-     * skipped rather than failing the whole install over cleanup.
+     * Deletes paths in $oldManifest but not $newManifest. Best-effort:
+     * unremovable files are skipped.
      *
      * @param array<int, string> $oldManifest
      * @param array<int, string> $newManifest
@@ -428,9 +338,7 @@ class InstallManager
         $removed = [];
 
         foreach (array_diff($oldManifest, $newManifest) as $relative) {
-            // Defence in depth — a preserved path should never have been
-            // written into a manifest in the first place, but never risk
-            // touching one regardless.
+            // Defence in depth: preserved paths should never be in a manifest.
             if ($this->isPreserved($relative)) {
                 continue;
             }
@@ -445,8 +353,7 @@ class InstallManager
     }
 
     /**
-     * Read the manifest left by the previous install/rollback, or [] if
-     * none exists yet or it can't be parsed.
+     * The previous install/rollback's manifest, or [] if missing or unparseable.
      *
      * @return array<int, string>
      */

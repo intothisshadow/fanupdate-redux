@@ -8,38 +8,17 @@
  * Copyright (c) 2020 by Ekaterina (contributor) http://scripts.robotess.net
  * Copyright (c) 2026 by Ariane (contributor)
  *
- * PDO (pdo_mysql) database abstraction layer. Configured with
- * ATTR_ERRMODE = ERRMODE_EXCEPTION and ATTR_EMULATE_PREPARES = false, so
- * every query — including the legacy Execute()/GetRecord()/GetFirstCell()/
- * GetAll() call sites — goes through a real server-side prepared statement.
+ * PDO (pdo_mysql) database abstraction layer using real server-side
+ * prepared statements (exceptions on, emulated prepares off).
  *
- * Two API families are exposed:
- *  - Legacy (Execute, GetRecord, GetFirstCell, GetAll, ReadRecord,
- *    ReadRecordPaginate, ExecutePaginate, NumRows, AffectedRows,
- *    GetLastSequence, FreeResult, PrintPaginate): preserves the original
- *    signatures/behaviour, including trigger_error() (or silent failure)
- *    on query errors rather than throwing, so existing call sites work
- *    unmodified. Each method accepts an optional trailing `array $params`
- *    for bound parameters.
- *  - New bound-parameter convenience API (query(), fetch(), fetchAll(),
- *    fetchColumn()): lets PDOException propagate to the caller instead of
- *    calling trigger_error(). Prefer these for newly written code; wrap in
- *    try/catch where a graceful user-facing error is required.
+ * Two API families:
+ *  - Legacy (Execute, GetRecord, GetFirstCell, GetAll, ...): original
+ *    signatures; query errors go to trigger_error() (or are silent) rather
+ *    than throwing. Each accepts an optional trailing `array $params`.
+ *  - query()/fetch()/fetchAll()/fetchColumn(): let PDOException propagate.
+ *    Prefer these in new code.
  *
- * Transaction helpers: beginTransaction(), commit(), rollBack(),
- * inTransaction().
- *
- * There is no manual-escaping helper (Escape()) — every call site uses
- * bound parameters via query()/fetch()/fetchAll()/Execute() instead; do not
- * re-add one.
- *
- * Query execution is consolidated behind one private helper
- * (runStatement()), used by both Execute() and query(). Row-fetching is
- * consolidated behind two private helpers (fetchOneRow(), fetchAllRows())
- * shared by the GetRecord/fetch, GetFirstCell/fetchColumn, and
- * GetAll/fetchAll pairs — each public method differs only in how it obtains
- * the PDOStatement and its error-handling contract (legacy silent-failure
- * vs. exception).
+ * There is deliberately no manual-escaping helper; always bind parameters.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -118,10 +97,7 @@ class SqlConnection
         }
     }
 
-    /**
-     * Escape hatch to the underlying PDO instance for code that needs
-     * PDO-native functionality not wrapped by this class.
-     */
+    /** The underlying PDO instance, for functionality this class doesn't wrap. */
     public function pdo(): \PDO
     {
         $this->ensureConnected();
@@ -133,10 +109,7 @@ class SqlConnection
 
     // ── connection ──────────────────────────────────────────────────────────
 
-    /**
-     * Connect to the database.
-     * Pass four string args to connect to a different database on-the-fly.
-     */
+    /** Connects to the database; passing credentials switches to a different database. */
     public function Connect(
         string $host = '',
         string $user = '',
@@ -147,14 +120,11 @@ class SqlConnection
             $this->SetConnOpt($host, $user, $pass, $name);
         }
 
-        // Short-circuit when already connected (and no new credentials given).
         if ($this->_pdo !== null && $host === '') {
             return true;
         }
 
-        // Shared-hosting configs sometimes specify dbhost as "host:port" (the
-        // format mysqli_connect() also accepted). PDO's mysql driver needs
-        // the port as a separate DSN segment, so split it out here.
+        // Configs may give dbhost as "host:port"; PDO needs the port as its own DSN segment.
         $dsnHost = $this->_host;
         $dsnPort = '';
         if (str_contains($dsnHost, ':')) {
@@ -171,11 +141,7 @@ class SqlConnection
                 \PDO::ATTR_ERRMODE                  => \PDO::ERRMODE_EXCEPTION,
                 \PDO::ATTR_EMULATE_PREPARES         => false,
                 \PDO::ATTR_DEFAULT_FETCH_MODE       => \PDO::FETCH_ASSOC,
-                // Buffered queries preserve the old mysqli behaviour that the
-                // rest of this class (and NumRows()/AffectedRows() callers)
-                // depend on — e.g. rowCount() being meaningful for SELECTs,
-                // and being able to run further queries before a result set
-                // is fully consumed.
+                // Buffered so rowCount() works for SELECTs and further queries can run mid-result.
                 \PDO::MYSQL_ATTR_USE_BUFFERED_QUERY => true,
             ]);
         } catch (\PDOException $e) {
@@ -189,12 +155,8 @@ class SqlConnection
     // ── query execution ─────────────────────────────────────────────────────
 
     /**
-     * Prepare and execute a statement, tracking it as the "current" result
-     * for GetLastResult()/NumRows()/AffectedRows()/FreeResult().
-     *
-     * This is the single place that talks to PDO::prepare()/execute() for
-     * both the legacy Execute()-family API and the new query()-family API —
-     * everything else in this class goes through here.
+     * Prepares and executes a statement, tracking it as the current result.
+     * The single entry point to PDO::prepare()/execute() for both API families.
      *
      * @param array<int|string, mixed> $params
      * @throws \PDOException on prepare or execute failure.
@@ -215,12 +177,7 @@ class SqlConnection
         return $stmt;
     }
 
-    /**
-     * Fetch a single row from a statement and free it.
-     *
-     * Shared by GetRecord()/fetch() (FETCH_ASSOC) and GetFirstCell()/
-     * fetchColumn() (FETCH_NUM).
-     */
+    /** Fetches one row, then frees the statement. */
     private function fetchOneRow(\PDOStatement $stmt, int $fetchMode): array|false
     {
         $row = $stmt->fetch($fetchMode);
@@ -229,9 +186,7 @@ class SqlConnection
     }
 
     /**
-     * Fetch every remaining row from a statement and free it.
-     *
-     * Shared by GetAll() and fetchAll().
+     * Fetches every remaining row, then frees the statement.
      *
      * @return array<int, array<string, mixed>>
      */
@@ -243,21 +198,9 @@ class SqlConnection
     }
 
     /**
-     * Execute a query. Preserves the legacy signature/behaviour (returns
-     * bool, reports failures via trigger_error()) so existing call sites
-     * keep working unmodified.
-     *
-     * Bound parameters are supported via the optional trailing $params
-     * array — pass `?` placeholders in $Sql and the values here instead of
-     * building the query string manually. This is the recommended way to
-     * migrate an existing Execute() call site to prepared statements
-     * without changing its shape.
-     *
-     * Does NOT throw — a failed query is reported via trigger_error() (or
-     * silently, when $err_msg is null) and the method returns false, so
-     * that legacy call sites written before Milestone 2 keep working
-     * without a try/catch. New code that wants exceptions should use
-     * query() instead.
+     * Executes a query with `?` placeholders bound from $params. Never
+     * throws: failures go to trigger_error() (silently when $err_msg is
+     * null) and return false. Use query() for exceptions.
      *
      * @param array<int|string, mixed> $params
      */
@@ -279,9 +222,8 @@ class SqlConnection
     }
 
     /**
-     * Execute a query with pagination support. Count is computed via a
-     * COUNT(*) subquery over the base query (ORDER BY stripped), which
-     * correctly handles both plain queries and GROUP BY queries.
+     * Executes a paginated query. The total comes from a COUNT(*) subquery
+     * (ORDER BY stripped), which also handles GROUP BY queries.
      *
      * @param array<int|string, mixed> $params
      */
@@ -293,7 +235,6 @@ class SqlConnection
 
         $this->page = isset($_GET['p']) ? (int) $_GET['p'] : 1;
 
-        // Strip ORDER BY from the base query to build the count subquery.
         $sql_without_order = preg_replace('/\s+ORDER\s+BY\s+.+$/is', '', $Sql);
         $count_sql = 'SELECT COUNT(*) FROM (' . $sql_without_order . ') AS _fu_count_sub';
 
@@ -333,9 +274,8 @@ class SqlConnection
     }
 
     /**
-     * Run $sql (if given) and return the first row as an associative array,
-     * or [] on no rows / query failure. See Execute() for the legacy
-     * silent-failure contract this preserves.
+     * Runs $sql (if given) and returns the first row, or [] on no rows or
+     * failure.
      *
      * @param array<int|string, mixed> $params
      * @return array<string, mixed>
@@ -356,16 +296,12 @@ class SqlConnection
     }
 
     /**
-     * Run $sql (if given) and return the first column of the first row, or
-     * false on no rows / query failure.
+     * Runs $sql (if given) and returns the first column of the first row.
+     * `false` means no row or failure, so it can't be told apart from a
+     * stored `false` value.
      *
      * @param array<int|string, mixed> $params
-     * @return int|float|string|bool|null Actual column value on success;
-     *         `false` specifically signals "no row" / "query failed" and is
-     *         indistinguishable from a column value of `false` — callers
-     *         that store literal boolean `false` in a column should use
-     *         fetchColumn() (which has the same caveat) with a NULL check
-     *         on the raw PDOStatement instead.
+     * @return int|float|string|bool|null
      */
     public function GetFirstCell(string $sql = '', array $params = []): mixed
     {
@@ -383,8 +319,7 @@ class SqlConnection
     }
 
     /**
-     * Run $sql (if given) and return every row as an array of associative
-     * arrays, or [] on no rows / query failure.
+     * Runs $sql (if given) and returns every row, or [] on no rows or failure.
      *
      * @param array<int|string, mixed> $params
      * @return array<int, array<string, mixed>>
@@ -409,24 +344,13 @@ class SqlConnection
         return ($result instanceof \PDOStatement) ? $result : false;
     }
 
-    // ── new bound-parameter convenience API (Milestone 2) ──────────────────
-    //
-    // Unlike the legacy Execute()/GetRecord()/GetFirstCell()/GetAll() family
-    // above (which trigger_error() on failure to preserve old behaviour),
-    // these methods let PDOException propagate to the caller, per CLAUDE.md's
-    // request to "improve database error handling using PDO exceptions" for
-    // newly written code. Wrap calls in try/catch where a graceful
-    // user-facing error is required.
-    //
-    // NOTE: a lowercase execute() alias was deliberately NOT added — PHP
-    // method names are case-insensitive, so `execute()` would collide with
-    // the legacy `Execute()` above and fail to compile. Use Execute() (with
-    // bound $params) for statements that don't return rows.
+    // ── exception-throwing API ──────────────────────────────────────────────
+    // No lowercase execute() alias: PHP method names are case-insensitive,
+    // so it would collide with Execute().
 
     /**
-     * Run a bound-parameter query and return the raw PDOStatement for
-     * callers that need full control (e.g. streaming a large result set
-     * without GetAll()'s full fetchAll()).
+     * Runs a bound-parameter query and returns the raw PDOStatement (e.g. to
+     * stream a large result set).
      *
      * @param array<int|string, mixed> $params
      * @throws \PDOException on prepare or execute failure.
@@ -437,7 +361,7 @@ class SqlConnection
     }
 
     /**
-     * Run a bound-parameter query and return the first row (or []).
+     * Returns the first row of a bound-parameter query, or [].
      *
      * @param array<int|string, mixed> $params
      * @return array<string, mixed>
@@ -451,7 +375,7 @@ class SqlConnection
     }
 
     /**
-     * Run a bound-parameter query and return every row.
+     * Returns every row of a bound-parameter query.
      *
      * @param array<int|string, mixed> $params
      * @return array<int, array<string, mixed>>
@@ -464,12 +388,11 @@ class SqlConnection
     }
 
     /**
-     * Run a bound-parameter query and return the first column of the first
-     * row, or false when there are no rows.
+     * Returns the first column of the first row, or false when there are no
+     * rows (same ambiguity as GetFirstCell()).
      *
      * @param array<int|string, mixed> $params
-     * @return int|float|string|bool|null See GetFirstCell() for the same
-     *         "false means no row" caveat.
+     * @return int|float|string|bool|null
      * @throws \PDOException on prepare or execute failure.
      */
     public function fetchColumn(string $sql, array $params = []): mixed

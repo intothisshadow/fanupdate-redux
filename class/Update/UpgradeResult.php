@@ -5,9 +5,7 @@ declare(strict_types=1);
 /*****************************************************************************
  * FanUpdate — UpgradeResult
  *
- * Immutable value object describing the outcome of a UpgradeRunner run —
- * TODO.md "1. Admin Update Manager", Installation Engine "Post Install" >
- * "Run upgrade scripts".
+ * Immutable value object describing the outcome of an UpgradeRunner run.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by

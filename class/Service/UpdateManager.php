@@ -88,12 +88,7 @@ class UpdateManager
         return $this->provider->getSourceLabel();
     }
 
-    /**
-     * Record an event in the persisted log (most recent first), capped to
-     * MAX_LOG_ENTRIES. Logging itself never throws or fails visibly — a
-     * logging problem should never be the reason an update action itself
-     * is reported as failed.
-     */
+    /** Prepends an event to the persisted log, capped to MAX_LOG_ENTRIES. */
     private function logEvent(string $type, string $status, string $message): void
     {
         try {
@@ -127,14 +122,8 @@ class UpdateManager
     }
 
     /**
-     * Record the current install/rollback progress into cached state, so a
-     * concurrent request (the Update Progress poll endpoint) can read it
-     * while the install/rollback request is still in flight. This is only
-     * meaningful because the underlying DB connection auto-commits each
-     * query — there is no long-lived transaction wrapping the whole
-     * install spanning these writes. Wrapped in its own try/catch, same as
-     * logEvent() — a progress-reporting failure must never surface as an
-     * install/rollback failure.
+     * Stores install/rollback progress in cached state so the poll endpoint
+     * can read it mid-request (relies on the DB auto-committing each write).
      */
     private function reportProgress(string $message, int $step, int $total): void
     {
@@ -153,12 +142,8 @@ class UpdateManager
     }
 
     /**
-     * The most recently reported install/rollback progress, or null if
-     * none is recorded (nothing running, or the last run's progress was
-     * never cleared — the poll endpoint treats a stale timestamp the same
-     * as no progress, since there's no separate "is anything running right
-     * now" flag; the caller simply stops polling once its own request
-     * completes).
+     * The last reported install/rollback progress, or null. There is no
+     * "running" flag, so callers treat a stale timestamp as no progress.
      *
      * @return array{message: string, step: int, total: int, updatedAt: string}|null
      */
@@ -170,10 +155,8 @@ class UpdateManager
     }
 
     /**
-     * Perform a live check against the configured provider and persist the
-     * result. Never throws — provider failures are captured into the
-     * returned/persisted state as an 'error' status instead, so the caller
-     * can always render a normal page afterwards.
+     * Live check against the provider, persisted. Never throws: failures
+     * become an 'error' status.
      *
      * @return array<string, mixed> Same shape as getStatusSummary().
      */
@@ -201,9 +184,7 @@ class UpdateManager
                 'expectedSha256'    => $release->expectedSha256,
             ];
 
-            // A freshly detected version invalidates any previous dismissal
-            // so the Dashboard notice re-surfaces for the new release, even
-            // if an earlier one was dismissed.
+            // A new version re-surfaces the Dashboard notice.
             if (
                 isset($existing['dismissedVersion'])
                 && $existing['dismissedVersion'] !== $release->version
@@ -211,11 +192,7 @@ class UpdateManager
                 unset($existing['dismissedVersion']);
             }
 
-            // A previously downloaded ZIP for a now-superseded version is
-            // useless (and would otherwise sit in the temp directory
-            // indefinitely on shared hosting with no cron to clean it up) —
-            // delete it and clear its state whenever the check finds a
-            // different version than the one that was downloaded.
+            // Delete a superseded download; there is no cron to clean it up.
             if (
                 isset($existing['downloadedVersion'], $existing['downloadedPath'])
                 && $existing['downloadedVersion'] !== $release->version
@@ -251,14 +228,9 @@ class UpdateManager
     }
 
     /**
-     * Run a live check only if automatic checks are enabled and the
-     * configured frequency has elapsed since the last check (manual or
-     * automatic) — otherwise just returns the cached summary, with no
-     * network call. Safe to call on every admin page load (e.g. the
-     * Dashboard): the live GitHub request only actually happens once per
-     * configured interval, no cron required. Never throws — same
-     * error-capturing pattern as checkForUpdates(), which this delegates to
-     * when a check is due.
+     * Runs a live check only when auto-checks are enabled and the interval
+     * has elapsed; otherwise returns the cached summary. Safe on every admin
+     * page load.
      *
      * @return array<string, mixed> Same shape as getStatusSummary().
      */
@@ -295,8 +267,7 @@ class UpdateManager
     }
 
     /**
-     * Build the display summary from cached state only — no network call.
-     * Safe to call on every admin page load (e.g. the Dashboard notice).
+     * Display summary built from cached state only (no network call).
      *
      * @return array<string, mixed>
      */
@@ -328,23 +299,14 @@ class UpdateManager
             'latestPrerelease'  => (bool) ($state['latestPrerelease'] ?? false),
             'downloadUrl'       => $state['downloadUrl'] ?? null,
             'downloadSize'      => isset($state['downloadSize']) ? (int) $state['downloadSize'] : null,
-            // FP-17: whether this release published a checksum at all — shown
-            // regardless of whether a download has happened yet.
             'checksumAvailable' => isset($state['expectedSha256']),
             'noticeDismissed'   => $dismissedVersion !== null && $dismissedVersion === $latestVersion,
             'downloadedVersion' => $state['downloadedVersion'] ?? null,
             'downloadedSize'    => isset($state['downloadedSize']) ? (int) $state['downloadedSize'] : null,
             'downloadedSha256'  => $state['downloadedSha256'] ?? null,
-            // FP-17: true once a download has actually been checksum-verified
-            // against the release's published checksum. False both when no
-            // download has happened yet and when one happened but no
-            // checksum was published — 'checksumAvailable' above and
-            // 'downloadedVersion' distinguish those cases for the UI.
+            // False when nothing was downloaded or no checksum was published.
             'downloadedChecksumVerified' => (bool) ($state['downloadedChecksumVerified'] ?? false),
             'downloadedAt'      => $state['downloadedAt'] ?? null,
-            // True once the currently-known latest version has been
-            // downloaded and validated — i.e. ready for the (not yet built)
-            // Installation Engine to install.
             'downloadReady'     => isset($state['downloadedVersion'], $state['downloadedPath'])
                 && $state['downloadedVersion'] === $latestVersion,
             'lastInstall'       => $state['lastInstall'] ?? null,
@@ -354,15 +316,9 @@ class UpdateManager
     }
 
     /**
-     * Install the currently downloaded release (from cached check state —
-     * no live provider call) over the live installation. Automatically
-     * creates a backup first as a safety net; if the install itself then
-     * fails, automatically restores that same backup via RollbackManager
-     * before reporting the failure (see the catch block below for what
-     * happens when the rollback manager isn't available or the rollback
-     * itself also fails). Never throws — failures are captured into
-     * the returned array as an error, the same pattern as
-     * checkForUpdates()/downloadLatestRelease().
+     * Installs the downloaded release from cached state. Backs up first and
+     * auto-restores that backup if the install fails. Never throws: failures
+     * are returned as an error.
      *
      * @return array{ok: bool, error?: string, version?: string, fileCount?: int, removedFileCount?: int, installScriptRemoved?: bool}
      */
@@ -421,26 +377,10 @@ class UpdateManager
     }
 
     /**
-     * Install an administrator-uploaded release ZIP over the live
-     * installation — the manual-upload counterpart to
-     * installLatestRelease() for a server that can't reach the configured
-     * update provider, or to install a specific build that isn't published
-     * as a release at all (FP-33). Runs through the exact same backup +
-     * install + auto-rollback-on-failure pipeline via performInstall(); the
-     * only difference from installLatestRelease() is where the ZIP and its
-     * target version come from — here, the uploaded file itself, rather
-     * than a previously downloaded-and-cached release.
-     *
-     * $uploadedTmpPath is expected to be the PHP-assigned temporary path of
-     * an already-validated upload (see admin/update.php's 'upload_install'
-     * handler, which checks $_FILES error codes and is_uploaded_file()
-     * before calling this) — this method does not re-validate that it came
-     * from a genuine HTTP upload, only that it is a well-formed FanUpdate
-     * Redux release archive.
-     *
-     * Never throws — failures are captured into the returned array as an
-     * error, the same pattern as installLatestRelease() and every other
-     * public method here.
+     * Manual-upload counterpart to installLatestRelease(), using the same
+     * backup/install/rollback pipeline. $uploadedTmpPath must already be
+     * validated as a genuine upload (admin/update.php does this); only the
+     * archive's contents are checked here. Never throws.
      *
      * @return array{ok: bool, error?: string, version?: string, fileCount?: int, removedFileCount?: int, installScriptRemoved?: bool}
      */
@@ -492,9 +432,6 @@ class UpdateManager
             ];
             $this->repository->saveState($state);
         } else {
-            // The install failed (and any auto-rollback already ran inside
-            // performInstall()) — the staged upload copy is no longer
-            // useful, same reasoning as the success path's cleanup above.
             $this->downloadManager->cleanup($downloadResult->filePath);
         }
 
@@ -504,18 +441,8 @@ class UpdateManager
     }
 
     /**
-     * Shared backup + install + auto-rollback-on-failure pipeline used by
-     * both installLatestRelease() (a provider-downloaded ZIP) and
-     * installUploadedRelease() (FP-33, an administrator-uploaded ZIP) — the
-     * only difference between the two callers is where $zipPath and
-     * $version come from; everything from here on (backup safety net,
-     * InstallManager invocation, logging, automatic rollback on failure) is
-     * identical regardless of source.
-     *
-     * Never throws — failures are captured into the returned array as an
-     * error, same as every other public method here. Does not persist
-     * state or clean up $zipPath itself — callers do that with the version
-     * of "success" that makes sense for their own cached state shape.
+     * Backup + install + auto-rollback shared by both install entry points.
+     * Never throws. Callers persist state and clean up $zipPath.
      *
      * @return array{ok: bool, error?: string, version?: string, fileCount?: int, installedAt?: string, removedFileCount?: int, installScriptRemoved?: bool}
      */
@@ -551,11 +478,7 @@ class UpdateManager
                 'installScriptRemoved'  => $result->installScriptRemoved,
             ];
         } catch (\Throwable $e) {
-            // Installation Engine "Automatic Rollback": detect the failure
-            // (this catch), and restore the backup just taken above, before
-            // ever reporting the failure back to the admin. RollbackManager's
-            // own maintenance-mode handling guarantees maintenance mode ends
-            // up disabled either way ("Restore maintenance state").
+            // Restore the backup taken above before reporting the failure.
             $message = 'Install failed: ' . $e->getMessage();
             $this->logEvent('install', 'error', $message);
 
@@ -581,15 +504,9 @@ class UpdateManager
     }
 
     /**
-     * Locate version.php inside an uploaded ZIP (root level, or one level
-     * down inside a single wrapping directory — mirrors
-     * InstallManager::extractAndValidate()'s own wrapper-stripping, so a
-     * GitHub auto-generated source ZIP uploaded manually is detected
-     * identically to one downloaded automatically) and parse FU_VERSION out
-     * of it, normalized the same way the installed version is. Returns null
-     * on any failure (not a valid ZIP, no version.php found, or FU_VERSION
-     * not parseable) rather than throwing — installUploadedRelease() turns
-     * that into a single user-facing error message.
+     * Reads FU_VERSION from the ZIP's version.php, at the root or inside a
+     * single wrapper directory (as GitHub source ZIPs have, mirroring
+     * InstallManager::extractAndValidate()). Null on any failure.
      */
     private function detectUploadedZipVersion(string $zipPath): ?string
     {
@@ -616,10 +533,7 @@ class UpdateManager
                 break;
             }
 
-            // A single-level-deep version.php ("wrapper/version.php") is a
-            // candidate for the GitHub-auto-zip single-wrapping-directory
-            // case; only actually used below if no root-level version.php
-            // was found at all.
+            // Fallback candidate, used only if there is no root-level version.php.
             if (str_ends_with($name, '/version.php') && substr_count(rtrim($name, '/'), '/') === 1) {
                 $wrapperCandidates[] = $name;
             }
@@ -649,10 +563,8 @@ class UpdateManager
     }
 
     /**
-     * Manually restore a specific backup over the live installation — used
-     * from the Backups list, independent of any install that may or may not
-     * have run. Never throws — failures are captured into the returned
-     * array as an error, the same pattern as the other public methods here.
+     * Restores a specific backup over the live installation (from the
+     * Backups list). Never throws.
      *
      * @return array{ok: bool, error?: string, version?: string, fileCount?: int}
      */
@@ -697,21 +609,9 @@ class UpdateManager
     }
 
     /**
-     * Run any pending database upgrades (schema migration + option/version
-     * housekeeping) via $upgradeRunner (TODO.md item "10. Admin-Panel
-     * Database Update Runner"), reporting progress through the same
-     * cached-state mechanism installLatestRelease()/restoreBackup() use
-     * (so admin/update.php's existing progress-bar polling works
-     * unmodified for this too), and logging the outcome. Never throws —
-     * same error-capturing pattern as the other public methods here.
-     *
-     * Used two ways: automatically right after a GitHub-release install
-     * (admin/update.php's `?action=run-upgrades` redirect step, unchanged
-     * from before this method existed except for now going through
-     * UpdateManager instead of calling $upgradeRunner directly, so it gets
-     * progress/logging too), and from the new "Database Updates" section's
-     * own button — for an installation updated by manual file upload,
-     * which never goes through that redirect at all.
+     * Runs pending database upgrades with progress reporting and logging.
+     * Called after a release install (`?action=run-upgrades`) and from the
+     * "Database Updates" button, for manually uploaded updates. Never throws.
      *
      * @return array{ok: bool, error?: string, messages?: array<int, string>, fromVersion?: string, toVersion?: string}
      */
@@ -748,10 +648,8 @@ class UpdateManager
     }
 
     /**
-     * Download the currently-known latest release's ZIP asset (from cached
-     * check state — no live provider call) and persist the outcome. Never
-     * throws — failures are captured into the returned array as an error,
-     * the same pattern as checkForUpdates().
+     * Downloads the latest release's ZIP (from cached state) and persists
+     * the outcome. Never throws.
      *
      * @return array{ok: bool, error?: string, path?: string, size?: int, sha256?: string, checksumVerified?: bool}
      */

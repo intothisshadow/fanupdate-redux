@@ -7,20 +7,11 @@
  * Copyright (c) Emanuil Rusev <https://erusev.com>
  * Licensed under the MIT License — see docs/THIRD-PARTY-LICENSES.md.
  *
- * Vendored directly (no Composer/vendor/autoload.php at runtime — see
- * CLAUDE.md's shared-hosting/no-CLI constraint) rather than required via
- * Composer, matching how this project already vendors FeedWriter.php.
- * Used by class/Service/ReleaseNotesRenderer.php to render GitHub Flavored
- * Markdown release notes (TODO.md item "8. Implement Full Markdown
- * Rendering for GitHub Release Notes").
- *
- * Deliberately left byte-for-byte unmodified from upstream below this
- * notice, so a future version bump is a straight file replacement. GFM
- * behaviour this project needs beyond what Parsedown provides natively
- * (GFM task-list checkboxes) is implemented as HTML post-processing in
- * ReleaseNotesRenderer instead of by patching this file. No
- * declare(strict_types=1) is added here for the same reason (and it would
- * have no effect regardless — this file declares no scalar type hints).
+ * Vendored (no Composer at runtime, for shared hosting) and used by
+ * ReleaseNotesRenderer. Left byte-for-byte unmodified from upstream below
+ * this notice so an upgrade is a straight file replacement; GFM extras live
+ * in ReleaseNotesRenderer. No declare(strict_types=1) is added for the same
+ * reason.
  ******************************************************************************/
 
 #

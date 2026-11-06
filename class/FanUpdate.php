@@ -6,18 +6,9 @@
  * Copyright (c) 2020 by Ekaterina (contributor) http://scripts.robotess.net
  * Copyright (c) 2026 by Ariane (contributor)
  *
- * Core application class: singleton holding site options/config, the DB
- * connection, error/success message queues, the observer pattern used to
- * notify listeners on errors, session-backed CSRF token generation and
- * verification, cookie-based admin authentication (HMAC token + rate
- * limiting), smiley rendering, and printBlog() / printBlogFooter() which
- * render the public blog listing, single-post comments, and comment form
- * (including anti-spam honeypot/time-gate fields and lightbox init).
- *
- * Security note: no eval(), base64_decode() payloads, shell_exec(),
- * system(), passthru(), or preg_replace() /e modifier are used anywhere in
- * this class. admin_username/admin_password are plain options-table rows
- * (see AccountRepository) — this class never writes to blog-config.php.
+ * Core application class: singleton holding options/config, the DB
+ * connection, message queues and observers, CSRF tokens, admin cookie
+ * authentication, smilies, and the public blog/comment rendering.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -29,15 +20,8 @@ declare(strict_types=1);
 
 // DON'T CHANGE THESE!
 $fanupdate           = $fanupdate ?? [];
-// $coltable is optional in blog-config.php as of the "clean up blog-config.
-// sample.php" change — collective_script/col_id/col_subj/collective_table
-// all now live in the database (see resolveCollectiveScriptConfig() below),
-// so $coltable only still matters as a legacy migration-seed fallback for
-// an installation whose blog-config.php predates that move. Guarded here so
-// every read of $coltable[...] elsewhere in this class/install.php/
-// admin/index.php/admin/update.php (all always null-coalesced to a sane
-// default already) doesn't throw an "Undefined variable" warning on a
-// config file that simply never declared it.
+// $coltable is optional: collective settings live in the database now, and
+// it is only a legacy fallback for configs that predate that move.
 $coltable            = $coltable ?? [];
 // Event log table: defaults so upgraded installs need no blog-config.php edit.
 $fanupdate['log_table'] = $fanupdate['log_table'] ?? 'blog_log';
@@ -50,22 +34,14 @@ $fanupdate['tables'] = [
     $fanupdate['blacklist_table'],
     $fanupdate['catoptions_table'],
     $fanupdate['smilies_table'],
-    // Categories Support (hybrid): FanUpdate's own always-present
-    // standalone categories table, only actually created/used when a
-    // collective_script is configured (see install.php). '?? ''' guards
-    // configs from before this option existed.
+    // '?? ''' guards configs that predate these options.
     $fanupdate['standalone_category_table'] ?? '',
-    // Media gallery (Admin -> Media) — '?? ''' guards configs from before
-    // this option existed, same as standalone_category_table above.
     $fanupdate['media_table'] ?? '',
     $fanupdate['log_table'],
 ];
 
-// requires SqlConnection class, clean_input
-
 class FanUpdate
 {
-    // ── explicitly declared properties (PHP 8.2: no dynamic properties) ────
     public array  $_cfg        = [];
     public string $_clean_self = '';
 
@@ -97,19 +73,9 @@ class FanUpdate
 
         $this->_cfg = array_merge($fanupdate, $this->config);
 
-        // collective_script/col_id/col_subj used to be derived here directly
-        // from blog-config.php's $coltable global. They now live in the
-        // options table instead (TODO.md's Database Architecture item —
-        // "Move collective-script configuration from blog-config.php into the
-        // database"), so resolution happens in resolveCollectiveScriptConfig(),
-        // called from addOptFromDb() once DB-stored options (or, for a
-        // not-yet-migrated installation, blog-config.php's legacy values as a
-        // fallback) are available. Nothing between construction and
-        // addOptFromDb() — called immediately after FanUpdate::instance() on
-        // every page — reads these, so leaving them unset here is safe.
+        // collective_script/col_id/col_subj are resolved later, in
+        // resolveCollectiveScriptConfig(), once DB options are loaded.
 
-        // Populate smiley_imgs from the smilies directory so printSmileyImgDropdown
-        // works even before addOptFromDb() is called.
         $smiliesDir = __DIR__ . '/../assets/images/smilies/';
         if (is_dir($smiliesDir)) {
             $files = glob($smiliesDir . '*.{gif,png,jpg}', GLOB_BRACE) ?: [];
@@ -160,7 +126,7 @@ class FanUpdate
         return $this->_clean_self;
     }
 
-    // ── event log (FP-46) ───────────────────────────────────────────────────
+    // ── event log ───────────────────────────────────────────────────
 
     /**
      * Records an audit event. $actor defaults to the logged-in admin's
@@ -190,7 +156,7 @@ class FanUpdate
         );
     }
 
-    /** The configured IANA timezone, or UTC when unset/invalid (FP-19). */
+    /** The configured IANA timezone, or UTC when unset/invalid. */
     public function timezone(): string
     {
         return fu_resolve_timezone($this->getOpt(FU_TIMEZONE_OPTION_KEY, true));
@@ -207,28 +173,10 @@ class FanUpdate
     // ── CSRF protection ─────────────────────────────────────────────────────
 
     /**
-     * Path scope for the CSRF session cookie and the HMAC auth cookies
-     * (fu_session/fu_username/fu_token) — derived from the stored
-     * install_url option rather than hardcoded to '/'. Two or more
-     * separate FanUpdate Redux installs living on the SAME domain but in
-     * different subdirectories is a normal, supported shared-hosting
-     * layout (e.g. install_url = ".../fanupdate-redux/demo" and
-     * ".../update-blog"). A hardcoded '/' path means every install on that
-     * domain shares one browser cookie per name — logging into one
-     * silently overwrites the identically-named cookie the other install
-     * relies on, and vice versa, which looks exactly like a session
-     * randomly expiring while actively using either admin panel (reported
-     * live: coding.unloved-heart.net/fanupdate-redux/demo/ and
-     * coding.unloved-heart.net/update-blog/). Falls back to '/' when
-     * install_url isn't set yet (e.g. install.php's very first page load,
-     * before any options exist) — matches the previous hardcoded value,
-     * so behaviour is unchanged until an install actually has a real
-     * install_url to scope to.
-     *
-     * Note: an admin who already has an old root-path ('/') cookie from
-     * before this fix will end up with two same-named cookies (root and
-     * scoped) until the old one expires or they clear cookies — the new
-     * scoped cookie takes effect on their next login either way.
+     * Cookie path scope for the CSRF session and auth cookies, derived from
+     * install_url. Installs sharing a domain in different subdirectories
+     * would otherwise overwrite each other's same-named cookies and appear
+     * to log each other out. Falls back to '/' before install_url exists.
      */
     private function cookiePath(): string
     {
@@ -246,14 +194,8 @@ class FanUpdate
     }
 
     /**
-     * Start (or resume) the PHP session used to store the CSRF token.
-     *
-     * This is intentionally separate from the HMAC auth cookies
-     * (fu_username/fu_token) that control login state — the session here is
-     * used solely for CSRF and has no bearing on authentication.
-     *
-     * The session cookie mirrors the security attributes already used for
-     * the auth cookies (secure, httponly, SameSite=Strict).
+     * Start (or resume) the PHP session used solely for the CSRF token;
+     * login state is tracked by the separate HMAC auth cookies.
      */
     private function ensureSession(): void
     {
@@ -264,8 +206,7 @@ class FanUpdate
         }
 
         if ($status === PHP_SESSION_DISABLED) {
-            // Sessions unavailable on this host — CSRF tokens cannot be
-            // stored. verifyCsrfToken() will safely fail closed in this case.
+            // No token can be stored; verifyCsrfToken() fails closed.
             return;
         }
 
@@ -281,12 +222,7 @@ class FanUpdate
         session_start();
     }
 
-    /**
-     * Return the current CSRF token for this session, generating one on
-     * first use. Safe to call multiple times per request — the token is
-     * reused for the lifetime of the session so multiple forms on the same
-     * page (and subsequent page loads) share one valid token.
-     */
+    /** Returns the session's CSRF token, generating it on first use. */
     public function generateCsrfToken(): string
     {
         $this->ensureSession();
@@ -301,11 +237,7 @@ class FanUpdate
         return $_SESSION[self::CSRF_SESSION_KEY];
     }
 
-    /**
-     * Compare a submitted token against the session's stored token using a
-     * timing-safe comparison. Returns false (never throws) when no token is
-     * stored yet or the submitted value is missing/empty.
-     */
+    /** Timing-safe token comparison; false when either side is missing. */
     public function verifyCsrfToken(?string $token): bool
     {
         $this->ensureSession();
@@ -319,10 +251,7 @@ class FanUpdate
         return hash_equals($stored, $token);
     }
 
-    /**
-     * Render a hidden <input> carrying the current CSRF token. Include this
-     * inside every admin <form method="post">.
-     */
+    /** Hidden <input> carrying the CSRF token; include in every admin POST form. */
     public function csrfField(): string
     {
         $token = htmlspecialchars($this->generateCsrfToken(), ENT_QUOTES, 'UTF-8');
@@ -331,23 +260,12 @@ class FanUpdate
     }
 
     /**
-     * Validate the CSRF token on the current request. Call this as the very
-     * first thing inside an admin page's POST handler, before any action is
-     * processed.
+     * Validates the CSRF token on POST requests; call before processing any
+     * admin action. Non-POST requests pass.
      *
-     * Behaviour on failure:
-     *  - AJAX requests (POST field mode=ajax, used by the post/comment
-     *    delete buttons and the approve-comment link) receive an immediate
-     *    403 response with a short plain-text body and the script exits.
-     *    This is necessary because those callers only check response.ok —
-     *    a 200 response re-rendering the page with an error banner would be
-     *    silently treated as "delete succeeded" by the JS callback.
-     *  - Regular (non-AJAX) form submissions get an error message queued via
-     *    addErr() and this method returns false so the caller can skip
-     *    processing the submitted action while still rendering the normal
-     *    page (with the error shown via reportErrors()).
-     *
-     * Non-POST requests always return true — there is nothing to verify.
+     * On failure, AJAX requests (mode=ajax) get a 403 and exit: their JS
+     * callers only check response.ok, so a 200 error page would read as
+     * success. Regular forms get a queued error and a false return.
      */
     public function verifyCsrfOrFail(): bool
     {
@@ -427,17 +345,9 @@ class FanUpdate
     }
 
     /**
-     * Resolve collective_script/col_id/col_subj after DB-backed options are
-     * loaded (see addOptFromDb()). Prefers the options-table-backed value —
-     * written by UpgradeRunner's one-time migration for an existing
-     * installation, or seeded directly by install.php on a fresh one (see
-     * TODO.md's Database Architecture item, "Move collective-script
-     * configuration from blog-config.php into the database"). Falls back to
-     * blog-config.php's legacy $fanupdate['collective_script']/$coltable
-     * globals — read-only here, never written back — only for an
-     * installation that hasn't gone through that migration yet, so deploying
-     * this code doesn't silently break an integrated (Enthusiast/etc.) site
-     * before the migration has actually run.
+     * Resolves collective_script/col_id/col_subj from the options table,
+     * falling back (read-only) to blog-config.php's legacy values on
+     * installs that haven't run the migration yet.
      */
     private function resolveCollectiveScriptConfig(): void
     {
@@ -468,15 +378,9 @@ class FanUpdate
     }
 
     /**
-     * Whether a collective/fanlisting script (Enthusiast, Fanatically,
-     * Listing Admin, or a custom integration) is configured for this
-     * installation, as opposed to running FanUpdate standalone.
-     * collective_script is stored as a descriptive identifier ("none",
-     * "enthusiast", etc. — see TODO.md's Database Architecture item) rather
-     * than the legacy single-letter shorthand, so this is the single place
-     * that decides what counts as "standalone" instead of relying on
-     * getOpt()'s generic y/n-string truthy mapping, which only special-cases
-     * 'n'/'no'/'y'/'yes'/0/1 and would not treat "none" as falsy.
+     * Whether a collective/fanlisting script is configured, as opposed to
+     * standalone use. Needed because getOpt()'s y/n mapping would not treat
+     * the stored value "none" as falsy.
      */
     public function hasCollectiveScript(): bool
     {
@@ -485,11 +389,7 @@ class FanUpdate
         return $value !== '' && $value !== 'none';
     }
 
-    /**
-     * Whether collective-sourced categories are listed alongside standalone
-     * ones (show_collective_categories). Defaults to true when the option is
-     * missing, e.g. on an install that hasn't run its upgrade yet.
-     */
+    /** Whether collective categories are listed too; true when the option is missing. */
     public function showCollectiveCategories(): bool
     {
         $value = $this->getOpt('show_collective_categories', true);
@@ -497,10 +397,7 @@ class FanUpdate
         return !in_array(strtolower((string) $value), ['n', 'no', '0'], true);
     }
 
-    /**
-     * Re-issue the HMAC session token after a username or password change
-     * so the admin stays logged in without re-entering credentials.
-     */
+    /** Re-issues the auth token after a username/password change so the admin stays logged in. */
     public function reissueToken(string $username): void
     {
         $storedHash = (string) $this->getOpt('admin_password', true);
@@ -509,7 +406,7 @@ class FanUpdate
         }
 
         $token  = hash_hmac('sha256', $username, $storedHash);
-        // If there is already a session cookie use 0 (session), otherwise 30 days.
+        // Keep a session-length cookie as-is; otherwise persist 30 days.
         $expire = (isset($_COOKIE['fu_username']) && $_COOKIE['fu_username'] !== '')
             ? 0
             : time() + 60 * 60 * 24 * 30;
@@ -650,10 +547,7 @@ class FanUpdate
         return $txt;
     }
 
-    /**
-     * Print a <select> dropdown of every image file in assets/images/smilies/.
-     * Used by admin/smilies.php.
-     */
+    /** Prints a <select> of every image in assets/images/smilies/. */
     public function printSmileyImgDropdown(string $name, string $selected = ''): void
     {
         echo '<select name="' . htmlspecialchars($name, ENT_QUOTES, 'UTF-8') . '">' . "\n";
@@ -674,14 +568,7 @@ class FanUpdate
 
     // ── credits ─────────────────────────────────────────────────────────────
 
-    /**
-     * Render the "Powered by FanUpdate — credits" footer line.
-     *
-     * Uses an absolute URL for the credits link so it resolves correctly
-     * regardless of how the admin panel is routed (with or without an explicit
-     * admin/ path segment). The relative "credits.php" previously produced a
-     * 404 when URL rewriting stripped the directory from the request URI.
-     */
+    /** Renders the "Powered by FanUpdate" line; the credits link is absolute so URL rewriting can't break it. */
     public function printCredits(): void
     {
         $version    = htmlspecialchars((string) $this->getOpt('version'), ENT_QUOTES, 'UTF-8');
@@ -699,11 +586,7 @@ class FanUpdate
 
     // ── auth check (non-redirecting) ─────────────────────────────────────────
 
-    /**
-     * Returns true when the current request carries valid admin session cookies.
-     * Unlike login(), this never redirects or renders a login form — it is safe
-     * to call on pages that do not require authentication (e.g. credits.php).
-     */
+    /** True when the request carries valid admin cookies. Unlike login(), never redirects or renders. */
     public function isLoggedIn(): bool
     {
         if (!isset($_COOKIE['fu_username'], $_COOKIE['fu_token'])) {
@@ -726,17 +609,7 @@ class FanUpdate
 
     // ── maintenance mode ────────────────────────────────────────────
 
-    /**
-     * True while InstallManager has an update install in progress.
-     *
-     * This is a read-only check against a flag file
-     * ({install_path}/.fu-maintenance) that only InstallManager itself
-     * writes/removes — see its class docblock for why this is a simple
-     * flag rather than a full public-facing maintenance page. process.php
-     * uses this to reject new comment submissions while a file swap is
-     * in progress, since that's the one write path most likely to collide
-     * badly with it.
-     */
+    /** True while InstallManager's {install_path}/.fu-maintenance flag file exists (update in progress). */
     public function isMaintenanceModeEnabled(): bool
     {
         $installPath = (string) ($this->getOpt('install_path') ?: '');
@@ -750,14 +623,9 @@ class FanUpdate
     // ── asset cache-busting ─────────────────────────────────────────────────
 
     /**
-     * Append a `?v=<mtime>` cache-buster to an assets/ URL so editing a
-     * shipped JS/CSS file (e.g. assets/js/fanupdate.js) invalidates it
-     * immediately, instead of waiting out .htaccess's
-     * `Cache-Control: public, max-age=604800` on every browser that already
-     * fetched the old copy. $relativePath is relative to install_path
-     * (e.g. 'assets/js/fanupdate.js'). Falls back to no query string if the
-     * file can't be stat'd (e.g. unusual install_path config) — same
-     * long-cached behavior as before this existed, not a regression.
+     * Appends `?v=<mtime>` so edited JS/CSS bypasses the long .htaccess
+     * cache lifetime. $relativePath is relative to install_path; the URL is
+     * returned unchanged if the file can't be stat'd.
      */
     private function assetUrl(string $baseUrl, string $relativePath): string
     {
@@ -775,16 +643,7 @@ class FanUpdate
 
     // ── cookie helper ────────────────────────────────────────────────────────
 
-    /**
-     * Issue or expire a session cookie with the full security attribute set.
-     *
-     * Flags:
-     *  secure   = true   — never sent over plain HTTP
-     *  httponly = true   — inaccessible to JavaScript (XSS mitigation)
-     *  samesite = Strict — not sent on cross-site requests (CSRF mitigation)
-     *  path     = cookiePath() — scoped to this install's own subdirectory
-     *             rather than the whole domain; see that method's docblock.
-     */
+    /** Issues or expires an auth cookie (secure, httponly, SameSite=Strict, install-scoped path). */
     private function setAuthCookie(string $name, string $value, int $expire): void
     {
         setcookie($name, $value, [
@@ -838,15 +697,13 @@ class FanUpdate
         if ($showform && isset($_POST['action']) && $_POST['action'] === 'login') {
 
             if (!$this->verifyCsrfOrFail()) {
-                // Invalid/missing CSRF token — error already queued by
-                // verifyCsrfOrFail(); fall through to render the login form.
+                // Error already queued; fall through to the login form.
             } elseif ($rateLimiter->isLockedOut()) {
+                // Credentials are not even checked while locked out.
                 $this->addErr(
                     'Too many failed login attempts. '
                         . 'Please try again in ' . $rateLimiter->humanTimeRemaining() . '.'
                 );
-                // Fall through to render the login form with the error; do not
-                // process the submitted credentials at all.
             } else {
 
                 $username = clean_input($_POST['username'] ?? '');
@@ -888,8 +745,7 @@ class FanUpdate
                         );
                     }
 
-                    // Deliberate: same message for wrong username and wrong
-                    // password — do not leak which one was incorrect.
+                    // Same message for either field so it doesn't leak which was wrong.
                     $this->addErr('Invalid username or password. Please try again.');
                     $this->setAuthCookie('fu_username', '', time() - 36000);
                     $this->setAuthCookie('fu_token', '', time() - 36000);
@@ -916,7 +772,6 @@ class FanUpdate
                         <label for="remember_me" class="checkbox">Remember?</label>
                     </span>
                 </p>
-                <?php /* FP-22 — reset-password.php */ ?>
                 <p class="hint small"><a href="../reset-password.php" tabindex="5">Forgot your password?</a></p>
             </form>
             <script type="text/javascript">
@@ -979,10 +834,7 @@ class FanUpdate
                         $form_tpl = (string) $this->getOpt('comment_form_template');
 
                         if ($form_tpl === '') {
-                            // Built-in default form — no option set yet.
-                            // This template includes its own <form> wrapper.
-                            // IMPORTANT: keep name="remember_me" in sync with
-                            // fanupdate-comment-submit.js which reads f.remember_me?.checked.
+                            // Keep name="remember_me" in sync with fanupdate-comment-submit.js.
                             $form_tpl =
                                 '<form action="{{process_url}}" method="post" id="comments-form">' . "\n"
                                 . '<h3>Leave a comment</h3>' . "\n"
@@ -1010,12 +862,7 @@ class FanUpdate
                                 . '</form>';
                         }
 
-                        // ── Strip conditional blocks ──────────────────────────
-                        // Accepts both <!-- END X --> (original FanUpdate style)
-                        // and <!-- /X --> (alternate style) as closing markers.
-
-                        // Strip <!-- MODERATION --> block when auto-approve is on
-                        // (comment_moderation option false means auto-approve)
+                        // Conditional blocks accept <!-- END X --> or <!-- /X --> as the closing marker.
                         if (!$this->getOpt('comment_moderation')) {
                             $form_tpl = preg_replace(
                                 '/<!--\s*MODERATION\s*-->.*?<!--\s*(?:END\s+|\/)?MODERATION\s*-->/s',
@@ -1024,7 +871,6 @@ class FanUpdate
                             );
                         }
 
-                        // Strip <!-- CAPTCHA --> block when CAPTCHA is disabled
                         if (!$this->getOpt('captcha_on')) {
                             $form_tpl = preg_replace(
                                 '/<!--\s*CAPTCHA\s*-->.*?<!--\s*(?:END\s+|\/)?CAPTCHA\s*-->/s',
@@ -1033,7 +879,6 @@ class FanUpdate
                             );
                         }
 
-                        // ── Populate token values ─────────────────────────────
                         $fanuname  = htmlspecialchars((string) ($_COOKIE['fanuname']  ?? ''), ENT_QUOTES, 'UTF-8');
                         $fanuemail = htmlspecialchars((string) ($_COOKIE['fanuemail'] ?? ''), ENT_QUOTES, 'UTF-8');
                         $fanuurl   = htmlspecialchars((string) ($_COOKIE['fanuurl']   ?? ''), ENT_QUOTES, 'UTF-8');
@@ -1052,10 +897,8 @@ class FanUpdate
                         $form_tpl = str_replace('{{returnto}}', $returnto, $form_tpl);
                         $form_tpl = str_replace('{{captcha_image}}', $captcha_url, $form_tpl);
 
-                        // ── Ensure the template is wrapped in a <form> ────────
-                        // The original FanUpdate comment_form_template option
-                        // stores only the inner content — no <form> tag. Wrap it
-                        // so submitCmtInit() can find id="comments-form".
+                        // Legacy comment_form_template values have no <form> tag;
+                        // submitCmtInit() needs id="comments-form".
                         $has_form_tag = (bool) preg_match('/<form\b/i', $form_tpl);
 
                         if (!$has_form_tag) {
@@ -1065,10 +908,8 @@ class FanUpdate
                                 . '</form>';
                         }
 
-                        // ── Inject missing hidden fields ──────────────────────
-                        // The stored template may not contain {{entry_id}} or
-                        // {{returnto}} tokens. Without entry, process.php treats
-                        // the submission as spam and discards it.
+                        // Custom templates may lack these fields; without "entry",
+                        // process.php discards the submission as spam.
                         $hidden_fields = '';
                         if (!preg_match('/name=["\']entry["\']/', $form_tpl)) {
                             $hidden_fields .=
@@ -1079,17 +920,9 @@ class FanUpdate
                                 '<input type="hidden" name="returnto" value="' . $returnto . '" />' . "\n";
                         }
 
-                        // ── Spam guard: honeypot + time gate ──────────────────
-                        // Honeypot: a visually hidden text field that real users
-                        // never fill in. Bots fill in all fields automatically.
-                        // Name chosen to look like a generic form field to bots.
-                        // CSS hides it from humans; aria-hidden removes it from
-                        // screen readers so it causes no accessibility issues.
-                        // Time gate: a hidden Unix timestamp set when the page
-                        // renders. process.php rejects submissions that arrive
-                        // faster than FU_MIN_COMMENT_SECONDS (3 seconds).
-                        // Both fields are always appended so they work with any
-                        // comment form template without requiring template edits.
+                        // Spam guard, appended to every template: an off-screen honeypot
+                        // field plus a render timestamp that process.php checks
+                        // against FU_MIN_COMMENT_SECONDS.
                         $spam_guard_fields =
                             '<div aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden;">'
                             . '<label for="fu_hp_fax">Leave this empty</label>'
@@ -1100,7 +933,6 @@ class FanUpdate
                         $hidden_fields .= $spam_guard_fields;
 
                         if ($hidden_fields !== '') {
-                            // Insert before </form> if present, otherwise append.
                             if (stripos($form_tpl, '</form>') !== false) {
                                 $form_tpl = preg_replace(
                                     '/<\/form>/i',
@@ -1116,10 +948,8 @@ class FanUpdate
                         echo '<div id="newComment"></div>' . "\n";
                         echo $form_tpl . "\n";
 
-                        // Scripts are injected mid-page so window 'load' has
-                        // already fired — submitCmtInit() is called directly
-                        // after both files are parsed instead of relying on
-                        // the load listener in fanupdate-comment-submit.js.
+                        // Injected mid-page, after 'load' may have fired, so
+                        // submitCmtInit() is called directly.
                         $js_url = htmlspecialchars(
                             rtrim((string) $this->getOpt('install_url'), '/') . '/assets/js',
                             ENT_QUOTES,
@@ -1136,7 +966,6 @@ class FanUpdate
                         echo '<script>submitCmtInit();</script>' . "\n";
 
                     } else {
-                        // comments_on = 0 for this entry
                         echo '<p class="comments-closed">Comments are currently closed.</p>' . "\n";
                     }
 
@@ -1154,23 +983,9 @@ class FanUpdate
 
         $this->db->FreeResult();
 
-        // ── Lightbox init ─────────────────────────────────────────────────────
-        // Emit fanupdate.js (once per page) and call fuLightboxInit() so every
-        // <a class="fu-lightbox"> in the post output gets a click handler.
-        //
-        // The static flag $_lb_script_emitted prevents double-emitting the
-        // <script src> on pages that embed both show-blog.php and show-cat.php,
-        // or that call printBlog() more than once (e.g. featured + archive).
-        //
-        // fuLightboxInit() itself is idempotent (double-init guard on each link)
-        // so calling it multiple times is safe — it is always emitted so newly
-        // paginated/AJAX-injected posts are wired on the next call too.
-        //
-        // This block is skipped on single-post pages that already emitted
-        // fanupdate.js above via the comment-form script injection; in that
-        // case fuLightboxInit() is still called (second inline <script>) because
-        // the comment-form injection emits the script before the posts are
-        // rendered, and fuLightboxInit() must run after.
+        // Emit fanupdate.js once per page (the static flag covers pages that
+        // call printBlog() repeatedly). fuLightboxInit() is idempotent, so it
+        // is called on every render.
         static $_lb_script_emitted = false;
 
         $js_base = htmlspecialchars(
@@ -1180,8 +995,7 @@ class FanUpdate
         );
 
         if (!$_lb_script_emitted) {
-            // On single-post pages fanupdate.js is already emitted by the
-            // comment-form block above, so we only emit it here on list pages.
+            // Single-post pages already emitted it with the comment form.
             if (!$single_page) {
                 echo '<script src="' . $this->assetUrl($js_base . '/fanupdate.js', 'assets/js/fanupdate.js') . '"></script>' . "\n";
             }
@@ -1189,20 +1003,12 @@ class FanUpdate
         }
 
         echo '<script>fuLightboxInit();</script>' . "\n";
-        // ── end lightbox init ─────────────────────────────────────────────────
     }
 
     /**
-     * Renders the footer_template option (Admin -> Templates -> Footer),
-     * substituting its {{main_url}}/{{archive_url}}/{{rss_url}}/
-     * {{fanupdate_url}}/{{fanupdate_version}} variables — see README's
-     * "Footer template variables" table. Previously a no-op stub: the
-     * option was fully editable from the admin panel but never actually
-     * rendered anywhere, discovered while auditing admin/get-code.php's
-     * CSS starter snippet against what the public templates really emit.
-     * $cat_id (passed by show-cat.php, null from show-blog.php) scopes
-     * {{rss_url}} to that category's feed via rss.php's own ?c= parameter,
-     * same convention as FanUpdate_Post::getCategoryLinks().
+     * Renders the footer_template option, substituting its {{...}} variables
+     * (see README's "Footer template variables"). $cat_id scopes {{rss_url}}
+     * to that category's feed.
      */
     public function printBlogFooter(?int $cat_id = null): void
     {

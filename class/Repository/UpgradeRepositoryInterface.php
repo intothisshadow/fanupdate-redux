@@ -5,14 +5,9 @@ declare(strict_types=1);
 /*****************************************************************************
  * FanUpdate — UpgradeRepositoryInterface
  *
- * Data-access contract for UpgradeRunner's post-install database
- * migrations (TODO.md "1. Admin Update Manager" — Installation Engine,
- * "Post Install" > "Run upgrade scripts"). Deliberately narrow — just the
- * three primitive operations a version-gated option migration actually
- * needs (read one option, upsert one option, delete one option if it
- * exists) — rather than a general-purpose options repository, since that's
- * already OptionRepositoryInterface's job for the admin-facing Options
- * page.
+ * Data-access contract for UpgradeRunner's migrations. Deliberately narrow
+ * (read, upsert, delete-if-exists one option); the admin Options page uses
+ * OptionRepositoryInterface instead.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by

@@ -21,7 +21,6 @@ declare(strict_types=1);
 
 class FanUpdate_Post
 {
-    // ── explicitly declared properties (PHP 8.2: no dynamic properties) ────
     public array     $params = [];
     public FanUpdate $fu;
 
@@ -108,13 +107,8 @@ class FanUpdate_Post
     }
 
     /**
-     * Return the date formatted for display, adjusted to the admin's
-     * configured IANA timezone (FP-19 — replaces the legacy fixed-hour
-     * timezone_offset, so daylight saving time is handled automatically).
-     *
-     * Posts are stored in UTC. We convert to the configured timezone so the
-     * displayed date matches the admin's local time rather than the
-     * server's UTC clock.
+     * Formats the date for display. Posts are stored in UTC and converted to
+     * the admin's configured IANA timezone.
      */
     public function getDateFormatted(string $format = ''): string
     {
@@ -128,8 +122,7 @@ class FanUpdate_Post
             return '';
         }
 
-        // getOpt returns false when the option is missing entirely, so fall
-        // back to UTC in that case as well as for an invalid stored value.
+        // getOpt() returns false for a missing option; fall back to UTC.
         $tz = (string) $this->fu->getOpt(FU_TIMEZONE_OPTION_KEY);
         if (!fu_is_valid_timezone($tz)) {
             $tz = FU_DEFAULT_TIMEZONE;

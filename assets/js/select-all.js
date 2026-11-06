@@ -11,15 +11,6 @@
  * Copyright (c) 2020 Ekaterina (contributor) http://scripts.robotess.net
  * Copyright (c) 2026 modernised for current browsers
  *
- * Modernisation:
- *  - var → const / let
- *  - Global leak `checkboxes_container` → module-scoped
- *  - onclick assignment → addEventListener
- *  - highlightChecked called with a synthetic-ish event wrapper removed;
- *    highlightChecked() in fanupdate.js now also accepts a raw element
- *  - setNow timer uses const / let; clearInterval (was clearTimeout)
- *    replaced with clearTimeout (original used setTimeout — kept as-is)
- *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or

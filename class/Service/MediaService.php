@@ -3,24 +3,14 @@
 /*****************************************************************************
  * FanUpdate — MediaService
  *
- * Business logic for the Media gallery (TODO.md item "4. UI - Create an
- * Image/File Manager"): recording a new upload, listing/paginating existing
- * images, deleting an image (file + thumbnail + DB row), and shaping a raw
- * DB row into the display-ready array admin/media.php and the WYSIWYG
- * "choose existing image" picker (assets/js/fanupdate-admin.js) both
- * consume. Depends on MediaRepositoryInterface (constructor injection), not
- * a concrete repository or the FanUpdate singleton, so it can be unit
- * tested with a fake/mock repository — same pattern as every other Service
- * class in this codebase.
+ * Business logic for the Media gallery: recording uploads, listing and
+ * paginating images, deleting (file + thumbnail + row), and shaping rows for
+ * admin/media.php and the WYSIWYG image picker.
  *
- * installPath/installUrl are injected rather than read from
- * FanUpdate::getOpt() internally, for the same reason: no dependency on the
- * FanUpdate singleton. Stored file_path/thumb_path are relative to the
- * uploads/ directory (e.g. "images/2026/07/abc_photo.jpg", matching
- * admin/upload.php's existing directory layout), not absolute filesystem
- * paths or URLs — this keeps the table valid if install_path/install_url
- * ever change, and is why every filesystem/URL operation below joins them
- * with installPath/installUrl rather than storing the joined result.
+ * Depends on MediaRepositoryInterface and an injected installPath/installUrl
+ * (not the FanUpdate singleton), so it is unit-testable. Stored
+ * file_path/thumb_path are relative to uploads/, so the table stays valid if
+ * install_path/install_url change; they are joined at use, never stored joined.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -40,12 +30,9 @@ class MediaService
     }
 
     /**
-     * Record a newly uploaded image. $relFilePath/$relThumbPath are paths
-     * relative to the uploads/ directory (no leading slash), e.g.
-     * "images/2026/07/abc_photo.jpg". Returns the new media_id, or 0 if the
-     * insert failed — non-fatal for the caller (admin/upload.php): the file
-     * itself is already saved and usable, it just won't appear in the
-     * gallery.
+     * Records an uploaded image; paths are relative to uploads/ (no leading
+     * slash). Returns the new media_id, or 0 on failure, which is non-fatal:
+     * the file is saved and just won't show in the gallery.
      */
     public function recordUpload(
         string $relFilePath,
@@ -69,10 +56,8 @@ class MediaService
     }
 
     /**
-     * Executes the paginated listing query. Callers read rows back via
-     * SqlConnection::ReadRecordPaginate() on the same connection the
-     * repository was constructed with (see MediaRepositoryInterface's
-     * docblock) — same convention as BlogService::search()/admin/blog.php.
+     * Executes the paginated listing query; callers read rows back with
+     * SqlConnection::ReadRecordPaginate() (as with BlogService::search()).
      */
     public function listPage(int $perPage): void
     {
@@ -80,8 +65,7 @@ class MediaService
     }
 
     /**
-     * Display-ready DTO for a single image, or null if it no longer exists
-     * — used by admin/media.php's delete-confirmation view.
+     * Display-ready DTO for one image, or null if it no longer exists.
      *
      * @return array{id: int, url: string, thumbUrl: string, filename: string,
      *               width: int, height: int, size: int, humanSize: string,
@@ -95,12 +79,9 @@ class MediaService
     }
 
     /**
-     * Delete an image: best-effort removal of the original file and its
-     * thumbnail from disk, then the DB row. A missing file on disk (already
-     * deleted manually, or never fully written) does not block the DB row
-     * from being removed — the row is what the gallery and the WYSIWYG
-     * picker actually list from. Returns false only when the DB row itself
-     * could not be found or deleted.
+     * Deletes an image: best-effort file and thumbnail removal, then the row.
+     * A missing file doesn't block row deletion, since the row is what the
+     * gallery lists. False only if the row couldn't be found or deleted.
      */
     public function deleteImage(int $id): bool
     {
@@ -181,9 +162,7 @@ class MediaService
     }
 
     /**
-     * Shape a raw media_table row into the display-ready array
-     * admin/media.php's gallery and the WYSIWYG picker's JSON response
-     * both consume.
+     * Shapes a raw media_table row for the gallery and the picker's JSON.
      *
      * @param array{media_id: int, filename: string, file_path: string,
      *              thumb_path: string, width: int, height: int, size: int,
@@ -210,10 +189,9 @@ class MediaService
     }
 
     /**
-     * Human-readable file size, e.g. "1.23 MB". Formats a byte count
-     * already on hand (from the DB row) rather than FileHandler::
-     * getHumanSize(), which re-stats a path on disk — unnecessary here and
-     * wrong for a row whose file no longer exists.
+     * Human-readable size, e.g. "1.23 MB", from the row's byte count (unlike
+     * FileHandler::getHumanSize(), which stats the disk and fails for a
+     * missing file).
      */
     private function formatBytes(int $bytes): string
     {

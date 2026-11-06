@@ -10,8 +10,7 @@ declare(strict_types=1);
  * existence means the ZIP was fully written to disk, its size matched what
  * the provider reported (within tolerance, when known), and it passed a ZIP
  * integrity check. Consumed by UpdateManager, which persists these fields
- * into the cached update state, and later by the Installation Engine
- * (see TODO.md, not yet built).
+ * into the cached update state.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -29,11 +28,8 @@ final class DownloadResult
         /** SHA-256 hex digest of the downloaded file, for later verification/logging. */
         public readonly string $sha256,
         /**
-         * FP-17: true when the release published a checksum and $sha256
-         * matched it. False means no checksum was published for this
-         * release to verify against — never false due to a mismatch, since
-         * DownloadManager::download() throws instead of returning a result
-         * in that case.
+         * True when the release published a checksum and $sha256 matched it.
+         * False means none was published; a mismatch throws instead.
          */
         public readonly bool $checksumVerified = false,
     ) {

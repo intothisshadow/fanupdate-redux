@@ -64,19 +64,9 @@ $fu->login();
 
 $showNav = true;
 
-// "install.php still present" and "pending DB upgrades" notices used to be
-// computed and rendered here (Dashboard-only) — both are now global banners
-// in admin/header.php, shown on every admin page. See that file's comment
-// for the full rationale.
-
 // ── Update notice ───────────────────────────────────────────────────────
-// runAutomaticCheckIfDue() only makes a live GitHub call when automatic
-// checks are enabled AND the configured interval has actually elapsed since
-// the last check (manual or automatic) — otherwise it's exactly as cheap as
-// the cached-only getStatusSummary() this used to call. This is the "no cron
-// available" opportunistic-check pattern: the Dashboard is the
-// highest-traffic admin page, so it's the natural place to notice a check
-// is due without needing a real cron job.
+// Live GitHub calls happen only when auto-checks are on and the interval has
+// elapsed. The Dashboard is the busiest admin page, so it stands in for cron.
 
 $updateRepository = new UpdateRepository($fu->db, (string) $fu->getOpt('options_table'));
 $updateConfig     = $updateRepository->getConfig();
@@ -96,14 +86,8 @@ if (isset($_POST['action']) && $_POST['action'] === 'dismiss_update') {
     }
 }
 
-// ── FP-23: official FanUpdate Redux news feed ──────────────────────────────
-// Same cache-first/no-network-unless-due pattern as the update check above —
-// refreshIfDue() only makes a live request when the cache is stale (default
-// 1 hour) or missing entirely, and degrades silently to whatever is cached
-// (even if stale) on any fetch failure. news_feed_url is a plain admin-
-// editable option (Admin -> Options -> Main) — see install.php's $setting[]
-// array and UpgradeRunner::NEW_DEFAULT_OPTIONS for how it's seeded. Blank =
-// widget hidden entirely.
+// ── Official news feed ─────────────────────────────────────────────────────
+// Cache-first like the update check; a blank news_feed_url hides the widget.
 $newsFeedUrl   = (string) $fu->getOpt('news_feed_url');
 $newsFeedItems = [];
 
@@ -115,13 +99,8 @@ if ($newsFeedUrl !== '') {
     $newsFeedItems = $newsFeedService->refreshIfDue($newsFeedUrl);
 }
 
-// ── Opt-In Anonymous Install Ping (TODO.md "FP-15") ────────────────────────
-// Deliberately independent of the update-check block above: its own
-// repository, its own request code, and it runs (or doesn't) regardless of
-// whether update checking is enabled — see class/Service/InstallPingService.php's
-// docblock. Off by default; maybePingIfDue() is a no-op unless an admin has
-// explicitly opted in from admin/privacy.php, and even then it only actually
-// contacts the network once every ~30 days. Never throws, nothing to render.
+// ── Opt-in anonymous install ping ──────────────────────────────────────────
+// Independent of update checking; a no-op unless enabled in admin/privacy.php.
 (new InstallPingService(
     new PrivacyRepository($fu->db, (string) $fu->getOpt('options_table')),
     FU_VERSION,
@@ -129,10 +108,7 @@ if ($newsFeedUrl !== '') {
 ))->maybePingIfDue();
 
 // ── Integrated Mode: orphaned collective-sourced categories notice ──────
-// Cheap enough for every Dashboard load — one indexed LEFT JOIN, no network
-// call. Detects a category FanUpdate holds settings for that's since been
-// deleted upstream in the collective script (Enthusiast/Fanatically/Listing
-// Admin), per TODO.md's Integrated Mode sections.
+// One indexed LEFT JOIN: finds categories with settings here that were deleted upstream.
 $collectiveScriptConfigured = $fu->hasCollectiveScript();
 $standaloneCategoryTableOpt = (string) $fu->getOpt('standalone_category_table');
 $standaloneCategoryTable = $standaloneCategoryTableOpt !== '' ? $standaloneCategoryTableOpt : null;

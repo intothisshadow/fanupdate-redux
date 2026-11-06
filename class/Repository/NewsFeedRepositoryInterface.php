@@ -5,19 +5,11 @@ declare(strict_types=1);
 /*****************************************************************************
  * FanUpdate — NewsFeedRepositoryInterface
  *
- * Data-access contract for the Dashboard's "FanUpdate Redux News" widget
- * (FP-23) cache. Storage piggybacks on the existing options table via a
- * single private (underscore-prefixed) key, `_news_feed_cache`, holding a
- * JSON blob — same pattern as UpdateRepositoryInterface's `_update_state`,
- * which doubles as the response cache that lets the Dashboard show status
- * without a live network call on every page load. Private keys are already
- * excluded from admin/options.php's editable list and from
- * OptionRepository::listEditableOptions(), so this data never appears
- * there.
- *
- * NewsFeedService (see class/Service/NewsFeedService.php) depends on this
- * interface rather than the concrete NewsFeedRepository, so it can be unit
- * tested with a fake/mock repository.
+ * Data-access contract for the Dashboard news widget's cache, stored as a
+ * JSON blob under the private options key `_news_feed_cache` (like
+ * UpdateRepositoryInterface's `_update_state`). Private keys are excluded
+ * from the editable Options list. NewsFeedService depends on this interface
+ * so it can be tested with a fake.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by

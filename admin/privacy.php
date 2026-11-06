@@ -2,17 +2,12 @@
 /*****************************************************************************
  * FanUpdate — admin/privacy.php
  *
- * Dedicated Options subpage for the Opt-In Anonymous Install Ping (TODO.md
- * "FP-15") — off by default. Lets an administrator enable/disable it, shows
- * exactly what is (and isn't) sent, and displays the installation ID and
- * the most recent ping's outcome for transparency. A "Send a test ping now"
- * button lets an admin confirm the feature actually works without waiting
- * for the opportunistic ~30-day schedule (see InstallPingService::pingNow()).
+ * Options subpage for the opt-in anonymous install ping (off by default):
+ * enable or disable it, see exactly what is and isn't sent, the installation
+ * ID and the latest outcome, and send a test ping
+ * (InstallPingService::pingNow()).
  *
- * Deliberately independent of admin/update.php's Admin Update Manager — its
- * own repository (PrivacyRepository, not UpdateRepository) and its own
- * service (InstallPingService, not UpdateManager). See
- * class/Service/InstallPingService.php's docblock for why.
+ * Independent of the Admin Update Manager; see InstallPingService.
  ******************************************************************************/
 
 declare(strict_types=1);

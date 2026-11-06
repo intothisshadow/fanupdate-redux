@@ -21,7 +21,6 @@ declare(strict_types=1);
 
 class FeedItem
 {
-    // ── explicitly declared properties ─────────────────────────────────────
     public array  $elements = [];
     public string $version;
 

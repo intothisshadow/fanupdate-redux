@@ -40,9 +40,7 @@ session_start();
 
 class CaptchaSecurityImages
 {
-    // Explicit property declaration (PHP 8.2: no dynamic properties).
-    // Uses __DIR__ so the path resolves correctly regardless of the working
-    // directory of the calling script.
+    // Font path is __DIR__-based so it resolves regardless of the caller's working directory.
     public string $font;
 
     public function __construct(int $width = 130, int $height = 40, int $characters = 6)

@@ -5,13 +5,9 @@ declare(strict_types=1);
 /*****************************************************************************
  * FanUpdate — PrivacyRepository
  *
- * Data access for the Opt-In Anonymous Install Ping's persisted config/state
- * (TODO.md "FP-15"), stored as two JSON blobs under private keys in the
- * options table — same pattern and same reasoning as UpdateRepository (see
- * UpdateRepositoryInterface's docblock). The table name is injected via the
- * constructor rather than read from FanUpdate::getOpt() internally, so this
- * class has no dependency on the FanUpdate singleton and can be constructed
- * with a mock SqlConnection in a unit test.
+ * Data access for the install ping's config and state, stored as two JSON
+ * blobs under private options keys (same pattern as UpdateRepository). The
+ * table name is injected, so the class is testable with a mock SqlConnection.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by

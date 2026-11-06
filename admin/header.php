@@ -18,34 +18,18 @@ declare(strict_types=1);
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/gpl-3.0.html>.
  *
- * Note: emits `const fuCsrfToken = "...";` so AJAX calls in fanupdate-admin.js,
- * fanupdate-post-admin.js, and fanupdate-comment-admin.js (which build their
- * own request bodies rather than submitting an HTML <form>) can include the
- * CSRF token. header.php is include()'d from FanUpdate::getHeader(), so
- * $this refers to the FanUpdate instance.
+ * Emits `const fuCsrfToken` for the admin AJAX scripts, which build their own
+ * request bodies. Included from FanUpdate::getHeader(), so $this is the
+ * FanUpdate instance.
  *
- * Bug fix: this file is included from every admin/*.php page AND from
- * install.php, which lives one directory UP from here (the project root,
- * a sibling of assets/ — not inside admin/). The asset/favicon/logo links
- * below used to hardcode "../assets/..." unconditionally, which is only
- * correct for an admin/*.php caller; from install.php's own URL, "../"
- * escapes the project directory entirely, so every asset 404s and the
- * install page renders completely unstyled. $fuAssetPrefix below detects
- * which case we're in by comparing the actually-requested script's
- * directory (SCRIPT_FILENAME) against this file's own directory (always
- * admin/, since header.php physically lives here) — if they match, we're
- * being viewed via an admin/*.php page and "../" is correct; otherwise
- * (install.php) no prefix is needed at all.
+ * Also included from install.php, which sits one directory above admin/, so
+ * asset links need a "../" prefix only for admin pages; $fuAssetPrefix
+ * detects which by comparing the requested script's directory with this
+ * file's.
  ******************************************************************************/
 $fuAssetPrefix = (dirname((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === __DIR__) ? '../' : '';
 
-// Cache-busting query string for every vendored/own CSS+JS asset below,
-// so a version bump forces browsers to fetch fresh copies instead of
-// serving a stale cached file against newly-deployed HTML/PHP — exactly
-// the failure mode that caused FP-24's Tablesort rollout to render a
-// raw <input> tag as literal text in one admin's browser until they
-// manually hard-refreshed (old cached fanupdate.js running old
-// Standardista logic against the new markup).
+// Cache-buster so a version bump can't pair stale cached JS/CSS with new markup.
 $fuAssetVersion = urlencode(FU_VERSION);
 ?><!DOCTYPE html>
 <html lang="en">
@@ -138,21 +122,10 @@ $fuAssetVersion = urlencode(FU_VERSION);
 
     <?php
     // ── Global "install.php present" / "pending DB upgrades" banners ────────
-    // Previously only shown on admin/index.php's Dashboard, so an admin who
-    // logged in, missed it, and went straight to e.g. Entries would never
-    // see it again until their next Dashboard visit. Rendered here instead
-    // (admin/header.php — included by every admin/*.php page) so both
-    // banners show on every page until actually resolved. Gated on
-    // isLoggedIn() (never redirects, safe to call pre-auth) so nothing here
-    // ever renders on the login form itself or during install.php's own
-    // execution (which never has valid auth cookies yet) — these checks
-    // touch the database and shouldn't run before an admin is authenticated.
-    // isLoggedIn() being true also means we're necessarily viewing an
-    // admin/*.php page (never install.php), so plain "update.php" links
-    // below resolve correctly without needing $fuAssetPrefix.
-    // admin/update.php itself is excluded: it already shows its own richer,
-    // detail-page version of both notices (exact path, "Review & run now"
-    // inline), so the generic summary banner here would just duplicate it.
+    // Shown on every admin page until resolved. Gated on isLoggedIn() so the
+    // database checks don't run on the login form or during install.php, and
+    // so plain "update.php" links resolve. update.php is excluded: it has its
+    // own detailed versions.
     if ($this->isLoggedIn() && basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) !== 'update.php') {
         $installPathOpt = $this->getOpt('install_path');
         $installPath    = ($installPathOpt !== false && (string) $installPathOpt !== '')
@@ -188,16 +161,9 @@ $fuAssetVersion = urlencode(FU_VERSION);
             <?php
         }
 
-        // Media gallery ("Redux 2.3.0" — TODO.md item "4. UI - Create an
-        // Image/File Manager") reads media_table from blog-config.php, same
-        // as dbhost/collective_table/etc. — it's a config-file setting, not
-        // an options-table one, so there's no safe way for an update to add
-        // it automatically the way UpgradeRunner migrates database-backed
-        // settings. Without this notice, an installation that upgrades
-        // (rather than fresh-installs) gets no indication the feature exists
-        // at all until an admin happens to click into Admin -> Media
-        // themselves and sees that page's own inline notice — reported live
-        // after exactly that happened following a 2.2.0 -> 2.3.0 upgrade.
+        // media_table is a blog-config.php setting, so an update can't add it
+        // automatically; without this notice upgraders never learn the Media
+        // gallery exists.
         if ((string) $this->getOpt('media_table') === '') {
             ?>
             <div class="error" style="display:flow-root;">

@@ -1,73 +1,37 @@
 /**
  * FanUpdate — fanupdate-tinymce.js
  *
- * TODO.md item "FP-18. Implement TinyMCE Editor". Replaces the previous
- * hand-rolled WYSIWYG toolbar (makeWysiwyg()/myWysiwyg/formatText()/
- * insertLink(), removed from fanupdate.js/fanupdate-admin.js — see
- * docs/CHANGELOG.md) on admin/blog.php's post-body textarea (#body) with
- * a self-hosted TinyMCE 7 instance (assets/vendor/tinymce/, vendored via
- * `npm pack tinymce` — see docs/THIRD-PARTY-LICENSES.md).
+ * Self-hosted TinyMCE 7 (assets/vendor/tinymce/; see
+ * docs/THIRD-PARTY-LICENSES.md) for admin/blog.php's post-body textarea
+ * (#body). Loaded only on the add/edit form, since TinyMCE is ~1.6 MB.
  *
- * Only loaded on admin/blog.php's add/edit form — not the entry list view —
- * since TinyMCE's assets (~1.6 MB even trimmed) have no reason to load on a
- * page with nothing to edit.
- *
- * Requires: tinymce.min.js (loaded first, see admin/blog.php), fanupdate.js
- * (fuCsrfToken global emitted by admin/header.php)
+ * Requires: tinymce.min.js (loaded first), fanupdate.js, and the fuCsrfToken
+ * global from admin/header.php.
  *
  * Editor configuration:
- *  - license_key: 'gpl' — required by TinyMCE 6+ to run self-hosted under
- *    the GPL without the "no valid API key" nag banner intended for
- *    Tiny Cloud's hosted/API-key model. This project never talks to Tiny
- *    Cloud at all — everything loads from assets/vendor/tinymce/.
- *  - skin/content_css picked once at init time from the saved fu_theme
- *    preference (localStorage, same key admin/fanupdate-admin.js's night-
- *    theme toggle uses) — oxide/default for day, oxide-dark/dark for
- *    night. TinyMCE can't hot-swap its own skin without destroying and
- *    re-creating the editor, so toggling the theme while already on this
- *    page updates every other element instantly but not the editor chrome
- *    until the page is reloaded — an accepted, documented limitation
- *    rather than an oversight.
- *  - autoresize (min/max height) — TODO.md's "Automatically resize editor
- *    to fit content". min/max height read from `fuEditorMinHeight`/
- *    `fuEditorMaxHeight` globals emitted by admin/blog.php (from the
- *    `editor_min_height`/`editor_max_height` options, TODO.md's "Make
- *    editor height configurable" — advanced settings not exposed in
- *    Admin -> Options, same precedent as upload_max_filesize/
- *    upload_thumb_width in admin/upload.php), falling back to 300/800.
- *  - plugins/toolbar cover every item TODO.md's FP-18 toolbar/plugin lists
- *    ask for that still exist as separate TinyMCE 7 plugins. "paste" and
- *    "hr" are core editor behaviour as of TinyMCE 6+, not separate
- *    plugins — see docs/THIRD-PARTY-LICENSES.md's TinyMCE entry.
- *  - toolbar is an array of two fixed strings (two always-visible rows)
- *    rather than one row plus TinyMCE's own collapsible "More…" overflow
- *    drawer — requested live after the drawer turned out to need a
- *    manual close for every button except our own fuimage (which we
- *    force-close before opening its dialog; see
- *    fuTinyCollapseToolbarOverflow()). Bullet/numbered list moved off the
- *    toolbar entirely into a custom `fumore` dropdown menu (registered in
- *    setup() below) — a real TinyMCE menu already auto-closes itself on
- *    selection, no hack required, unlike the toolbar drawer. The `lists`
- *    plugin is still loaded and still does the actual list work
- *    (nested lists, Enter-key handling) behind
- *    InsertUnorderedList/InsertOrderedList — only its own toolbar buttons
- *    were dropped in favour of the menu.
- *  - Image insertion deliberately does NOT use the stock "image" plugin —
- *    see fuOpenImageModal() below for the custom Upload New/Choose
- *    Existing button reusing admin/upload.php and admin/media.php
- *    (TODO.md item "4. UI - Create an Image/File Manager"). Drag-and-drop/
- *    paste-of-image-data is handled separately by images_upload_handler,
- *    which is core TinyMCE behaviour needing no plugin either.
- *  - No custom valid_elements/XSS allowlist beyond TinyMCE's own defaults:
- *    TinyMCE 7 bundles DOMPurify internally and its default HTML5 schema
- *    already excludes <script>/on*-handler attributes/javascript: URLs
- *    from both typed and pasted content. That is defense in depth on the
- *    client only — the actual security boundary is unchanged: FanUpdate
- *    stores the body as-is (clean_input(..., allowtags: true), same as
- *    before) and every render path (FanUpdate_Post::getBodyFormatted(),
- *    the public blog templates) already escapes/handles it the same way
- *    it did for the previous editor's output, since both produce plain
- *    HTML strings.
+ *  - license_key 'gpl' is required to self-host under the GPL without the
+ *    "no valid API key" banner; nothing talks to Tiny Cloud.
+ *  - Skin is chosen once at init from the saved fu_theme (localStorage).
+ *    TinyMCE can't hot-swap skins, so the editor chrome follows a theme
+ *    toggle only after a reload.
+ *  - Autoresize reads the fuEditorMinHeight/fuEditorMaxHeight globals from
+ *    admin/blog.php (editor_min_height/editor_max_height options, advanced
+ *    settings not in Admin -> Options), defaulting to 300/800.
+ *  - "paste" and "hr" are core behaviour in TinyMCE 6+, not plugins.
+ *  - The toolbar is two fixed rows rather than TinyMCE's "More…" overflow
+ *    drawer, which needs a manual close after every button (our fuimage
+ *    force-closes it; see fuTinyCollapseToolbarOverflow()). List buttons
+ *    live in a custom `fumore` menu, which auto-closes; the `lists` plugin
+ *    still does the list work.
+ *  - Images use a custom Upload New / Choose Existing dialog
+ *    (fuOpenImageModal()) backed by admin/upload.php and admin/media.php,
+ *    not the stock "image" plugin. Drag-and-drop and pasted images go
+ *    through images_upload_handler.
+ *  - No custom valid_elements: TinyMCE's bundled DOMPurify and default schema
+ *    already strip <script>, on* handlers and javascript: URLs. That is
+ *    client-side defence in depth only; the security boundary is unchanged
+ *    (the body is stored via clean_input(..., allowtags: true) and escaped
+ *    at render).
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -259,12 +223,10 @@ function fuTinyLoadMediaPage(page) {
 
 /**
  * fuTinyUploadImage — called when the file input fires a 'change' event.
- * POSTs each selected file to admin/upload.php sequentially (FP-26 — not
- * parallel, to avoid hammering shared hosting with concurrent uploads and
- * to keep upload order == insertion order predictable), inserting each one
- * into the editor as soon as its own upload completes. A per-file failure
- * doesn't abort the remaining queue; failures are collected and reported
- * as one end-of-batch summary instead of one alert() per failure.
+ * POSTs each selected file to admin/upload.php sequentially (to spare shared
+ * hosting and keep insertion order predictable), inserting each as soon as
+ * it uploads. A failed file doesn't abort the queue; failures are reported
+ * in one summary at the end.
  */
 async function fuTinyUploadImage(e, uploadBtn) {
     const files = Array.from(e.target.files || []);
@@ -461,17 +423,9 @@ function fuInitTinyMce() {
         branding: false,
         promotion: false,
 
-        // TinyMCE's default relative_urls:true rewrites absolute URLs
-        // (including the ones this editor inserts for uploaded images) to be
-        // relative to THIS page — admin/blog.php — rather than leaving them
-        // as-is. That's wrong here: the saved body HTML is displayed on
-        // whatever front-end page embeds show-blog.php/show-cat.php
-        // (TODO.md's "Display Code" snippet — often a different directory
-        // or even a different domain entirely from the admin panel), not
-        // relative to the admin editor. Disabling all three keeps every
-        // URL exactly as inserted (already absolute — see
-        // fuTinyInsertImage()/fuTinyUploadBlob(), both sourced from
-        // admin/upload.php's install_url-based response).
+        // Keep URLs exactly as inserted (absolute): the body is displayed on
+        // front-end pages, possibly on another domain, so URLs relative to
+        // admin/blog.php would break.
         relative_urls: false,
         remove_script_host: false,
         convert_urls: false,

@@ -3,19 +3,13 @@
 /*****************************************************************************
  * FanUpdate — BlogService
  *
- * Business logic for managing blog entries: creating/updating/deleting an
- * entry, and keeping its catjoin category link in sync (the blog table
- * itself has no cat_id column). Depends on BlogRepositoryInterface
- * (constructor injection), not a concrete repository or the FanUpdate
- * singleton, so it can be unit tested with a fake/mock repository.
+ * Business logic for blog entries and their catjoin category links (the
+ * blog table has no cat_id column). Depends on BlogRepositoryInterface, so
+ * it is unit-testable with a fake.
  *
- * createEntry()/updateEntry() wrap the entry write and its category-link
- * write(s) in a single transaction via BlogRepositoryInterface's
- * beginTransaction()/commit()/rollBack(): if any step fails, the whole
- * operation rolls back — createEntry() returns 0 and updateEntry() returns
- * false, exactly as they already do for a failed primary write. The
- * atomicity for delete lives in BlogRepository::delete() itself, since all
- * three of its deletes are internal to that one repository method.
+ * createEntry()/updateEntry() run the entry write and its category-link
+ * writes in one transaction; any failure rolls back (0 / false). Delete
+ * atomicity lives in BlogRepository::delete().
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -72,10 +66,7 @@ class BlogService
             return false;
         }
 
-        // Category links are always fully replaced (clear then re-insert)
-        // rather than diffed — simpler than computing an add/remove delta,
-        // and an entry has few enough categories that this is never a
-        // performance concern.
+        // Links are replaced wholesale rather than diffed; entries have few categories.
         if (!$this->entries->clearCategory($entryId)) {
             $this->entries->rollBack();
             return false;
@@ -147,10 +138,8 @@ class BlogService
     }
 
     /**
-     * Run a filtered, paginated entry listing. Results are read afterwards
-     * via the shared SqlConnection's ReadRecordPaginate()/PrintPaginate()
-     * cursor, exactly as before this refactor — only the query construction
-     * moved into the repository.
+     * Runs a filtered, paginated listing; read results from the shared
+     * SqlConnection's ReadRecordPaginate()/PrintPaginate() cursor.
      */
     public function search(int $filterCatId, string $filterSearch, int $perPage): void
     {

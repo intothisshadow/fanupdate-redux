@@ -5,25 +5,14 @@ declare(strict_types=1);
 /*****************************************************************************
  * FanUpdate — NewsFeedFetcher
  *
- * Default NewsFeedFetcherInterface implementation for the Dashboard
- * "FanUpdate Redux News" widget (FP-23): fetches an admin-configured RSS
- * feed URL and parses its <channel><item> entries.
+ * Default NewsFeedFetcherInterface: fetches an admin-configured RSS URL and
+ * parses its <channel><item> entries.
  *
- * HTTPS-only (rejected outright before any request is attempted — defence
- * in depth, mirroring GitHubUpdateProvider::request()'s URL allowlist
- * check), cURL-first with a file_get_contents()+stream-context fallback
- * when the curl extension isn't available, short timeout — same safety
- * posture as class/Update/GitHubUpdateProvider.php's
- * requestViaCurl()/requestViaStream(), reimplemented generically here
- * rather than reused since that logic is private and GitHub-API-coupled
- * (fixed API base URL, GitHub-specific headers/error handling).
- *
- * Parsing replaces the old dead FanUpdate::checkUpdates() method's
- * DOMDocument logic (removed — see docs/CHANGELOG.md), fixing its two real
- * bugs: node access here is null-safe (checkUpdates() called
- * ->item(0)->nodeValue directly, fatal-erroring on any item missing an
- * expected element) and failures always throw \RuntimeException rather
- * than assuming every feed guarantees every field.
+ * HTTPS only (rejected before any request), cURL with a stream-context
+ * fallback, short timeout. Reimplemented rather than reusing
+ * GitHubUpdateProvider's private, GitHub-specific transport. Node access is
+ * null-safe and failures always throw \RuntimeException, since feeds don't
+ * guarantee every field.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by

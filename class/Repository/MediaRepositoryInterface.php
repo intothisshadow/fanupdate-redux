@@ -3,15 +3,10 @@
 /*****************************************************************************
  * FanUpdate — MediaRepositoryInterface
  *
- * Data-access contract for the Media gallery (TODO.md item "4. UI - Create
- * an Image/File Manager"): one row per image uploaded through the WYSIWYG
- * editor's "insert image" button (see admin/upload.php). MediaService (see
- * class/Service/MediaService.php) depends on this interface rather than the
- * concrete MediaRepository, so unit tests can substitute a test double
- * without touching SqlConnection or a real database connection. No business
- * rules, URL building, or filesystem access belong here — this is pure data
- * access; stored paths are relative to the uploads/ directory, not absolute
- * filesystem paths or URLs (see MediaService for why).
+ * Data-access contract for the Media gallery: one row per image uploaded
+ * through admin/upload.php. MediaService depends on this interface so tests
+ * can use a double. Pure data access (no business rules, URLs or
+ * filesystem); stored paths are relative to uploads/.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by

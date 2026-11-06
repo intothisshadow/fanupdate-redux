@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 /*****************************************************************************
- * FanUpdate — LogService (FP-46)
+ * FanUpdate — LogService
  *
  * Writes to and queries the log table: a small, always-on audit trail of
  * security and admin events (logins, lockouts, content and settings changes,

@@ -2,41 +2,16 @@
 /*****************************************************************************
  * FanUpdate — admin/collective-source.php
  *
- * Dedicated Options subpage for the four settings that control which
- * collective/fanlisting script (if any) FanUpdate is paired with:
- * collective_script, col_id, col_subj, collective_table. The first three
- * used to be listed on admin/options.php's generic Main list like any
- * other setting; moved here so there's room to explain what each accepted
- * value actually does (see TODO.md's "UI: Move to a dedicated Options
- * subpage" item) and so the known scripts can be picked from a dropdown
- * instead of typed by hand.
+ * Options subpage for the four settings that pair FanUpdate with a
+ * collective/fanlisting script: collective_script, col_id, col_subj and
+ * collective_table. They must change together, since switching only the
+ * script would leave Categories/Entries querying the old table with the new
+ * script's column names.
  *
- * collective_table was added to this page after the fact (bug fix): unlike
- * the other three, it never had ANY admin UI — it was only ever read once
- * from blog-config.php's legacy $fanupdate['collective_table'] global (see
- * UpgradeRunner's migrateLegacyCollectiveTable()). That meant switching
- * collective_script here correctly updated col_id/col_subj but silently
- * left collective_table pointed at whatever table the installation started
- * with — e.g. switching from standalone to Fanatically updated col_id to
- * "id" and col_subj to "name", but Categories/Entries kept querying the old
- * standalone categories table under those column names, which don't exist
- * there, breaking both pages. Now first-class here, same as the other
- * three.
- *
- * Persistence is still just four plain options-table rows — reuses
- * OptionService/OptionRepository exactly like admin/options.php, no new
- * repository method (OptionRepository::updateOption() upserts, so this
- * works even for an installation whose collective_table row hasn't been
- * created by UpgradeRunner's migration yet). The <select> + auto-fill JS
- * below is a pure UI convenience over those same free-text values;
- * CollectiveScriptNormalizer's
- * passthrough-for-unknown-values behaviour, and how collective_script/
- * col_id/col_subj are actually resolved and read (FanUpdate::
- * resolveCollectiveScriptConfig()), are unchanged by this page.
- * collective_table needs no equivalent resolution method — addOptFromDb()
- * already merges every options-table row (including collective_table) into
- * FanUpdate::$_cfg unconditionally, so getOpt('collective_table') picks up
- * a saved value the same way any other plain option does.
+ * Persistence is four plain options rows via OptionService (updateOption()
+ * upserts). The <select> and auto-fill JS are a UI convenience over those
+ * free-text values; resolution is unchanged (see
+ * FanUpdate::resolveCollectiveScriptConfig()).
  ******************************************************************************/
 
 declare(strict_types=1);
@@ -60,12 +35,8 @@ $showNav = true;
 
 // ── Known collective scripts ───────────────────────────────────────────────
 // Mirrors blog-config.sample.php's $coltable defaults. "listingadmin" is
-// deliberately NOT listed here — Listing Admin support is reserved/planned
-// (CollectiveScriptNormalizer already normalises the
-// identifier correctly) but not yet functional until its Integrated Mode
-// adapter is built, so it isn't offered as a choice yet. An installation
-// somehow already storing "listingadmin" (or any other unrecognised value)
-// falls through to the Custom… state below, same as any other unknown value.
+// intentionally omitted until its adapter exists; a stored "listingadmin"
+// (or any unknown value) shows as Custom….
 const FU_KNOWN_COLLECTIVE_SCRIPTS = [
     'none'        => ['label' => 'None (standalone)', 'id' => 'fl_id',     'subject' => 'fl_subject', 'table' => 'blog_category'],
     'enthusiast'  => ['label' => 'Enthusiast',         'id' => 'listingid', 'subject' => 'subject',    'table' => 'owned'],
@@ -247,11 +218,8 @@ $fu->reportErrors();
 </form>
 
 <script>
-// Auto-fill col_id/col_subj/collective_table from the known-script lookup
-// table, and toggle the Custom… identifier field, when the
-// collective_script dropdown changes. Purely a UI convenience — the
-// underlying values stay freely editable, and nothing here changes what
-// gets submitted (four plain text values).
+// Auto-fills the other fields and toggles the Custom… field when the dropdown
+// changes. UI only: values stay editable and submit as plain text.
 (function () {
     var colTable = <?php echo json_encode(array_map(
         static fn (array $info): array => ['id' => $info['id'], 'subject' => $info['subject'], 'table' => $info['table']],

@@ -5,15 +5,9 @@ declare(strict_types=1);
 /*****************************************************************************
  * FanUpdate — NewsFeedFetcherInterface
  *
- * The actual network+parse boundary for the Dashboard "FanUpdate Redux
- * News" widget (FP-23). Kept separate from NewsFeedService so the service's
- * caching/due-check/fallback logic can be unit tested with a mock fetcher,
- * without ever making a real network call — this project has no existing
- * precedent for testing the transport layer itself directly (see
- * class/Update/GitHubUpdateProvider.php's private request()/
- * requestViaCurl()/requestViaStream(), reachable in tests only via the
- * higher UpdateProviderInterface boundary); this interface is the
- * equivalent seam for the news feed.
+ * The network and parse boundary for the Dashboard news widget, separate
+ * from NewsFeedService so its caching and fallback logic can be tested with
+ * a mock fetcher and no network.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by

@@ -5,7 +5,7 @@ All notable changes to this project are documented here.
 
 ---
 
-## [Unreleased]
+## [Redux 2.7.0] — November 6, 2026 — Activity & Error Logs, Hidden Collective Categories & More
 
 ### Added
 

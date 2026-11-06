@@ -6,6 +6,468 @@ each change, and `PHP Test Suite/TEST_LOG.md` for verified test runs.
 
 ---
 
+## [Redux 2.7.0] — November 6, 2026 — Activity & Error Logs, Hidden Collective Categories & More
+
+## FP-37. Per-Installation Toggle for Collective-Sourced Category Visibility
+
+**Status:** Complete — shipped in Redux 2.7.0
+
+### Background
+
+Standalone/collective hybrid categories, source-labeled UI, and
+standalone-vs-collective edit/delete rules are complete — see
+`docs/HISTORY.md`'s "Redux 2.3.0" entry. Today, whenever a collective
+script is configured, its categories always appear alongside standalone
+ones, with no way to opt out.
+
+### Goal
+
+Let an installation decide whether collective-sourced categories are
+shown at all, independent of whether a collective script is configured
+for account/data purposes — a site may still choose standalone-only
+categories.
+
+### Approach
+
+- [x] Add an options-page toggle read by `admin/category.php`'s/
+`admin/blog.php`'s category-listing calls.
+
+Implemented as a plain y/n option, `show_collective_categories`, so it
+appears as a toggle on Admin → Options → Main with no new UI code. A missing
+row counts as "yes" (`FanUpdate::showCollectiveCategories()`), so existing
+installs are unchanged; `UpgradeRunner::NEW_DEFAULT_OPTIONS` adds the row at
+the next version upgrade and `install.php` seeds it on fresh installs. It
+only changes what `CategoryRepository::listAll()` returns (the Categories
+page and the entry category picker): entries already filed under a
+collective category, public category links, and editing a collective
+category's settings by URL are untouched.
+
+### Testing
+
+- [x] `CategoryRepositoryTest` (hidden / shown / no standalone table) and
+`UpgradeRunnerTest` (backfill) — full suite 551 tests / 1539 assertions,
+passing on PHP 8.5 locally. Not yet run through the 8.2–8.6 Docker matrix.
+
+------
+## FP-40. Database Engine & Charset Migration: MyISAM → InnoDB, latin1 → utf8mb4
+
+**Status:** Complete — shipped in Redux 2.7.0
+
+### Background
+
+Every FanUpdate-owned table — on fresh installs (`install.php`'s
+`CREATE TABLE` statements) and on existing live installations alike
+(confirmed directly via phpMyAdmin on the production site: `blog`,
+`blog_blacklist`, `blog_category`, `blog_catjoin`, `blog_catoptions`,
+`blog_comments`, `blog_options`, `blog_smilies` are all `ENGINE=MyISAM`)
+— uses `MyISAM`, which does not support transactions.
+
+`CategoryService::createCategory()`/`deleteCategory()` and
+`BlogService::createEntry()`/`updateEntry()`/`BlogRepository::delete()`
+all wrap multi-statement writes in `beginTransaction()`/`commit()`/
+`rollBack()` (added during the Final Security & Code Quality Audit
+specifically for data-integrity reasons — see `docs/CHANGELOG.md`'s
+Redux 2.2.0 entry). On `MyISAM` these calls are silent no-ops: every
+statement auto-commits immediately regardless of a later rollback, so
+the "atomic, all-or-nothing" behaviour documented throughout the
+Repository/Service layer does not actually hold today. This was a
+contributing factor in the `catoptions`/`catjoin` settings bug fixed
+July 17, 2026 (see that entry in `docs/CHANGELOG.md`) — a failed
+settings write didn't roll back the category's identity insert, because
+MyISAM has no rollback to perform.
+
+Separately, per the same phpMyAdmin inspection, every table except
+`blog_category` is `latin1_swedish_ci` by default (only `blog_category`
+explicitly specifies `utf8mb4` in `install.php`), even though the
+project targets modern multi-byte content (emoji, non-Latin scripts in
+post titles/comments). **Decided: fold this into the same migration**,
+rather than leaving it a separate future pass — see rationale below.
+
+### Goal
+
+Migrate every FanUpdate-owned table to `ENGINE=InnoDB` **and**
+`utf8mb4` in one combined pass, on both fresh installs and existing
+installations, so the transaction wrapping already implemented in the
+Repository/Service layer provides real atomicity, and multi-byte
+content is stored correctly.
+
+**Why combined, not two separate migrations:** both an
+`ENGINE=` change and a `CONVERT TO CHARACTER SET` change trigger a full
+table rebuild on their own — doing them as two separate `ALTER TABLE`
+passes means rebuilding every table twice for no benefit. A single
+`ALTER TABLE x ENGINE=InnoDB, CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci` per table does both in one rebuild, which also
+directly helps the shared-hosting execution-time risk noted below.
+(`utf8mb4_general_ci` to match `blog_category`'s existing collation
+choice for consistency across every table — simpler/faster comparisons
+than `utf8mb4_unicode_ci`, and this project has no requirement for
+linguistically-precise sort ordering that would justify the tradeoff.)
+
+**Critical pre-migration data-safety check:** a plain
+`CONVERT TO CHARACTER SET` is only correct if the existing
+`latin1`-declared columns genuinely contain latin1 bytes. This
+codebase ran on raw `mysqli` before the Redux 2.1.0 PDO migration, and
+it's a common failure mode for an older PHP app's *connection* to have
+been sending UTF-8 while the *column* stayed declared latin1 — MySQL/
+MariaDB just stores the raw bytes as given, without transcoding, in
+that case. If that happened here, any existing accented characters or
+emoji already in blog posts/comments are really UTF-8 bytes mislabeled
+as latin1, and a plain `CONVERT TO CHARACTER SET` would double-encode
+them into mojibake instead of fixing anything. **Must audit actual
+column byte content first** (e.g. `SELECT ... WHERE col RLIKE '[\\x80-\\xFF]'`-style inspection, or just eyeballing any known
+non-ASCII test content) to determine which of the two cases applies,
+and pick the conversion method accordingly:
+
+* Genuinely latin1 data → plain `CONVERT TO CHARACTER SET utf8mb4` is
+correct and does the right transcoding.
+* Mis-stored UTF-8-as-latin1 data → re-declare the column as binary
+first (e.g. `MODIFY col BLOB`) to strip the charset tag without
+touching the underlying bytes, then re-declare it as
+`utf8mb4` (e.g. `MODIFY col TEXT CHARACTER SET utf8mb4`) so the
+same bytes get correctly reinterpreted, instead of re-encoded.
+
+### Approach
+
+Fresh-install `CREATE TABLE` statements, the automated mis-encoded-UTF8
+detection, the idempotent per-table migration path, and the
+execution-time-risk mitigation are all complete — see `docs/HISTORY.md`'s
+"Redux 2.3.0" entry. Remaining:
+
+* [x] Confirm `FULLTEXT` indexes (`blog.title`+`body`,
+`blog_comments.name`+`comment`) work correctly under InnoDB.
+InnoDB has supported `FULLTEXT` since MySQL 5.6.4 / MariaDB
+10.0.5 — comfortably below this project's stated minimum (MySQL
+5.7+ / MariaDB 10.3+, per `README.md`'s Requirements table) — but
+verify `show-blog.php`'s `MATCH ... AGAINST (... IN BOOLEAN MODE)`
+search still returns correct results after conversion, since
+InnoDB's FULLTEXT implementation differs from MyISAM's in some
+particulars (stopword list, minimum indexed word length defaults).
+*(Verified 2026-11-03 against the dev install's InnoDB tables on
+MySQL 8.0 — see `PHP Test Suite/TEST_LOG.md`. Not re-run on MariaDB.)*
+* [x] Re-verify `CategoryService`/`BlogService`'s transaction-wrapped
+methods actually roll back correctly against real InnoDB tables
+— today this is only proven via mocked `SqlConnection` in unit
+tests, never against a real transactional engine.
+
+### Testing
+
+Fresh-install and upgrade-path conversion are both confirmed (live on
+production — see `docs/HISTORY.md`'s "Redux 2.3.0" entry). Remaining:
+
+* [x] Existing non-ASCII content (if any) reads back correctly after
+conversion — the specific risk the pre-migration data-safety audit
+above is meant to catch. *(No real legacy installs available, so tested
+2026-11-03 with synthetic MyISAM/latin1 tables — mis-encoded UTF-8 and
+genuine latin1 — via `PHP Test Suite/Manual/fp40_legacy_charset_check.php`.
+That test found and fixed three bugs in the legacy path; see
+`docs/CHANGELOG.md` [Unreleased].)*
+* [x] New multi-byte content (emoji, non-Latin scripts) can be saved and
+displayed correctly post-migration, in post titles/bodies and
+comments.
+* [x] FULLTEXT search (blog entries and comments) returns correct
+results after conversion.
+* [x] `CategoryService`/`BlogService`'s transaction rollback paths
+actually roll back against a real InnoDB database, not just a
+mocked `SqlConnection`.
+* [x] Large-table `ALTER TABLE` timing/behaviour under a shared-hosting-
+like execution time limit. *(Measured 2026-11-04 on the dev MySQL 8.0 with
+synthetic scratch tables via `PHP Test Suite/Manual/fp40_large_table_timing.php`:
+100,000 entries + 200,000 comments, ~450–530 MB — vastly bigger than a real
+fan site. Plain latin1 → 20 s; UTF-8-stored-as-latin1 (reinterpretation
+path) → 55 s, i.e. over a 30 s limit but under 60 s. 2,000 + 4,000 rows take
+0.5 s / 1.5 s. All checks pass (row counts, content, FULLTEXT, idempotent).
+Takeaway: ~10–20 MB of table data per second; a typical site (a few thousand
+rows) finishes in seconds. Wall-clock matters, not PHP's `max_execution_time`
+(which counts CPU time on Linux, not time waiting on MySQL) — the risk is a
+web-server/proxy timeout on a very large legacy site. Each table's ALTER is
+all-or-nothing and the run is idempotent, so a timed-out run is simply
+re-run from Admin → Updates. `SchemaMigrator::runPendingSchemaChanges()` now
+calls `set_time_limit(0)` (when not disabled) and `ignore_user_abort(true)`.)*
+
+------
+## FP-16. Curated Release ZIP for GitHub Updates
+
+**Status:** Complete — shipped in Redux 2.7.0
+
+### Goal
+
+Same problem as Lumora Gallery's `LG-36` and Lumora Press's `LP-052`: build a clean,
+curated release ZIP instead of relying on GitHub's raw tag-archive snapshot, upload it
+as a release asset, and let the update system pick it up automatically.
+
+**This is simpler here than in the other two projects.** Read
+`class/Update/GitHubUpdateProvider.php::normalise()` — it already loops
+`$release['assets']` and uses the **first asset whose name ends in `.zip`**
+(`browser_download_url`) as `downloadUrl`, falling back to `zipball_url` only when no
+`.zip` asset exists. That means no code change is required in `GitHubUpdateProvider`
+for this ticket — uploading a curated `.zip` asset to a release is already sufficient
+to make the updater prefer it over the raw archive. This ticket is packaging +
+Release-process wiring only.
+
+**Checksum note:** unlike `LG-36`/`LP-052`'s design, this project's
+`DownloadManager` already computes a SHA-256 of whatever gets downloaded
+(`hash_file('sha256', $destPath)` in `DownloadManager.php`) purely for its own
+logging/state — it does not fetch or verify against a separately published checksum
+asset. So publishing a `.sha256` file alongside the ZIP is optional/for record-keeping
+only right now, not something the app consumes. Worth flagging as a possible future
+hardening item (verify the downloaded ZIP against a signed checksum before install)
+but out of scope for this ticket.
+
+The repo root is `fanupdate-redux/` itself (`.git` lives there) — `PHP Test Suite/`,
+the various `reference - */` directories, and the outer project docs (`CLAUDE.md`,
+`TODO.md`, `TODO-security.md`, `SESSION.md`, `PROMPT.md`, `V3.md`, `TESTING.md`,
+`style issues.md`, `standalone + fanatically.md`) were never pushed to GitHub and
+don't need excluding. There is currently **no `.gitignore`** in `fanupdate-redux/` —
+worth adding one as part of this ticket so a real `blog-config.php` can never be
+accidentally committed in the first place, separately from the packaging script's own
+exclusion of it.
+
+`build-release.sh`, the exclusion list, the `.gitignore`, and the
+CLAUDE.md Release-process wiring are all complete and verified — see
+`docs/HISTORY.md`'s "Redux 2.3.0" entry.
+
+### Acceptance criteria
+
+- [x] Uploading `FanUpdateRedux-v{version}.zip`/`.sha256` to an actual GitHub release
+  and confirming the live Updates page picks it up — genuinely requires a real
+  release to be cut. Redux 2.3.0 is the first version built after this ticket
+  shipped — confirmed working.
+
+------
+## FP-19. Replace Timezone Offset with Timezone Selection
+
+**Status:** Complete — shipped in Redux 2.7.0
+
+The IANA timezone selector, migration from legacy UTC offsets, and
+consistent use for post/comment/dashboard dates are complete — see
+`docs/HISTORY.md`'s "Redux 2.3.0" entry. Remaining:
+
+### Usage
+
+- ~~Scheduled publishing~~ — **Declined:** the admin/blog.php entry-date
+field is still a plain UTC-only text input — an admin scheduling a future
+local time must still convert to UTC by hand; the underlying
+`added <= UTC_TIMESTAMP()` comparison itself was already correct/unaffected
+by the old offset arithmetic, so nothing was silently broken, but the field
+doesn't yet accept/display local time.
+- [x] Logs — Admin → Logs (FP-46) shows times, and interprets its date filters, in
+the configured timezone; storage stays UTC. Error-log times convert the same way.
+- ~~Any future scheduled tasks (cron jobs)~~ — **Declined:** none exist yet — nothing to apply this to.
+
+------
+## FP-30. CSS Hook Classes for Nav/Category/Comment-Count/Credit Links
+
+**Status:** Complete — shipped in Redux 2.7.0
+
+*(Nov 4, 2026: the footer half of the fix had been lost when `printBlogFooter()`
+was rewritten in 2.3.0 — default `footer_template` in `install.php` and the
+`printBlogFooter()` fallback had no `fu-nav-link`/`fu-credit-link`. Restored and
+verified on the dev blog page. Existing sites keep their stored footer; the README
+tells them to add the classes by hand rather than auto-migrating, since a
+migration could only match the exact old text.)*
+
+### Background
+
+`printBlogFooter()`'s default `footer_template` (main/archive nav links, the
+credit link) and `FanUpdate_Post::getCategoryLinks()`/`printPost()`'s
+`{{comment_link}}` all emitted bare `<a href="...">` tags with **no class at
+all**, relying on inheriting `font-size`/`letter-spacing` from an ancestor
+(`div.archivelink`, `p.catfile`, `div.credit`). Every other piece of default
+markup in this codebase gets a `fu-`-prefixed hook class for exactly this
+reason (`fu-entry`, `fu-comment`, `fu-lightbox`, `fu-archive-item`, etc.) —
+these four were the gap.
+
+This isn't just a style-authoring inconvenience: an explicit CSS declaration
+on the element itself always beats an inherited value regardless of selector
+specificity. Discovered live on the Winged Reverie skin (`unloved-heart.net`,
+`skins/3-wingedreverie`) — its `style.css` has a sitewide
+`a { font-size: 1rem; padding: 6px 4px; letter-spacing: 1.2px; }` rule, which
+silently overrode the intended small inherited size on these specific links
+(main/archive nav, category filter links, the comment-count link, the
+FanUpdate credit link), rendering them noticeably oversized versus their
+surrounding small-print context — most visible on mobile.
+
+### Fix
+
+- [x] `class/FanUpdate.php`'s `printBlogFooter()` — main/archive links now
+  `class="fu-nav-link"`; credit link now `class="ext fu-credit-link"`
+  (kept `ext` alongside it).
+- [x] `class/FanUpdate_Post.php`'s `getCategoryLinks()` — category filter
+  links now `class="fu-cat-link"`.
+- [x] `class/FanUpdate_Post.php`'s `printPost()` — the `{{comment_link}}`
+  comment-count link now `class="fu-comment-count-link"`.
+- [x] Winged Reverie skin (`skins/3-wingedreverie/fanupdate.css`) updated to
+  style `.fu-nav-link`/`.fu-cat-link`/`.fu-comment-count-link`/
+  `.fu-credit-link` directly, with the old ancestor-based
+  `font-size: inherit` rules (`div.archivelink a`, `p.catfile a`,
+  `div.credit a`) kept as a fallback for any install still running an
+  unpatched FanUpdate version without these classes.
+
+### Remaining
+
+- [x] Per `CLAUDE.md`'s "Downstream Skins" section: audit every skin under
+  every `/skins/` directory listed there (`1-reverie`, `2-solstice`, and
+  the `startrektng`/`ardeth`/`jeri`/`seven` sites' skins — Winged Reverie
+  is the only one updated so far) and add matching
+  `.fu-nav-link`/`.fu-cat-link`/`.fu-comment-count-link`/`.fu-credit-link`
+  rules where useful. Lower urgency than a typical hook-rename in this
+  section — these are purely additive (the old ancestor selectors still
+  match, so nothing regresses), but any skin with the same
+  "small-print context + sitewide unscoped `a` rule" pattern will have
+  the identical oversized-link bug until updated.
+  Audited all six: only Winged Reverie's `style.css` had a sitewide `a {}`
+  rule that also set `font-size` (the exact bug pattern) — already fixed.
+  `2-solstice` and `jeri/skins/1` have sitewide `a {}` rules but neither
+  sets `font-size`, so no inherited-size collision there; `startrektng`/
+  `ardeth`'s `div#fanupdate a` rule only sets `color`/`text-decoration`.
+  Added the four hook classes to all six skins' `style.css` regardless
+  (purely additive, matching each skin's existing archivelink/catfile/
+  credit styling) for consistency and to future-proof against any later
+  sitewide `a` rule gaining a `font-size`.
+- [x] Add `fu-nav-link`/`fu-cat-link`/`fu-comment-count-link`/`fu-credit-link`
+  to `admin/get-code.php`'s CSS starter and the README's hook-class list
+  (see `CLAUDE.md`'s "Downstream Skins" note on where the authoritative
+  list lives) so new skins get these hooks documented from the start.
+  Added empty rule stubs to `get-code.php`'s CSS starter next to
+  `p.catfile`/`div.archivelink`/`div.credit`, and a new "Nav, category,
+  comment-count, and credit links" section to `README.md` documenting all
+  four classes.
+
+### Testing
+
+- [x] No PHPUnit coverage — these are plain string-literal template changes
+  in non-injectable code (`class/FanUpdate.php`'s default `footer_template`,
+  `FanUpdate_Post`'s default `entry_template`/category-link building), same
+  category as FP-28's admin markup work. Verify manually: view source on a
+  live blog page and confirm `fu-nav-link`/`fu-cat-link`/
+  `fu-comment-count-link`/`fu-credit-link` are present on the respective
+  links, and that a site with a custom (admin-saved) `footer_template`/
+  `entry_template` overriding the default is unaffected (expected — custom
+  templates are opaque strings this ticket doesn't touch).
+
+------
+## FP-42. Code Comment Cleanup
+
+**Status:** Complete — shipped in Redux 2.7.0
+
+Verified comment-only: identical PHP token streams (apart from a few comments
+inside inline HTML/JS), `php -l`, `node --check`, and a green test suite.
+Ticket references, change history and "bug fix" narration were removed from
+the PHP/JS/CSS comments; the reasons for non-obvious behaviour were kept.
+Deliberately left alone: vendored libraries (`class/Parsedown.php` body,
+`assets/vendor/`), `admin/get-code.php`'s user-facing CSS-starter text, and
+`old-docs/`.
+
+Go through the **entire codebase** and review all code comments for clarity and usefulness.
+
+Comments should explain intent or non-obvious behavior, not document every implementation detail. Avoid listing callers, enumerating every affected function, describing obvious control flow, or explaining routine performance characteristics.
+
+- Remove **extraneous, redundant, or unnecessary comments** that do not add meaningful information.
+- Keep comments that explain **why** something is done, non-obvious behavior, important constraints, workarounds, security considerations, or other context that cannot be understood easily from the code itself.
+- Rewrite overly verbose comments to be **short, clear, and to the point**.
+- Avoid comments that merely restate what the code already clearly does.
+- Comments should explain **intent or non-obvious behavior**, not document every implementation detail.
+- Avoid listing every function that calls a helper, enumerating every affected code path, or explaining obvious control flow.
+- Detailed explanations of **how or why a change was introduced**, historical context, TODO history, or implementation history generally belong in **git history, commit messages, changelogs, or project documentation**, rather than inline code comments.
+- Keep comments consistent in tone and style throughout the codebase.
+- Do not remove important documentation, licensing/copyright notices, file headers, or comments required by the project.
+- Do not change functionality or behavior; this is strictly a **comment cleanup and refinement** task.
+
+The goal is for every remaining comment to be **useful, concise, and intentional**, with the code itself carrying as much of the explanation as reasonably possible.
+
+------
+## FP-46. Admin Event Log & Error Log Viewer
+
+**Status:** Complete — shipped in Redux 2.7.0
+
+Implemented and verified on the dev install: `LogService`, `ErrorLogService`,
+`admin/logs.php`, `blog_log` table (`log_table` config key, defaults to `blog_log`),
+`log_retention_days`/`log_anonymize_ips` options. Integration checks live in
+`PHP Test Suite/Manual/fp46_log_integration_check.php` (needs the dev stack, so
+not part of PHPUnit). Media *uploads*, media-delete, smilies/templates/
+collective-source edits and the optional log export are not instrumented/built,
+and password change/reset and update-pipeline events have no integration check.
+
+### Background
+
+FanUpdate Redux has no admin-visible log. `LoginRateLimiter` and
+`CommentRateLimiter` keep file-based lockout state in `data/` but record nothing
+reviewable, `SqlConnection` reports failures only through `trigger_error()` (to the
+host's PHP error log, which shared-host owners often cannot read), and nothing records
+who changed what. Lumora Gallery and Lumora Press each solved this with a small,
+always-on, Admin → Logs screen; this ticket brings the same idea here, borrowing the
+better half of each:
+
+- **Lumora Gallery** (`include/services/LogService.php`, `Migration0010_CreateAdminLogTable`,
+  `admin/logs.php`): a DB table (`admin_log`) holding security/audit events, with a
+  fixed `EVENT_TYPES` catalog, filter dropdown, search, date range, pagination, and a
+  configurable retention window (default 90 days). Every write is wrapped in
+  try/catch and fails silently — a logging problem must never break the action being
+  logged.
+- **Lumora Press** (`app/Core/Security/SecurityLog.php`, `Errors/ErrorLogReader.php`,
+  `admin/views/maintenance/logs.php`): file-based, append-only JSON-lines security
+  log with size-based rotation, control-character stripping (log-forging defence),
+  optional IP anonymisation, and a separate reader for the PHP/application error log
+  that reads from the end of the file in bounded chunks.
+
+### Design decisions to settle first
+
+- [x] **Storage: DB table vs. flat file.** Recommendation: a `{prefix}log` table
+  (InnoDB, utf8mb4, per FP-40) for audit events — queryable/filterable/prunable with
+  prepared statements and no web-served-file exposure risk — plus a **file-based**
+  application-error log (under `data/`, protected by `.htaccess` deny) because DB
+  failures are exactly when a DB-backed log is unavailable. Confirm before building.
+- [x] **Privacy defaults.** Log event name, actor, IP, and a short sanitized detail
+  only — never passwords, tokens, or submitted comment bodies. Add an
+  "anonymise IPs in logs" option (mirrors Press) and wire the new data into the
+  existing Privacy page (`admin/privacy.php`) so owners can see what is stored.
+
+### Approach
+
+- [x] `LogService` (new, under `class/Service/`, strict types, injected
+  `SqlConnection`): `log()`, `query()`, `countByFilters()`, `prune()`; fixed
+  `EVENT_TYPES` catalog; all writes try/catch + fail-silent; control characters
+  stripped and field lengths capped.
+- [x] Schema: create the log table via the existing `SchemaMigrator`
+  (`migrationSteps()`) for upgrades **and** `install.php` for fresh installs, with a
+  `down`-equivalent noted in docs; table absence on a pre-upgrade install must not
+  fatal.
+- [x] Instrument events: admin login success/failure and lockout
+  (`LoginRateLimiter`), password change/reset (`account.php`, `reset-password.php`),
+  entry create/edit/delete (`BlogService`), category and media changes, comment
+  moderation/delete and rate-limit hits (`CommentService`/`CommentRateLimiter`),
+  blacklist edits, options changes, and the update pipeline (check/download/install/
+  rollback — `UpdateManager`/`RollbackManager`).
+- [x] Application error log: a handler (set via `set_error_handler`/
+  `set_exception_handler`, not `@`) that appends sanitized, path-scrubbed entries to a
+  size-rotated file in `data/`; `SqlConnection`'s `trigger_error()` failures land
+  there. Public pages keep showing only generic messages.
+- [x] Admin → Logs page (`admin/logs.php`, linked from the admin nav): tabs for
+  **Activity** (filter by event type, search, date range, pagination) and **Errors**
+  (newest first, chunked tail read, "show more"). CSRF-protected **Clear** actions
+  for each, and download/export optional.
+- [x] Retention: setting in Options (`log_retention_days`, default 90, `0` = keep
+  forever) with pruning run opportunistically on admin page load or log write
+  (no cron dependency, shared-host friendly).
+
+### Testing
+
+- [x] Unit tests for `LogService` (write/query/filter/prune, truncation, control-char
+  stripping, fail-silent when table is missing), the error-log writer/reader
+  (rotation, chunked read, path scrubbing), and the event catalog.
+- [x] Integration tests: each instrumented action produces exactly one expected log
+  row; Logs page requires admin login and a valid CSRF token for Clear; upgrade path
+  from a pre-log install creates the table without data loss.
+
+### Documentation
+
+- [x] README "Logs" section (what is recorded, retention, how to clear), Privacy page
+  copy, `docs/CHANGELOG.md` entry, and the raw option keys in `docs/`.
+
+**Reference implementations:** `Lumora Gallery/LumoraGallery/include/services/LogService.php`
+and `admin/logs.php`; `Lumora Press/LumoraPress/app/Core/Security/SecurityLog.php`,
+`Errors/ErrorLogReader.php`, and `admin/views/maintenance/logs.php`.
+
+------
 ## [Redux 2.6.0] — November 3, 2026 — Media Bulk Delete, Installer Redirect, Manual ZIP Upload & More
 
 ## FP-18. Implement TinyMCE Editor

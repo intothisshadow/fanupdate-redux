@@ -644,6 +644,11 @@ fanupdate/
 │   ├── js/
 │   │   ├── fanupdate.js              # Core utilities + table sorting + lightbox
 │   │   ├── fanupdate-admin.js        # Admin panel init (confirm-delete, theme toggle, copy buttons)
+│   │   ├── fanupdate-admin-config.js # Exposes the page's CSRF token / asset version (from <meta> tags) to the other admin scripts
+│   │   ├── fanupdate-theme-init.js   # Applies the saved night theme before first paint
+│   │   ├── fanupdate-progress.js     # Install/restore/database-update progress bar (admin/update.php)
+│   │   ├── fanupdate-collective-source.js # Collective source preset dropdown (admin/collective-source.php)
+│   │   ├── fanupdate-install.js      # Timezone pre-select on install.php
 │   │   ├── fanupdate-tinymce.js      # TinyMCE init + image upload/Choose Existing (admin/blog.php only)
 │   │   ├── fanupdate-comment-admin.js# Comment approve AJAX
 │   │   ├── fanupdate-post-admin.js   # Entry list "select all" checkbox wiring

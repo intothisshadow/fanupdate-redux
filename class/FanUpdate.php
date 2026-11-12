@@ -774,9 +774,6 @@ class FanUpdate
                 </p>
                 <p class="hint small"><a href="../reset-password.php" tabindex="5">Forgot your password?</a></p>
             </form>
-            <script type="text/javascript">
-                document.getElementById('username')?.focus();
-            </script>
 <?php
             $this->getFooter(false);
             exit;
@@ -948,22 +945,15 @@ class FanUpdate
                         echo '<div id="newComment"></div>' . "\n";
                         echo $form_tpl . "\n";
 
-                        // Injected mid-page, after 'load' may have fired, so
-                        // submitCmtInit() is called directly.
+                        // No inline scripts: public pages may run under a strict
+                        // script-src CSP. fanupdate-comment-submit.js wires the form itself.
                         $js_url = htmlspecialchars(
                             rtrim((string) $this->getOpt('install_url'), '/') . '/assets/js',
                             ENT_QUOTES,
                             'UTF-8'
                         );
-                        $fu_url = htmlspecialchars(
-                            rtrim((string) $this->getOpt('install_url'), '/'),
-                            ENT_QUOTES,
-                            'UTF-8'
-                        );
-                        echo '<script>const fu_url = \'' . $fu_url . '\';</script>' . "\n";
                         echo '<script src="' . $this->assetUrl($js_url . '/fanupdate.js', 'assets/js/fanupdate.js') . '"></script>' . "\n";
                         echo '<script src="' . $js_url . '/fanupdate-comment-submit.js"></script>' . "\n";
-                        echo '<script>submitCmtInit();</script>' . "\n";
 
                     } else {
                         echo '<p class="comments-closed">Comments are currently closed.</p>' . "\n";
@@ -984,8 +974,7 @@ class FanUpdate
         $this->db->FreeResult();
 
         // Emit fanupdate.js once per page (the static flag covers pages that
-        // call printBlog() repeatedly). fuLightboxInit() is idempotent, so it
-        // is called on every render.
+        // call printBlog() repeatedly). It wires the lightbox on its own.
         static $_lb_script_emitted = false;
 
         $js_base = htmlspecialchars(
@@ -1001,8 +990,6 @@ class FanUpdate
             }
             $_lb_script_emitted = true;
         }
-
-        echo '<script>fuLightboxInit();</script>' . "\n";
     }
 
     /**

@@ -346,10 +346,9 @@ if ($showform) {
     $editor_min_height     = ($editor_min_height_opt !== false && (int) $editor_min_height_opt > 0) ? (int) $editor_min_height_opt : 300;
     $editor_max_height     = ($editor_max_height_opt !== false && (int) $editor_max_height_opt > 0) ? (int) $editor_max_height_opt : 800;
     ?>
-    <script>
-        const fuEditorMinHeight = <?php echo json_encode($editor_min_height, JSON_THROW_ON_ERROR); ?>;
-        const fuEditorMaxHeight = <?php echo json_encode($editor_max_height, JSON_THROW_ON_ERROR); ?>;
-    </script>
+    <div id="fu-editor-config" hidden
+         data-min-height="<?php echo $editor_min_height; ?>"
+         data-max-height="<?php echo $editor_max_height; ?>"></div>
     <script src="../assets/vendor/tinymce/tinymce.min.js"></script>
     <script src="../assets/js/fanupdate-tinymce.js"></script>
 

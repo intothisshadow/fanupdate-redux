@@ -450,7 +450,9 @@ if (($_GET['action'] ?? '') === 'confirm-install') {
             option too.
         </p>
 
-        <form action="update.php" method="post" id="fu-install-form" style="margin-top:1rem;">
+        <form action="update.php" method="post" id="fu-install-form" style="margin-top:1rem;"
+              data-fu-progress data-panel="fu-progress-panel" data-message="fu-progress-message"
+              data-bar="fu-progress-bar" data-busy-label="Installing…">
             <?php echo $fu->csrfField(); ?>
             <input type="hidden" name="action" value="install" />
             <input type="submit" class="update" value="Install now" />
@@ -464,33 +466,7 @@ if (($_GET['action'] ?? '') === 'confirm-install') {
             </div>
             <p class="hint small" style="margin-top:0.5rem;">This page will refresh automatically once the install finishes.</p>
         </div>
-        <script>
-        (function () {
-            var form = document.getElementById('fu-install-form');
-            if (!form) return;
-            form.addEventListener('submit', function () {
-                var panel = document.getElementById('fu-progress-panel');
-                var msg   = document.getElementById('fu-progress-message');
-                var bar   = document.getElementById('fu-progress-bar');
-                var btn   = form.querySelector('input[type="submit"]');
-                if (btn) { btn.disabled = true; btn.value = 'Installing…'; }
-                if (panel) { panel.style.display = 'block'; }
-                // Polls until the response replaces the document.
-                setInterval(function () {
-                    fetch('update.php?action=install-progress', { cache: 'no-store' })
-                        .then(function (r) { return r.json(); })
-                        .then(function (data) {
-                            if (!data || !data.message) return;
-                            if (msg) { msg.textContent = data.message + '…'; }
-                            if (bar && data.total) {
-                                bar.style.width = Math.round((data.step / data.total) * 100) + '%';
-                            }
-                        })
-                        .catch(function () { /* ignore transient poll failures */ });
-                }, 800);
-            });
-        })();
-        </script>
+        <script src="../assets/js/fanupdate-progress.js"></script>
     </fieldset>
     <?php
     $fu->getFooter();
@@ -537,7 +513,9 @@ if (($_GET['action'] ?? '') === 'confirm-rollback') {
             submissions will be temporarily unavailable while files are being restored.
         </p>
 
-        <form action="update.php" method="post" id="fu-rollback-form" style="margin-top:1rem;">
+        <form action="update.php" method="post" id="fu-rollback-form" style="margin-top:1rem;"
+              data-fu-progress data-panel="fu-progress-panel" data-message="fu-progress-message"
+              data-bar="fu-progress-bar" data-busy-label="Restoring…">
             <?php echo $fu->csrfField(); ?>
             <input type="hidden" name="action" value="rollback" />
             <input type="hidden" name="backup_path" value="<?php echo htmlspecialchars($target->filePath, ENT_QUOTES, 'UTF-8'); ?>" />
@@ -553,32 +531,7 @@ if (($_GET['action'] ?? '') === 'confirm-rollback') {
             </div>
             <p class="hint small" style="margin-top:0.5rem;">This page will refresh automatically once the restore finishes.</p>
         </div>
-        <script>
-        (function () {
-            var form = document.getElementById('fu-rollback-form');
-            if (!form) return;
-            form.addEventListener('submit', function () {
-                var panel = document.getElementById('fu-progress-panel');
-                var msg   = document.getElementById('fu-progress-message');
-                var bar   = document.getElementById('fu-progress-bar');
-                var btn   = form.querySelector('input[type="submit"]');
-                if (btn) { btn.disabled = true; btn.value = 'Restoring…'; }
-                if (panel) { panel.style.display = 'block'; }
-                setInterval(function () {
-                    fetch('update.php?action=install-progress', { cache: 'no-store' })
-                        .then(function (r) { return r.json(); })
-                        .then(function (data) {
-                            if (!data || !data.message) return;
-                            if (msg) { msg.textContent = data.message + '…'; }
-                            if (bar && data.total) {
-                                bar.style.width = Math.round((data.step / data.total) * 100) + '%';
-                            }
-                        })
-                        .catch(function () { /* ignore transient poll failures */ });
-                }, 800);
-            });
-        })();
-        </script>
+        <script src="../assets/js/fanupdate-progress.js"></script>
     </fieldset>
     <?php
     $fu->getFooter();
@@ -643,7 +596,9 @@ if ($upgradeRunner->hasPendingUpgrades(FU_VERSION)) {
             runs this automatically. Nothing else about your site changes until you run this.
         </p>
 
-        <form action="update.php" method="post" id="fu-db-upgrade-form">
+        <form action="update.php" method="post" id="fu-db-upgrade-form"
+              data-fu-progress data-panel="fu-db-progress-panel" data-message="fu-db-progress-message"
+              data-bar="fu-db-progress-bar" data-busy-label="Running…">
             <?php echo $fu->csrfField(); ?>
             <input type="hidden" name="action" value="run_db_upgrade" />
             <input type="submit" class="update" value="Run pending database updates" data-skip-confirm />
@@ -656,33 +611,6 @@ if ($upgradeRunner->hasPendingUpgrades(FU_VERSION)) {
             </div>
             <p class="hint small" style="margin-top:0.5rem;">This page will refresh automatically once it finishes.</p>
         </div>
-        <script>
-        (function () {
-            var form = document.getElementById('fu-db-upgrade-form');
-            if (!form) return;
-            form.addEventListener('submit', function () {
-                var panel = document.getElementById('fu-db-progress-panel');
-                var msg   = document.getElementById('fu-db-progress-message');
-                var bar   = document.getElementById('fu-db-progress-bar');
-                var btn   = form.querySelector('input[type="submit"]');
-                if (btn) { btn.disabled = true; btn.value = 'Running…'; }
-                if (panel) { panel.style.display = 'block'; }
-                // Same progress endpoint as the install/rollback pages.
-                setInterval(function () {
-                    fetch('update.php?action=install-progress', { cache: 'no-store' })
-                        .then(function (r) { return r.json(); })
-                        .then(function (data) {
-                            if (!data || !data.message) return;
-                            if (msg) { msg.textContent = data.message + '…'; }
-                            if (bar && data.total) {
-                                bar.style.width = Math.round((data.step / data.total) * 100) + '%';
-                            }
-                        })
-                        .catch(function () { /* ignore transient poll failures */ });
-                }, 800);
-            });
-        })();
-        </script>
     </fieldset>
     <?php
 }
@@ -769,7 +697,9 @@ if ($upgradeRunner->hasPendingUpgrades(FU_VERSION)) {
         itself fails, that backup is automatically restored, the same as the GitHub-based flow below.
     </p>
 
-    <form action="update.php" method="post" enctype="multipart/form-data" id="fu-upload-install-form">
+    <form action="update.php" method="post" enctype="multipart/form-data" id="fu-upload-install-form"
+          data-fu-progress data-panel="fu-upload-progress-panel" data-message="fu-upload-progress-message"
+          data-bar="fu-upload-progress-bar" data-busy-label="Uploading &amp; installing…">
         <?php echo $fu->csrfField(); ?>
         <input type="hidden" name="action" value="upload_install" />
 
@@ -796,35 +726,10 @@ if ($upgradeRunner->hasPendingUpgrades(FU_VERSION)) {
             </div>
             <p class="hint small" style="margin-top:0.5rem;">This page will refresh automatically once the install finishes.</p>
         </div>
-        <script>
-        (function () {
-            var form = document.getElementById('fu-upload-install-form');
-            if (!form) return;
-            form.addEventListener('submit', function () {
-                var panel = document.getElementById('fu-upload-progress-panel');
-                var msg   = document.getElementById('fu-upload-progress-message');
-                var bar   = document.getElementById('fu-upload-progress-bar');
-                var btn   = form.querySelector('input[type="submit"]');
-                if (btn) { btn.disabled = true; btn.value = 'Uploading & installing…'; }
-                if (panel) { panel.style.display = 'block'; }
-                // Same progress endpoint as the install/rollback pages.
-                setInterval(function () {
-                    fetch('update.php?action=install-progress', { cache: 'no-store' })
-                        .then(function (r) { return r.json(); })
-                        .then(function (data) {
-                            if (!data || !data.message) return;
-                            if (msg) { msg.textContent = data.message + '…'; }
-                            if (bar && data.total) {
-                                bar.style.width = Math.round((data.step / data.total) * 100) + '%';
-                            }
-                        })
-                        .catch(function () { /* ignore transient poll failures */ });
-                }, 800);
-            });
-        })();
-        </script>
     </form>
 </fieldset>
+
+<script src="../assets/js/fanupdate-progress.js"></script>
 
 <?php if ($summary['status'] === 'ok') { ?>
 

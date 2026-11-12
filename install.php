@@ -1157,21 +1157,7 @@ if (!$fu->noErr()) {
 
     </form>
 
-    <script type="text/javascript">
-        // Pre-select the browser's timezone when it is present in the <select>.
-        const tzSelect = document.getElementById('timezone');
-        if (tzSelect) {
-            try {
-                const detected = Intl.DateTimeFormat().resolvedOptions().timeZone;
-                const option = tzSelect.querySelector('option[value="' + detected + '"]');
-                if (option) {
-                    tzSelect.value = detected;
-                }
-            } catch (e) {
-                // Intl unsupported or timezone lookup failed — leave default selected.
-            }
-        }
-    </script>
+    <script src="assets/js/fanupdate-install.js"></script>
 
 <?php
 

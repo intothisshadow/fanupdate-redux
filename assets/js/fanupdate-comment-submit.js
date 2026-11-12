@@ -88,4 +88,10 @@ function submitCmtInit() {
     }
 }
 
-window.addEventListener('load', submitCmtInit);
+// Loaded mid-page by FanUpdate::printBlog(), so the form may or may not be
+// parsed yet.
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', submitCmtInit);
+} else {
+    submitCmtInit();
+}

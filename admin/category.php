@@ -187,7 +187,7 @@ if (!$showform && $orphanedCategoryIds !== []) { ?>
         <input type="hidden" name="orphan_cat_id" value="<?php echo (int) $orphanCatId; ?>" />
         <button type="submit" name="action" value="confirm-delete-orphan" class="delete"
                title="Confirm removing category #<?php echo (int) $orphanCatId; ?>"
-               onclick="return confirm('Remove FanUpdate settings for category #<?php echo (int) $orphanCatId; ?>? This cannot be undone.');">Confirm delete</button>
+               data-confirm="Remove FanUpdate settings for category #<?php echo (int) $orphanCatId; ?>? This cannot be undone.">Confirm delete</button>
         <span class="hint">Category #<?php echo (int) $orphanCatId; ?></span>
     </form>
     <?php } ?>

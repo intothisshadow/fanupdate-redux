@@ -5,6 +5,20 @@ All notable changes to this project are documented here.
 
 ---
 
+## [Unreleased]
+
+### Changed
+
+- **Admin works under a strict Content-Security-Policy (FP-49)** — the admin pages and `install.php` no longer contain inline scripts or `onclick`/`onsubmit` handlers, so a site-wide `script-src 'self'` policy no longer breaks them (the editor's image upload, confirm dialogs, theme toggle, update progress bars and the collective-source dropdown all work). The page's CSRF token and asset version now travel in `<meta>` tags read by a small external script, and the destructive-action confirm dialogs use a `data-confirm` attribute. The public blog output (`show-blog.php`, `show-cat.php`) is covered too: it no longer prints inline scripts, so the **image lightbox** and the **comment form** wire themselves from `fanupdate.js` / `fanupdate-comment-submit.js` and work on sites with a strict policy. The unused `fu_url` JavaScript global that the single-post page used to print was removed.
+
+### Fixed
+
+- **Oversized image upload reported as "Security check failed"** — when a file exceeded the server's `post_max_size`, PHP dropped the whole request and the upload endpoint misreported it as a CSRF failure. It now says the file exceeds the server upload limit and shows the limit.
+- **Upload errors hidden behind "Server error 403"** — the post editor's image upload now shows the server's own message (for example the expired-session security check) instead of only the HTTP status.
+- **Image upload validator deleted by host malware scanners** — a code comment in `ImageUploadValidator.php` contained a literal image-header-plus-PHP-tag string, a well-known web-shell signature, so some hosts' scanners quarantined the file after install and the upload endpoint failed with a "Failed opening required" error. The comment no longer contains the signature.
+
+---
+
 ## [Redux 2.7.0] — November 6, 2026 — Activity & Error Logs, Hidden Collective Categories & More
 
 ### Added

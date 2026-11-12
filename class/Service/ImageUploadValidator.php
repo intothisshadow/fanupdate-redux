@@ -9,8 +9,8 @@ declare(strict_types=1);
  * the client-supplied name or Content-Type. Checks, in order: the MIME type
  * sniffed from the file's bytes (finfo), a getimagesize() header parse, a
  * pixel-count cap (decompression-bomb guard) and a real GD decode. The
- * decode step rejects polyglots such as "GIF89a<?php ...", which pass the
- * first two checks on their header bytes alone.
+ * decode step rejects image/script polyglots, which pass the first two
+ * checks on their header bytes alone.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by

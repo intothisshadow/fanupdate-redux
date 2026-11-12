@@ -326,8 +326,8 @@ function dateDiff(date1, date2) {
 /**
  * fuLightboxInit — wire lightbox behaviour onto all <a class="fu-lightbox"> links.
  *
- * Called by FanUpdate::printBlog() via an inline <script> after post output.
- * Safe to call multiple times on the same page (double-init guard on each link).
+ * Runs automatically once the page is parsed (see the self-wiring block after
+ * this function). Safe to call multiple times on the same page (double-init guard on each link).
  *
  * The overlay and its styles are created once on first call and reused.
  * Self-contained: injects its own <style> block so the lightbox works on public
@@ -662,6 +662,21 @@ function fuLightboxInit() {
         });
     });
 }
+
+// Self-wire on load (no inline call needed, so it works under a strict
+// script-src CSP). Skipped on pages without lightbox links so no overlay
+// styles are injected there.
+(function () {
+    const wire = () => {
+        if (document.querySelector('a.fu-lightbox')) { fuLightboxInit(); }
+    };
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', wire);
+    } else {
+        wire();
+    }
+})();
 
 // ── Sortable admin tables (Tablesort) ────────────────────────────────────────
 /**

@@ -14,8 +14,8 @@
  *  - Skin is chosen once at init from the saved fu_theme (localStorage).
  *    TinyMCE can't hot-swap skins, so the editor chrome follows a theme
  *    toggle only after a reload.
- *  - Autoresize reads the fuEditorMinHeight/fuEditorMaxHeight globals from
- *    admin/blog.php (editor_min_height/editor_max_height options, advanced
+ *  - Autoresize reads data-min-height/data-max-height from #fu-editor-config
+ *    in admin/blog.php (editor_min_height/editor_max_height options, advanced
  *    settings not in Admin -> Options), defaulting to 300/800.
  *  - "paste" and "hr" are core behaviour in TinyMCE 6+, not plugins.
  *  - The toolbar is two fixed rows rather than TinyMCE's "More…" overflow
@@ -54,6 +54,13 @@ let _fuTinyMediaPage       = 1;
 let _fuTinyMediaTotalPages = 1;
 
 /** Inserts <a href="FULL" class="fu-lightbox"><img src="THUMB" alt="" /></a> at the caret. */
+/** Editor height from #fu-editor-config's data attributes, or $fallback. */
+function fuEditorHeight(key, fallback) {
+    const el    = document.getElementById('fu-editor-config');
+    const value = el ? parseInt(el.dataset[key] || '', 10) : NaN;
+    return value > 0 ? value : fallback;
+}
+
 function fuTinyInsertImage(editor, fullUrl, thumbUrl) {
     editor.insertContent(
         '<a href="' + fullUrl + '" class="fu-lightbox"><img src="' + thumbUrl + '" alt="" /></a>'
@@ -261,8 +268,11 @@ async function fuTinyUploadImage(e, uploadBtn) {
 
         try {
             const r = await fetch('upload.php', { method: 'POST', body: fd });
-            if (!r.ok) { throw new Error('Server error ' + r.status); }
-            const data = await r.json();
+            // upload.php reports failures (including 403 CSRF) as JSON with
+            // an error message; a non-JSON error body came from the web server.
+            const data = await r.json().catch(() => null);
+            if (!r.ok && !(data && data.error)) { throw new Error('Server error ' + r.status); }
+            if (data === null) { throw new Error('Invalid server response.'); }
 
             if (data.ok) {
                 // Insert immediately, in selection order — insertContent()
@@ -430,8 +440,8 @@ function fuInitTinyMce() {
         remove_script_host: false,
         convert_urls: false,
 
-        min_height: typeof fuEditorMinHeight !== 'undefined' ? fuEditorMinHeight : 300,
-        max_height: typeof fuEditorMaxHeight !== 'undefined' ? fuEditorMaxHeight : 800,
+        min_height: fuEditorHeight('minHeight', 300),
+        max_height: fuEditorHeight('maxHeight', 800),
         autoresize_bottom_margin: 24,
 
         plugins: 'lists link table code fullscreen autoresize charmap',

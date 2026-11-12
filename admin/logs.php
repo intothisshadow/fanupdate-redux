@@ -184,10 +184,10 @@ if ($tab === 'activity') { ?>
         <?php } ?>
     <?php } ?>
 
-    <form action="logs.php" method="post" style="margin-top:1.5rem;"
-          onsubmit="return confirm('Clear the entire activity log? This cannot be undone.');">
+    <form action="logs.php" method="post" style="margin-top:1.5rem;">
         <?php echo $fu->csrfField(); ?>
-        <button type="submit" name="action" value="clear_activity" class="delete">Clear activity log</button>
+        <button type="submit" name="action" value="clear_activity" class="delete"
+                data-confirm="Clear the entire activity log? This cannot be undone.">Clear activity log</button>
     </form>
 
 <?php } else { ?>
@@ -227,10 +227,10 @@ if ($tab === 'activity') { ?>
             </tbody>
         </table>
 
-        <form action="logs.php?tab=errors" method="post" style="margin-top:1.5rem;"
-              onsubmit="return confirm('Clear the error log? This cannot be undone.');">
+        <form action="logs.php?tab=errors" method="post" style="margin-top:1.5rem;">
             <?php echo $fu->csrfField(); ?>
-            <button type="submit" name="action" value="clear_errors" class="delete">Clear error log</button>
+            <button type="submit" name="action" value="clear_errors" class="delete"
+                    data-confirm="Clear the error log? This cannot be undone.">Clear error log</button>
         </form>
     <?php } ?>
 

@@ -71,6 +71,14 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     upload_json_error('Method not allowed.');
 }
 
+// ── guard: body larger than post_max_size ─────────────────────────────────────
+// PHP then discards $_POST and $_FILES entirely, which would otherwise surface
+// below as a misleading CSRF failure.
+
+if (empty($_POST) && empty($_FILES) && (int) ($_SERVER['CONTENT_LENGTH'] ?? 0) > 0) {
+    upload_json_error('File exceeds the server upload limit (post_max_size is ' . ini_get('post_max_size') . ').');
+}
+
 // ── guard: CSRF token ─────────────────────────────────────────────────────────
 // This endpoint always returns JSON, so CSRF failure is reported the same way
 // as any other upload error rather than via verifyCsrfOrFail()'s plain-text

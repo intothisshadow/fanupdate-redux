@@ -270,7 +270,6 @@ if ($confirmBulkDtos !== []) {
 
         <p class="paginate"><?php $fu->db->PrintPaginate(); ?></p>
         <script src="../assets/js/fanupdate-post-admin.js"></script>
-        <script>fuLightboxInit();</script>
         <?php
     } else {
         echo '<p>No images have been uploaded yet. Use the WYSIWYG editor\'s "insert image" button on '

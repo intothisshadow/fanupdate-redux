@@ -18,9 +18,10 @@ declare(strict_types=1);
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/gpl-3.0.html>.
  *
- * Emits `const fuCsrfToken` for the admin AJAX scripts, which build their own
- * request bodies. Included from FanUpdate::getHeader(), so $this is the
- * FanUpdate instance.
+ * Emits the CSRF token and asset version as <meta> tags;
+ * assets/js/fanupdate-admin-config.js exposes them as the `fuCsrfToken` /
+ * `fuAssetVersion` globals the admin AJAX scripts use. Included from
+ * FanUpdate::getHeader(), so $this is the FanUpdate instance.
  *
  * Also included from install.php, which sits one directory above admin/, so
  * asset links need a "../" prefix only for admin pages; $fuAssetPrefix
@@ -55,21 +56,17 @@ $fuAssetVersion = urlencode(FU_VERSION);
     <link rel="stylesheet" id="fu-theme-css" href="<?php echo $fuAssetPrefix; ?>assets/css/style.css?v=<?php echo $fuAssetVersion; ?>" />
     <link rel="shortcut icon" href="<?php echo $fuAssetPrefix; ?>favicon.ico" />
 
+    <?php /* Page values reach the scripts through <meta> tags, not inline scripts, so the admin works under a strict script-src CSP. */ ?>
+    <meta name="fu-csrf-token" content="<?php echo htmlspecialchars($this->generateCsrfToken(), ENT_QUOTES, 'UTF-8'); ?>" />
+    <?php /* Must match the ?v= query string on the style.css/style-night.css <link> tags, or fanupdate-admin.js's href comparison breaks. */ ?>
+    <meta name="fu-asset-version" content="<?php echo htmlspecialchars($fuAssetVersion, ENT_QUOTES, 'UTF-8'); ?>" />
+
     <?php /* Apply saved theme before first paint to avoid flash of wrong theme */ ?>
-    <script>
-    (function () {
-        var saved = localStorage.getItem('fu_theme');
-        if (saved === 'night') {
-            document.getElementById('fu-theme-css').href = '<?php echo $fuAssetPrefix; ?>assets/css/style-night.css?v=<?php echo $fuAssetVersion; ?>';
-        }
-    }());
-    </script>
+    <script src="<?php echo $fuAssetPrefix; ?>assets/js/fanupdate-theme-init.js?v=<?php echo $fuAssetVersion; ?>"></script>
 
     <script src="<?php echo $fuAssetPrefix; ?>assets/vendor/tablesort/tablesort.js?v=<?php echo $fuAssetVersion; ?>"></script>
     <script src="<?php echo $fuAssetPrefix; ?>assets/js/fanupdate.js?v=<?php echo $fuAssetVersion; ?>"></script>
-    <script>const fuCsrfToken = <?php echo json_encode($this->generateCsrfToken(), JSON_THROW_ON_ERROR); ?>;</script>
-    <?php /* Shared with fanupdate-admin.js's theme toggle — must match the ?v= query string on the style.css/style-night.css <link> tags above, or its exact-string href comparison breaks. */ ?>
-    <script>const fuAssetVersion = <?php echo json_encode($fuAssetVersion, JSON_THROW_ON_ERROR); ?>;</script>
+    <script src="<?php echo $fuAssetPrefix; ?>assets/js/fanupdate-admin-config.js?v=<?php echo $fuAssetVersion; ?>"></script>
     <script src="<?php echo $fuAssetPrefix; ?>assets/js/fanupdate-admin.js?v=<?php echo $fuAssetVersion; ?>"></script>
 
 </head>

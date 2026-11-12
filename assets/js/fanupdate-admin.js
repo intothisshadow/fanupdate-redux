@@ -23,7 +23,8 @@
 
 function confirmDelete(e) {
     const button = getEventTarget(e);
-    if (!confirm(button.title + '?')) {
+    const message = button.getAttribute('data-confirm') || (button.title + '?');
+    if (!confirm(message)) {
         // addEventListener handlers can't cancel the default action just by
         // returning false (that only works for old-style onclick="" attributes)
         // — preventDefault() is required to actually stop the click/submit.
@@ -37,6 +38,9 @@ function confirmDelete(e) {
  * confirmDeleteInit — wire a JS confirm() dialog onto every '.delete'
  * element as a safeguard for pages that delete directly from a single form
  * (e.g. the comment/category/blacklist/smilies/templates edit forms).
+ *
+ * The dialog text is the element's [data-confirm] attribute, falling back to
+ * its title plus "?".
  *
  * Elements carrying [data-skip-confirm] are skipped: these are pages where a
  * dedicated server-side confirmation view already exists (see admin/blog.php
@@ -144,6 +148,7 @@ function navToggleInit() {
 }
 
 window.addEventListener('load', () => {
+    document.getElementById('username')?.focus();
     confirmDeleteInit();
     themeToggleInit();
     navToggleInit();

@@ -217,32 +217,12 @@ $fu->reportErrors();
     </p>
 </form>
 
-<script>
-// Auto-fills the other fields and toggles the Custom… field when the dropdown
-// changes. UI only: values stay editable and submit as plain text.
-(function () {
-    var colTable = <?php echo json_encode(array_map(
-        static fn (array $info): array => ['id' => $info['id'], 'subject' => $info['subject'], 'table' => $info['table']],
-        FU_KNOWN_COLLECTIVE_SCRIPTS
-    ), JSON_THROW_ON_ERROR); ?>;
-
-    var select     = document.getElementById('collective_script');
-    var customWrap = document.getElementById('collective_script_custom_wrap');
-    var colId      = document.getElementById('col_id');
-    var colSubj    = document.getElementById('col_subj');
-    var collectiveTable = document.getElementById('collective_table');
-
-    select.addEventListener('change', function () {
-        customWrap.style.display = (this.value === 'custom') ? 'block' : 'none';
-
-        if (colTable[this.value]) {
-            colId.value           = colTable[this.value].id;
-            colSubj.value         = colTable[this.value].subject;
-            collectiveTable.value = colTable[this.value].table;
-        }
-    });
-})();
-</script>
+<?php /* Known-script presets for fanupdate-collective-source.js, passed as JSON in a data attribute. */ ?>
+<div id="fu-collective-presets" hidden data-presets="<?php echo htmlspecialchars(json_encode(array_map(
+    static fn (array $info): array => ['id' => $info['id'], 'subject' => $info['subject'], 'table' => $info['table']],
+    FU_KNOWN_COLLECTIVE_SCRIPTS
+), JSON_THROW_ON_ERROR), ENT_QUOTES, 'UTF-8'); ?>"></div>
+<script src="../assets/js/fanupdate-collective-source.js"></script>
 
 <?php
 $fu->getFooter();

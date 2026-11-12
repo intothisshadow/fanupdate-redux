@@ -14,7 +14,7 @@ This Redux release updates the codebase to **PHP 8.2+** and includes a full admi
 
 Your site or host sends a strict `Content-Security-Policy` header (often set in a root `.htaccess`) that blocks inline scripts, so the admin's scripts never ran. From the release after Redux 2.7.0 the admin pages and the public blog output (including the lightbox and comment form) use no inline scripts, so a policy with `script-src 'self'` is enough. If you are on Redux 2.7.0 or earlier, add an `.htaccess` inside the `admin/` folder that replaces the policy with one that allows `'unsafe-inline'` for scripts. To confirm the cause, open the editor page, type `fuCsrfToken` in the browser console, and check whether it prints a long string or says it is not defined.
 
-The admin uses inline `style=""` attributes, so the policy also needs `style-src 'self' 'unsafe-inline'`, and its fonts and icons load from `fonts.googleapis.com`, `fonts.gstatic.com` and `cdn.jsdelivr.net`.
+The admin uses inline `style=""` attributes, so the policy also needs `style-src 'self' 'unsafe-inline'`, and its web fonts load from `fonts.googleapis.com` and `fonts.gstatic.com`. The admin icons are self-hosted from the release after 2.7.1; in 2.7.1 and earlier they load from `cdn.jsdelivr.net`, so a policy that doesn't allow that host shows blank icon boxes in the admin header.
 
 ### Saving a new entry fails with "Unknown column 'cat_id' in INSERT INTO blog"
 

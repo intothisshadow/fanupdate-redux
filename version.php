@@ -156,6 +156,13 @@ const FU_LIBRARIES = [
         'used_in' => 'assets/vendor/tinymce/ — post body editor in Admin → Entries',
     ],
     [
+        'name'    => 'Tabler Icons',
+        'author'  => 'Paweł Kuna',
+        'years'   => '2020–2025',
+        'url'     => 'https://tabler.io/icons',
+        'used_in' => 'assets/vendor/tabler-icons/ — admin navigation and button icons (subset of the icon font)',
+    ],
+    [
         'name'    => 'CaptchaSecurityImages',
         'author'  => 'Simon Jarvis',
         'years'   => '2006',

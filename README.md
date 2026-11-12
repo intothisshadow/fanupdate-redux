@@ -655,6 +655,7 @@ fanupdate/
 │   │   ├── fanupdate-comment-submit.js# Front-end comment submission AJAX
 │   │   └── select-all.js             # Checkbox select-all, dynamic categories, timestamp
 │   ├── vendor/
+│   │   ├── tabler-icons/    # Self-hosted admin icon font (vendored subset — see docs/THIRD-PARTY-LICENSES.md)
 │   │   └── tinymce/         # Self-hosted TinyMCE (vendored, trimmed — see docs/THIRD-PARTY-LICENSES.md)
 │   ├── fonts/
 │   │   └── VeraSe.ttf       # CAPTCHA font (Bitstream Vera Serif)

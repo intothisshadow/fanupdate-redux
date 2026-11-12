@@ -5,6 +5,14 @@ All notable changes to this project are documented here.
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+- **Admin header icons blank under a strict policy** — the admin's navigation and button icons (account, credits, theme, logout, and the rest) loaded from the jsDelivr CDN (`@latest`), so a Content-Security-Policy that doesn't allow that host showed empty boxes. The 19 icons the admin uses are now self-hosted as a small font subset (about 4 KB) in `assets/vendor/tabler-icons/`, which also removes the unpinned CDN dependency. Tabler Icons (MIT) is added to the credits.
+
+---
+
 ## [Redux 2.7.1] — November 12, 2026 — Strict-CSP Admin & Upload Fixes
 
 ### Changed

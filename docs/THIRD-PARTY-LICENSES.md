@@ -99,6 +99,17 @@ from TinyMCE's own.
 
 ---
 
+## Tabler Icons
+
+- **Files:** `assets/vendor/tabler-icons/tabler-icons-subset.css` and `tabler-icons-subset.woff2`
+- **Version:** 3.35.0 (`@tabler/icons-webfont`), trimmed
+- **Source:** https://github.com/tabler/tabler-icons
+- **Used for:** The icons in the admin navigation and buttons. Previously loaded from the jsDelivr CDN (`@latest`); now self-hosted so the admin has no CDN dependency and works under a strict Content-Security-Policy.
+- **Trimmed to:** the 19 icons the admin uses (`ti-plus`, `ti-x`, `ti-moon`, `ti-sun`, `ti-menu-2`, `ti-copy`, `ti-user`, `ti-upload`, `ti-tag`, `ti-settings`, `ti-refresh`, `ti-photo`, `ti-pencil`, `ti-message-circle`, `ti-logout`, `ti-list-details`, `ti-layout-dashboard`, `ti-info-circle`, `ti-check`), subset from upstream's `tabler-icons.woff2` with fontTools. To add an icon, add its class and code point from upstream's `tabler-icons.min.css` to the CSS file and re-subset the font.
+- **License:** MIT. Upstream's license is vendored at `assets/vendor/tabler-icons/LICENSE`.
+
+---
+
 ## Tablesort
 
 - **File:** `assets/vendor/tablesort/tablesort.js`

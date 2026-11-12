@@ -5,7 +5,7 @@ All notable changes to this project are documented here.
 
 ---
 
-## [Unreleased]
+## [Redux 2.7.1] — November 12, 2026 — Strict-CSP Admin & Upload Fixes
 
 ### Changed
 

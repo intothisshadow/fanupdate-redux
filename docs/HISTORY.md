@@ -6,6 +6,34 @@ each change, and `PHP Test Suite/TEST_LOG.md` for verified test runs.
 
 ---
 
+## [Redux 2.7.1] — November 12, 2026 — Strict-CSP Admin & Upload Fixes
+
+## FP-49. Strict-CSP-Compatible Admin: Remove Inline Scripts and Handlers
+
+**Status:** Complete — shipped in Redux 2.7.1
+
+### Background
+
+A host or site-wide `Content-Security-Policy` of `script-src 'self'` (as on the Unloved Heart root `.htaccess`) blocks every inline `<script>` and `onclick=`/`onsubmit=` attribute in the admin. The visible failure was `admin/header.php`'s inline `const fuCsrfToken = …;` never running, so the editor's image upload sent an empty token and failed with "Security check failed" (forms were unaffected because they carry the token in a hidden field). The same CSP also blocks the theme-flash script, `fuAssetVersion`, and the inline blocks in `blog.php`, `collective-source.php`, `media.php` and `update.php`. The public blog output had the same problem (inline `fuLightboxInit()`, `submitCmtInit()` and `fu_url` scripts from `FanUpdate::printBlog()`), which stopped the lightbox on strict-CSP sites; fixed in the same ticket by letting `fanupdate.js` and `fanupdate-comment-submit.js` self-wire. Interim workaround: an `admin/.htaccess` on the affected site that sets `script-src 'self' 'unsafe-inline'` for the admin only.
+
+### Approach
+
+- [x] Pass `fuCsrfToken` and `fuAssetVersion` to the JS via a `<meta>` tag or `data-` attributes on `<body>`, read by `fanupdate.js`/`fanupdate-admin.js` (keep the `fuCsrfToken` global for existing scripts).
+- [x] Move the theme-flash script in `admin/header.php` to an external file loaded in `<head>`.
+- [x] Move the inline `<script>` blocks in `admin/blog.php`, `admin/collective-source.php`, `admin/media.php` and `admin/update.php` into external JS, passing any PHP values through `data-` attributes.
+- [x] Replace the inline `onclick=`/`onsubmit=` confirm handlers in `admin/category.php` and `admin/logs.php` with a `data-confirm` attribute handled by `fanupdate-admin.js`.
+- [x] Check the TinyMCE editor and Media lightbox still work with inline scripts disallowed (TinyMCE may need `style-src 'unsafe-inline'`; document the minimum policy).
+- [x] Document a CSP that FanUpdate's admin works under, in the README's troubleshooting/security notes and `docs/TROUBLESHOOTING.md`.
+
+### Testing
+
+- [x] Live-verify on the dev install with a strict `script-src 'self'` header: login, create/edit entry, image upload, Media page, Updates page, Logs clear confirms.
+- [x] Regression test (PHPUnit) that `admin/*.php` contain no inline `<script>` without a `src` and no `on*=` attributes.
+
+**Compatibility note:** no behaviour change for sites without a CSP.
+
+------
+
 ## [Redux 2.7.0] — November 6, 2026 — Activity & Error Logs, Hidden Collective Categories & More
 
 ## FP-37. Per-Installation Toggle for Collective-Sourced Category Visibility

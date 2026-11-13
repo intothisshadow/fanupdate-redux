@@ -29,7 +29,8 @@ class CategoryRepository implements CategoryRepositoryInterface
     /**
      * Standalone category IDs are this offset plus the table's own `id`, so
      * they can't collide with a collective table's native IDs. The table's
-     * AUTO_INCREMENT is seeded to offset + 1 at creation.
+     * own AUTO_INCREMENT starts at 1 (older installs were seeded at
+     * offset + 1, which only makes their IDs larger).
      */
     public const STANDALONE_ID_OFFSET = 1_000_000;
 

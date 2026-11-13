@@ -165,12 +165,12 @@ class SchemaMigrator
             return null;
         }
 
-        $offsetPlusOne = CategoryRepository::STANDALONE_ID_OFFSET + 1;
-        $query         = 'CREATE TABLE ' . $this->standaloneCategoryTable . " (
+        // The table's own ids start at 1; CategoryRepository adds STANDALONE_ID_OFFSET.
+        $query = 'CREATE TABLE ' . $this->standaloneCategoryTable . " (
       `id` int(6) unsigned NOT NULL AUTO_INCREMENT,
       `name` varchar(100) NOT NULL DEFAULT '',
       PRIMARY KEY (`id`)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci AUTO_INCREMENT=$offsetPlusOne";
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci";
 
         $ok = $this->db->Execute($query);
 

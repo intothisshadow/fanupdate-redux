@@ -16,6 +16,7 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- **Odd standalone category IDs** — when a collective script is configured, FanUpdate's own categories table was created with its counter already set to 1,000,001 and then offset by another 1,000,000, so the first category you added showed as ID 2,000,001. New tables now start at 1 (first ID 1,000,001). Existing tables keep their counters, since entries already reference those IDs.
 - **Category list failed with Listing Admin, Enthusiast and other non-utf8mb4 tables** — when a collective script was configured, the combined category list forced the fanlisting names to `utf8mb4_general_ci`, which MySQL rejects for utf8mb3 tables such as Listing Admin's (and latin1 ones such as Enthusiast's). The names are now converted to utf8mb4 first, which works for any table character set.
 
 - **Admin header icons blank under a strict policy** — the admin's navigation and button icons (account, credits, theme, logout, and the rest) loaded from the jsDelivr CDN (`@latest`), so a Content-Security-Policy that doesn't allow that host showed empty boxes. The 19 icons the admin uses are now self-hosted as a small font subset (about 4 KB) in `assets/vendor/tabler-icons/`, which also removes the unpinned CDN dependency. Tabler Icons (MIT) is added to the credits.

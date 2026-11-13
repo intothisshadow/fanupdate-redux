@@ -180,6 +180,42 @@ class BackupManager
         );
     }
 
+    /**
+     * Resolves a backup by bare filename to its real path, or null. Accepts only
+     * names this class creates and files that resolve inside $backupDir, so a
+     * request can't name an arbitrary file (archives contain blog-config.php).
+     */
+    public function locateBackup(string $fileName): ?string
+    {
+        if ($fileName !== basename($fileName) || !preg_match('/^backup-.+-\d{8}-\d{6}\.zip$/', $fileName)) {
+            return null;
+        }
+
+        $realBackupDir = realpath($this->backupDir);
+        $realFilePath  = realpath($this->backupDir . '/' . $fileName);
+
+        if (
+            $realBackupDir === false
+            || $realFilePath === false
+            || !is_file($realFilePath)
+            || !str_starts_with($realFilePath, $realBackupDir . DIRECTORY_SEPARATOR)
+        ) {
+            return null;
+        }
+
+        return $realFilePath;
+    }
+
+    /** Filename offered on download, e.g. "FanUpdateRedux-2026-11-03-172441.zip", from the date and time in the stored name. */
+    public function downloadFileName(string $storedName): string
+    {
+        if (preg_match('/-(\d{4})(\d{2})(\d{2})-(\d{6})\.zip$/', $storedName, $m)) {
+            return 'FanUpdateRedux-' . $m[1] . '-' . $m[2] . '-' . $m[3] . '-' . $m[4] . '.zip';
+        }
+
+        return 'FanUpdateRedux-backup.zip';
+    }
+
     /** Delete a single backup file. Silently no-ops if it doesn't exist or isn't under $backupDir. */
     public function deleteBackup(string $filePath): void
     {

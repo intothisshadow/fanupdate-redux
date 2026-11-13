@@ -9,6 +9,7 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- **Download a backup from the Updates page (FP-50)** — each installation backup in **Admin → Updates → Backups** now has a Download button that saves the ZIP to your computer, named like `FanUpdateRedux-2026-11-03-172441.zip` (backup date and time), so you can keep an off-site copy. It is a signed-in, token-protected action, only serves backups FanUpdate itself created, and is recorded in the activity log. Backups include `blog-config.php`, so keep downloaded copies private.
 - **Supported forks named** — the Collective Source dropdown and the README now say which forks are supported: Enthusiast (Erin's PHP 8 fork) and Listing Admin (Redux or Erin's PHP 8 fork).
 - **Listing Admin integration (FP-39)** — **Admin → Options → Collective Source** now offers Listing Admin (`listingadmin`), filling in its main fanlistings table (`trex` by default; it is your Listing Admin table prefix without the underscore) and its `id`/`subject` columns. Fanlistings are read live, so new ones show up immediately, and removing one in Listing Admin raises the existing Dashboard notice and confirm-before-delete flow on **Admin → Categories**.
 

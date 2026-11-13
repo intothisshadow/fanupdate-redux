@@ -144,6 +144,28 @@ if (($_GET['action'] ?? '') === 'run-upgrades') {
 
 $action = $_POST['action'] ?? '';
 
+// Streams the file and exits; on any failure falls through to render the page with an error.
+if ($action === 'download_backup' && $fu->verifyCsrfOrFail()) {
+    $backupFile = $backupManager->locateBackup((string) ($_POST['backup_file'] ?? ''));
+
+    if ($backupFile === null) {
+        $fu->addErr('That backup could not be found.');
+    } else {
+        $fu->logEvent(LogService::UPDATE_ACTION, 'Backup downloaded: ' . basename($backupFile) . '.');
+
+        while (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+        header('Content-Type: application/zip');
+        header('Content-Disposition: attachment; filename="' . $backupManager->downloadFileName(basename($backupFile)) . '"');
+        header('Content-Length: ' . (string) filesize($backupFile));
+        header('X-Content-Type-Options: nosniff');
+        header('Cache-Control: no-store');
+        readfile($backupFile);
+        exit;
+    }
+}
+
 if ($action === 'check') {
     if (!$fu->verifyCsrfOrFail()) {
         // Invalid/missing CSRF token — error already queued.
@@ -831,7 +853,8 @@ if ($upgradeRunner->hasPendingUpgrades(FU_VERSION)) {
     <p class="hint small">
         A backup is a ZIP snapshot of the application's own code and configuration — not
         your uploaded images, which an update never touches. Up to 3 backups are kept;
-        creating a new one automatically removes the oldest beyond that.
+        creating a new one automatically removes the oldest beyond that. Download one to keep
+        an off-site copy — it includes <code>blog-config.php</code>, so store it somewhere private.
     </p>
 
     <form action="update.php" method="post" style="margin:1rem 0;">
@@ -859,6 +882,12 @@ if ($upgradeRunner->hasPendingUpgrades(FU_VERSION)) {
                     <td><?php echo fu_update_format_date($backup->createdAt); ?></td>
                     <td><?php echo fu_update_format_bytes($backup->size); ?></td>
                     <td>
+                        <form action="update.php" method="post" style="display:inline; margin-right:0.5rem;">
+                            <?php echo $fu->csrfField(); ?>
+                            <input type="hidden" name="action" value="download_backup" />
+                            <input type="hidden" name="backup_file" value="<?php echo htmlspecialchars(basename($backup->filePath), ENT_QUOTES, 'UTF-8'); ?>" />
+                            <input type="submit" class="update" value="Download" title="Download this backup ZIP" />
+                        </form>
                         <a href="update.php?action=confirm-rollback&amp;backup_path=<?php echo urlencode($backup->filePath); ?>" class="button" style="margin-right:0.5rem;">Restore</a>
                         <form action="update.php" method="post" style="display:inline;">
                             <?php echo $fu->csrfField(); ?>

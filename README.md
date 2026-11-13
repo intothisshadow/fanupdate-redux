@@ -396,6 +396,7 @@ FanUpdate can use your existing collective management script's table as a catego
 |--------|-------------|
 | Enthusiast 3 | `enthusiast` |
 | Fanatically | `fanatically` |
+| Listing Admin | `listingadmin` |
 | Standalone / none | `none` |
 
 Configured entirely from **Admin → Options → Collective Source**, *after* installing — pick a known script from the dropdown (its collective table name and column names are filled in automatically) or choose **Custom…** to integrate with an unlisted script by entering its identifier, table name, and column names directly. FanUpdate must be installed in the **same database** as the collective script by default — see "Separate-database support" below if that database is different from FanUpdate's own. `blog-config.sample.php` no longer pre-declares `collective_script` at all — a fresh install simply starts standalone, and you configure the real script from this page afterward.
@@ -409,6 +410,12 @@ Configured entirely from **Admin → Options → Collective Source**, *after* in
 If your collective script's database is separate from the one you want FanUpdate installed in — common on shared hosting, which usually gives you one MySQL server but a small quota of separate databases — you can schema-qualify the **Collective/categories table name** field on **Admin → Options → Collective Source** instead of moving everything into one database, e.g. `enthusiast_db.owned`.
 
 This works as long as both databases are on the **same MySQL server**, and the `dbuser` FanUpdate connects with has been **GRANTed privileges on that other database too** (ask your host, or set it up yourself if you manage the server). FanUpdate still makes only one database connection, using the `dbhost`/`dbname`/`dbuser`/`dbpass` credentials above — those always describe FanUpdate's own database; only `collective_table` can point at a different one. A genuinely separate MySQL *server* (a different host entirely) is not supported — several places join the collective table directly against FanUpdate's own tables in one query, which isn't possible across servers.
+
+**Listing Admin:** picking it fills in `trex` as the table, which is the default. Listing Admin names its main fanlistings table after your table prefix without the underscore, so if you chose a different prefix when installing it (say `fl_`), change the table name here to match (`fl`) — not the `…_categories` table, which is Listing Admin's directory-wide category list.
+
+### Staying in sync with your collective script
+
+The fanlistings are read straight from your collective script's table every time a page loads, so there's nothing to refresh — a fanlisting added in the collective script appears in FanUpdate's category list and post editor on the next page view. If you remove a fanlisting from the collective script, FanUpdate keeps its category settings and shows a notice on the Dashboard; open **Admin → Categories** to review and confirm each removal.
 
 ### Hybrid categories (standalone + collective, side by side)
 

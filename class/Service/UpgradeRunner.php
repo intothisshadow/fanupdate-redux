@@ -59,7 +59,7 @@ class UpgradeRunner
         // A missing row already behaves as "y"; seeding just surfaces the toggle in Options.
         'show_collective_categories' => [
             'value'       => 'y',
-            'description' => 'Show categories from your collective script (Enthusiast, Fanatically, ...) alongside FanUpdate\'s own in the category list and entry category picker. Turn off to list only FanUpdate\'s own categories. Has no effect when no collective script is configured.',
+            'description' => 'Show categories from your collective script (Enthusiast, Fanatically, Listing Admin, ...) alongside FanUpdate\'s own in the category list and entry category picker. Turn off to list only FanUpdate\'s own categories. Has no effect when no collective script is configured.',
         ],
         // Missing rows already behave as these defaults; seeding makes them editable.
         'log_retention_days' => [
@@ -209,15 +209,15 @@ class UpgradeRunner
         $this->repository->setOptionValue(
             'collective_script',
             $normalized,
-            'Which collective/fanlisting script this installation is paired with. Supported: "enthusiast" (Enthusiast), "fanatically" (Fanatically). Use "none" for standalone mode, where FanUpdate manages its own categories table entirely with no external script involved. ("listingadmin" is reserved for future Listing Admin support and is not yet functional.) Editable in Admin -> Options -> Collective Source.'
+            'Which collective/fanlisting script this installation is paired with. Supported: "enthusiast" (Enthusiast), "fanatically" (Fanatically), "listingadmin" (Listing Admin). Use "none" for standalone mode, where FanUpdate manages its own categories table entirely with no external script involved. Editable in Admin -> Options -> Collective Source.'
         );
 
         if ($this->legacyColId !== null && $this->legacyColId !== '') {
-            $this->repository->setOptionValue('col_id', $this->legacyColId, 'Collective table primary key column name. Only relevant when collective_script is not "none". Expected values: Enthusiast = listingid, Fanatically = id.');
+            $this->repository->setOptionValue('col_id', $this->legacyColId, 'Collective table primary key column name. Only relevant when collective_script is not "none". Expected values: Enthusiast = listingid, Fanatically = id, Listing Admin = id.');
         }
 
         if ($this->legacyColSubj !== null && $this->legacyColSubj !== '') {
-            $this->repository->setOptionValue('col_subj', $this->legacyColSubj, 'Collective table subject/name column name. Only relevant when collective_script is not "none". Expected values: Enthusiast = subject, Fanatically = subject.');
+            $this->repository->setOptionValue('col_subj', $this->legacyColSubj, 'Collective table subject/name column name. Only relevant when collective_script is not "none". Expected values: Enthusiast = subject, Fanatically = subject, Listing Admin = subject.');
         }
 
         return 'Migrated collective-script configuration from blog-config.php into the database (collective_script = "' . $normalized . '").';
@@ -241,7 +241,7 @@ class UpgradeRunner
         $this->repository->setOptionValue(
             'collective_table',
             (string) $this->legacyCollectiveTable,
-            'The name of your collective/categories table. Must match the collective_script currently selected — e.g. Fanatically\'s default is "fanatic_listings" (the fanlistings this collective actually owns — NOT "fanatic_categories", which is Fanatically\'s own site-wide list of every category across the whole directory), Enthusiast\'s is "owned". For a standalone installation (collective_script = "none") this is FanUpdate\'s own categories table. Editable in Admin -> Options -> Collective Source.'
+            'The name of your collective/categories table. Must match the collective_script currently selected — e.g. Fanatically\'s default is "fanatic_listings" (the fanlistings this collective actually owns — NOT "fanatic_categories", which is Fanatically\'s own site-wide list of every category across the whole directory), Enthusiast\'s is "owned", Listing Admin\'s is its main table (your table prefix without the underscore, e.g. "trex" for the default "trex_"). For a standalone installation (collective_script = "none") this is FanUpdate\'s own categories table. Editable in Admin -> Options -> Collective Source.'
         );
 
         return 'Migrated collective_table configuration from blog-config.php into the database (collective_table = "' . $this->legacyCollectiveTable . '").';

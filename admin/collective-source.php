@@ -34,13 +34,15 @@ $optionService = new OptionService(new OptionRepository(
 $showNav = true;
 
 // ── Known collective scripts ───────────────────────────────────────────────
-// Mirrors blog-config.sample.php's $coltable defaults. "listingadmin" is
-// intentionally omitted until its adapter exists; a stored "listingadmin"
-// (or any unknown value) shows as Custom….
+// Mirrors blog-config.sample.php's $coltable defaults. An unknown stored
+// value shows as Custom…. Listing Admin's table is its table prefix without
+// underscores (default prefix "trex_" gives "trex"), so that preset is only
+// a starting point.
 const FU_KNOWN_COLLECTIVE_SCRIPTS = [
-    'none'        => ['label' => 'None (standalone)', 'id' => 'fl_id',     'subject' => 'fl_subject', 'table' => 'blog_category'],
-    'enthusiast'  => ['label' => 'Enthusiast',         'id' => 'listingid', 'subject' => 'subject',    'table' => 'owned'],
-    'fanatically' => ['label' => 'Fanatically',        'id' => 'id',        'subject' => 'subject',    'table' => 'fanatic_listings'],
+    'none'         => ['label' => 'None (standalone)', 'id' => 'fl_id',     'subject' => 'fl_subject', 'table' => 'blog_category'],
+    'enthusiast'   => ['label' => 'Enthusiast',         'id' => 'listingid', 'subject' => 'subject',    'table' => 'owned'],
+    'fanatically'  => ['label' => 'Fanatically',        'id' => 'id',        'subject' => 'subject',    'table' => 'fanatic_listings'],
+    'listingadmin' => ['label' => 'Listing Admin',      'id' => 'id',        'subject' => 'subject',    'table' => 'trex'],
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -125,8 +127,8 @@ $fu->reportErrors();
 
 <p class="hint" style="margin-bottom:1.25rem;">
     Controls which collective/fanlisting script's categories appear alongside FanUpdate's own
-    (see <strong>Admin → Categories</strong>). Supported scripts: <strong>Enthusiast</strong> and
-    <strong>Fanatically</strong>. Choose <strong>None</strong> for standalone mode — FanUpdate
+    (see <strong>Admin → Categories</strong>). Supported scripts: <strong>Enthusiast</strong>,
+    <strong>Fanatically</strong> and <strong>Listing Admin</strong>. Choose <strong>None</strong> for standalone mode — FanUpdate
     manages its own categories table entirely, with no external script involved. Choosing
     <strong>Custom…</strong> lets you integrate with an unlisted script by entering its column
     names directly; this is the same escape hatch the underlying settings always supported, just
@@ -174,7 +176,7 @@ $fu->reportErrors();
                value="<?php echo htmlspecialchars($currentColId, ENT_QUOTES, 'UTF-8'); ?>" />
         <p class="hint small" style="margin-top:3px;">
             Only relevant when Collective script isn't "None". Expected values: Enthusiast =
-            <code>listingid</code>, Fanatically = <code>id</code>. Auto-filled when you choose a
+            <code>listingid</code>, Fanatically = <code>id</code>, Listing Admin = <code>id</code>. Auto-filled when you choose a
             known script above, but always editable.
         </p>
     </div>
@@ -187,7 +189,7 @@ $fu->reportErrors();
                value="<?php echo htmlspecialchars($currentColSubj, ENT_QUOTES, 'UTF-8'); ?>" />
         <p class="hint small" style="margin-top:3px;">
             Only relevant when Collective script isn't "None". Expected values: Enthusiast =
-            <code>subject</code>, Fanatically = <code>subject</code>. Auto-filled when you choose a
+            <code>subject</code>, Fanatically = <code>subject</code>, Listing Admin = <code>subject</code>. Auto-filled when you choose a
             known script above, but always editable.
         </p>
     </div>
@@ -204,7 +206,9 @@ $fu->reportErrors();
             <code>fanatic_listings</code> (the fanlistings this collective actually owns —
             NOT <code>fanatic_categories</code>, which is Fanatically's own site-wide list of
             every category across the whole directory, unrelated to what any one collective
-            owns). For "None" (standalone), this is FanUpdate's own categories table. Auto-filled
+            owns), Listing Admin = its main fanlistings table, which is your Listing Admin table
+            prefix without the underscore (default prefix <code>trex_</code> gives
+            <code>trex</code> — not <code>trex_categories</code>). For "None" (standalone), this is FanUpdate's own categories table. Auto-filled
             when you choose a known script above, but always editable — e.g. if your collective
             script's database lives on the same MySQL server but under a different schema, you
             can schema-qualify this as <code>other_db.table_name</code>.

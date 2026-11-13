@@ -232,9 +232,11 @@ class CategoryRepository implements CategoryRepositoryInterface
             // catjoin table (not catoptions).
             $offset = self::STANDALONE_ID_OFFSET;
 
-            // cname is COLLATEd to utf8mb4_general_ci: an external database's
-            // default (e.g. utf8mb4_unicode_ci) otherwise makes MySQL reject
-            // the UNION ("Illegal mix of collations"). Affects comparison only.
+            // cname is forced to utf8mb4_general_ci: an external table's
+            // collation otherwise makes MySQL reject the UNION ("Illegal mix
+            // of collations"). The collective column is CONVERTed first
+            // because a bare COLLATE is invalid on utf8mb3/latin1 columns
+            // (Listing Admin's tables are utf8mb3).
             $query = '(SELECT s.id + ' . $offset . ' AS cid,
                     s.name COLLATE utf8mb4_general_ci AS cname,
                     COUNT(j1.cat_id) AS num
@@ -243,7 +245,7 @@ class CategoryRepository implements CategoryRepositoryInterface
                 GROUP BY s.id)
                 UNION ALL
                 (SELECT ' . $this->colId . ' AS cid,
-                    ' . $this->colSubj . ' COLLATE utf8mb4_general_ci AS cname,
+                    CONVERT(' . $this->colSubj . ' USING utf8mb4) COLLATE utf8mb4_general_ci AS cname,
                     COUNT(j2.cat_id) AS num
                 FROM ' . $this->collectiveTable . '
                 LEFT JOIN ' . $this->catjoinTable . ' j2 ON ' . $this->colId . ' = j2.cat_id

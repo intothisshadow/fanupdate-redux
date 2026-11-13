@@ -57,6 +57,7 @@ $fanupdate['dbpass']		= 'pass';
 
 // Enthusiast			'owned'
 // Fanatically			'fanatic_listings'
+// Listing Admin		'trex' (your table prefix without the underscore)
 
 // NOT Fanatically's 'fanatic_categories' table — that's Fanatically's own
 // site-wide list of every category across the whole directory (Actors,

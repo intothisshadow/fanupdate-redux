@@ -321,23 +321,23 @@ if ($legacy_collective_script === '') {
 
 $setting[29]['optkey']   = 'collective_script';
 $setting[29]['optvalue'] = (new CollectiveScriptNormalizer())->normalize($legacy_collective_script);
-$setting[29]['optdesc']  = 'Which collective/fanlisting script this installation is paired with. Supported: "enthusiast" (Enthusiast), "fanatically" (Fanatically). Use "none" for standalone mode, where FanUpdate manages its own categories table entirely with no external script involved. ("listingadmin" is reserved for future Listing Admin support and is not yet functional.) Editable in Admin -> Options -> Collective Source.';
+$setting[29]['optdesc']  = 'Which collective/fanlisting script this installation is paired with. Supported: "enthusiast" (Enthusiast), "fanatically" (Fanatically), "listingadmin" (Listing Admin). Use "none" for standalone mode, where FanUpdate manages its own categories table entirely with no external script involved. Editable in Admin -> Options -> Collective Source.';
 $setting[29]['version']  = '2.2.1b2';
 
 $setting[30]['optkey']   = 'col_id';
 $setting[30]['optvalue'] = (string) ($coltable[$legacy_collective_script]['id'] ?? 'fl_id');
-$setting[30]['optdesc']  = 'Collective table primary key column name. Only relevant when collective_script is not "none". Expected values: Enthusiast = listingid, Fanatically = id.';
+$setting[30]['optdesc']  = 'Collective table primary key column name. Only relevant when collective_script is not "none". Expected values: Enthusiast = listingid, Fanatically = id, Listing Admin = id.';
 $setting[30]['version']  = '2.2.1b2';
 
 $setting[31]['optkey']   = 'col_subj';
 $setting[31]['optvalue'] = (string) ($coltable[$legacy_collective_script]['subject'] ?? 'fl_subject');
-$setting[31]['optdesc']  = 'Collective table subject/name column name. Only relevant when collective_script is not "none". Expected values: Enthusiast = subject, Fanatically = subject.';
+$setting[31]['optdesc']  = 'Collective table subject/name column name. Only relevant when collective_script is not "none". Expected values: Enthusiast = subject, Fanatically = subject, Listing Admin = subject.';
 $setting[31]['version']  = '2.2.1b2';
 
 // Seeded from the legacy $fanupdate['collective_table']; see UpgradeRunner for installs that skip install.php.
 $setting[32]['optkey']   = 'collective_table';
 $setting[32]['optvalue'] = (string) ($fanupdate['collective_table'] ?? 'blog_category');
-$setting[32]['optdesc']  = 'The name of your collective/categories table. Must match the collective_script currently selected — e.g. Fanatically\'s default is "fanatic_listings" (the fanlistings this collective actually owns — NOT "fanatic_categories", which is Fanatically\'s own site-wide list of every category across the whole directory), Enthusiast\'s is "owned". For a standalone installation (collective_script = "none") this is FanUpdate\'s own categories table. Editable in Admin -> Options -> Collective Source.';
+$setting[32]['optdesc']  = 'The name of your collective/categories table. Must match the collective_script currently selected — e.g. Fanatically\'s default is "fanatic_listings" (the fanlistings this collective actually owns — NOT "fanatic_categories", which is Fanatically\'s own site-wide list of every category across the whole directory), Enthusiast\'s is "owned", Listing Admin\'s is its main table (your table prefix without the underscore, e.g. "trex" for the default "trex_"). For a standalone installation (collective_script = "none") this is FanUpdate\'s own categories table. Editable in Admin -> Options -> Collective Source.';
 $setting[32]['version']  = '2.2.1b2';
 
 // Dashboard news feed; blank hides the widget. Existing installs get this via
@@ -350,7 +350,7 @@ $setting[33]['version']  = '2.2.1b2';
 // Existing installs get this via UpgradeRunner::NEW_DEFAULT_OPTIONS.
 $setting[34]['optkey']   = 'show_collective_categories';
 $setting[34]['optvalue'] = 'y';
-$setting[34]['optdesc']  = 'Show categories from your collective script (Enthusiast, Fanatically, ...) alongside FanUpdate\'s own in the category list and entry category picker. Turn off to list only FanUpdate\'s own categories. Has no effect when no collective script is configured.';
+$setting[34]['optdesc']  = 'Show categories from your collective script (Enthusiast, Fanatically, Listing Admin, ...) alongside FanUpdate\'s own in the category list and entry category picker. Turn off to list only FanUpdate\'s own categories. Has no effect when no collective script is configured.';
 $setting[34]['version']  = '2.2.1b2';
 
 // Existing installs get these via UpgradeRunner::NEW_DEFAULT_OPTIONS.

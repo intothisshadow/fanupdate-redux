@@ -40,9 +40,9 @@ $showNav = true;
 // a starting point.
 const FU_KNOWN_COLLECTIVE_SCRIPTS = [
     'none'         => ['label' => 'None (standalone)', 'id' => 'fl_id',     'subject' => 'fl_subject', 'table' => 'blog_category'],
-    'enthusiast'   => ['label' => 'Enthusiast',         'id' => 'listingid', 'subject' => 'subject',    'table' => 'owned'],
+    'enthusiast'   => ['label' => 'Enthusiast (Erin\'s PHP 8 fork)', 'id' => 'listingid', 'subject' => 'subject',    'table' => 'owned'],
     'fanatically'  => ['label' => 'Fanatically',        'id' => 'id',        'subject' => 'subject',    'table' => 'fanatic_listings'],
-    'listingadmin' => ['label' => 'Listing Admin',      'id' => 'id',        'subject' => 'subject',    'table' => 'trex'],
+    'listingadmin' => ['label' => 'Listing Admin (Redux or Erin\'s fork)', 'id' => 'id',        'subject' => 'subject',    'table' => 'trex'],
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -127,8 +127,10 @@ $fu->reportErrors();
 
 <p class="hint" style="margin-bottom:1.25rem;">
     Controls which collective/fanlisting script's categories appear alongside FanUpdate's own
-    (see <strong>Admin → Categories</strong>). Supported scripts: <strong>Enthusiast</strong>,
-    <strong>Fanatically</strong> and <strong>Listing Admin</strong>. Choose <strong>None</strong> for standalone mode — FanUpdate
+    (see <strong>Admin → Categories</strong>). Supported scripts: <strong>Enthusiast</strong>
+    (Erin's PHP 8 fork), <strong>Fanatically</strong> and <strong>Listing Admin</strong>
+    (<a href="https://github.com/intothisshadow/ListinAdmin-Redux" target="_blank" rel="noopener noreferrer">Redux</a>,
+    or <a href="https://github.com/DudeThatsErin/listingadmin" target="_blank" rel="noopener noreferrer">Erin's PHP 8 fork</a> it is based on). Other forks that keep the same fanlistings table will usually work too. Choose <strong>None</strong> for standalone mode — FanUpdate
     manages its own categories table entirely, with no external script involved. Choosing
     <strong>Custom…</strong> lets you integrate with an unlisted script by entering its column
     names directly; this is the same escape hatch the underlying settings always supported, just

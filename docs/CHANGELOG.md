@@ -9,6 +9,7 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- **Supported forks named** — the Collective Source dropdown and the README now say which forks are supported: Enthusiast (Erin's PHP 8 fork) and Listing Admin (Redux or Erin's PHP 8 fork).
 - **Listing Admin integration (FP-39)** — **Admin → Options → Collective Source** now offers Listing Admin (`listingadmin`), filling in its main fanlistings table (`trex` by default; it is your Listing Admin table prefix without the underscore) and its `id`/`subject` columns. Fanlistings are read live, so new ones show up immediately, and removing one in Listing Admin raises the existing Dashboard notice and confirm-before-delete flow on **Admin → Categories**.
 
 - **Enthusiast integration verified (FP-38)** — Enthusiast's `owned` table (`listingid`/`subject`) works with the live category list, post editor and removed-fanlisting notice and confirm flow, on both latin1 and utf8mb4 installs. No Enthusiast-specific sync is needed, since fanlistings are read live from `owned`.

@@ -38,7 +38,7 @@ No Composer required. Upload and go.
 - **Fully templated** — entry, comment, comment form, and footer layouts are all editable from the admin panel without touching code
 - **Archive pages** — browse posts by month or by category
 - **Full-text search**
-- **Collective script integration** — works alongside Enthusiast 3, Fanatically or fully standalone
+- **Collective script integration** — works alongside Enthusiast (Erin's PHP 8 fork), Fanatically, Listing Admin (Redux or Erin's fork) or fully standalone
 - **Keyboard accesskeys** throughout the admin panel
 - **Admin Update Manager** — **Admin → Updates** checks GitHub for newer FanUpdate Redux releases (stable or prerelease channel, with optional automatic checks on a configurable interval) and shows a dismissible Dashboard notice when one is available. From the same page you can download the release, review a confirmation summary, and install it. An admin can also install a release ZIP file they upload directly — useful if the server can't reach GitHub, or to install a build that isn't published as a release — through the same validated backup/install/ automatic-rollback pipeline as a GitHub-fetched release.
 - **Activity & error logs** — **Admin → Logs** keeps a searchable record of logins, lockouts, content and settings changes and update actions, plus a viewer for PHP errors. See [Logs](#logs).
@@ -394,9 +394,9 @@ FanUpdate can use your existing collective management script's table as a catego
 
 | Script | Config value |
 |--------|-------------|
-| Enthusiast 3 | `enthusiast` |
+| Enthusiast — [Erin's PHP 8 fork](https://github.com/DudeThatsErin/enth) of Angela Sabas's original | `enthusiast` |
 | Fanatically | `fanatically` |
-| Listing Admin | `listingadmin` |
+| Listing Admin — [Listing Admin Redux](https://github.com/intothisshadow/ListinAdmin-Redux), or [Erin's PHP 8 fork](https://github.com/DudeThatsErin/listingadmin) it is based on (itself a fork of Tess's original) | `listingadmin` |
 | Standalone / none | `none` |
 
 Configured entirely from **Admin → Options → Collective Source**, *after* installing — pick a known script from the dropdown (its collective table name and column names are filled in automatically) or choose **Custom…** to integrate with an unlisted script by entering its identifier, table name, and column names directly. FanUpdate must be installed in the **same database** as the collective script by default — see "Separate-database support" below if that database is different from FanUpdate's own. `blog-config.sample.php` no longer pre-declares `collective_script` at all — a fresh install simply starts standalone, and you configure the real script from this page afterward.

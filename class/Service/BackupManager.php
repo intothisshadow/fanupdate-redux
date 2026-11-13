@@ -25,7 +25,7 @@ declare(strict_types=1);
 
 class BackupManager
 {
-    private const RETENTION_COUNT      = 3;
+    public const RETENTION_COUNT       = 10;
     private const DEFAULT_EXCLUDE_DIRS = ['uploads', 'fu-update-tmp', 'fu-backups', '.git'];
 
     /** @var array<int, string> */

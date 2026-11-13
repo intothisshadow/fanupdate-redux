@@ -852,7 +852,7 @@ if ($upgradeRunner->hasPendingUpgrades(FU_VERSION)) {
 
     <p class="hint small">
         A backup is a ZIP snapshot of the application's own code and configuration — not
-        your uploaded images, which an update never touches. Up to 3 backups are kept;
+        your uploaded images, which an update never touches. Up to <?php echo BackupManager::RETENTION_COUNT; ?> backups are kept;
         creating a new one automatically removes the oldest beyond that. Download one to keep
         an off-site copy — it includes <code>blog-config.php</code>, so store it somewhere private.
     </p>

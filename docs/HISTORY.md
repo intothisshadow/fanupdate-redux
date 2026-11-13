@@ -6,6 +6,88 @@ each change, and `PHP Test Suite/TEST_LOG.md` for verified test runs.
 
 ---
 
+## [Redux 2.8.0] — November 13, 2026 — Backup Downloads, Listing Admin & Self-Hosted Icons
+
+## FP-41. Move Collective-Script Configuration from blog-config.php into the Database
+
+**Status:** Complete — shipped in Redux 2.8.0
+
+### Background
+
+`collective_script`/`col_id`/`col_subj` moved from `blog-config.php`'s hardcoded array into the options table (descriptive identifiers, one-time migration for existing installs, dedicated **Admin → Options → Collective Source** subpage) — see the "Redux 2.3.0" entry. The remaining item was verification only.
+
+### Testing
+
+- [x] Live verification against an Enthusiast-shaped setup on the dev install (counted as the live check). `FanUpdate::hasCollectiveScript()`/`resolveCollectiveScriptConfig()` have unit coverage (`FanUpdate_CollectiveScriptTest`), and the shorthand normalisation lives in `CollectiveScriptNormalizer` (covered by `NormalizersTest`).
+- [x] `install.php`'s `collective_script`/`col_id`/`col_subj` settings seeded on a fresh install — confirmed in the dev install's database (`none`/`fl_id`/`fl_subject`).
+
+------
+
+## FP-38. Enthusiast Fanlisting Integration: Sync, Refresh, and Delete Notifications
+
+**Status:** Complete — shipped in Redux 2.8.0
+
+### Background
+
+What a collective integration maps in as a FanUpdate "category" is the collective's own list of member **fanlistings** (Enthusiast's `owned` table, `listingid`/`subject` columns), not a native category concept. The generic hybrid category model and orphan detection (`CategoryRepository::listOrphanedCollectiveCategoryIds()`, Dashboard notice, `admin/category.php` confirm-delete flow) already covered Enthusiast; this ticket verified it end to end.
+
+### Approach
+
+- [x] Confirm the generic orphaned-category detection works against a real Enthusiast `owned` table.
+- [x] Ensure fanlisting selection, assignment, and presentation stay synchronized with the parent Enthusiast installation.
+- [x] Refresh fanlisting data from `owned` automatically and on request.
+- [x] Notify and ask for confirmation before deleting a category whose fanlisting was removed from `owned`.
+
+### Testing
+
+- [x] `CategoryRepositoryTest` covers Enthusiast's `owned`/`listingid`/`subject` shape. Live-checked the list/find/orphan SQL against Enthusiast-shaped latin1 and utf8mb4 tables.
+
+------
+
+## FP-39. Listing Admin Fanlisting Integration: Sync, Refresh, and Delete Notifications
+
+**Status:** Complete — shipped in Redux 2.8.0
+
+### Background
+
+Same naming correction as FP-38. Listing Admin's main fanlistings table (`trex` by default; the Listing Admin table prefix without the underscore) with `id`/`subject` columns was confirmed against the Listing Admin Redux source and is now an option in **Admin → Options → Collective Source**.
+
+### Approach
+
+- [x] Confirm Listing Admin's fanlisting table shape.
+- [x] Verify the generic orphaned-category detection against it.
+- [x] Ensure fanlisting selection, assignment, and presentation stay synchronized with Listing Admin.
+- [x] Refresh fanlisting data automatically and on request.
+- [x] Notify and ask for confirmation before deleting a category whose fanlisting was removed in Listing Admin.
+- [x] Fix: the combined category list failed on utf8mb3/latin1 collective tables; names are now converted to utf8mb4 first.
+
+### Testing
+
+- [x] `CategoryRepositoryTest` covers the Listing Admin column names and the utf8mb3 `CONVERT` fix. Live-checked the list/find/orphan SQL against a Listing Admin–shaped utf8mb3 table.
+
+------
+
+## FP-50. Download a Created Backup from the Update Page
+
+**Status:** Complete — shipped in Redux 2.8.0
+
+### Background
+
+Backups made on **Admin → Updates** (`BackupManager`, stored in `fu-backups/`) could only be restored or deleted there; getting a copy off the server meant FTP. Archives contain `blog-config.php`, so the download is admin-only and serves only files `BackupManager` created. The same release raised the number of kept backups from 3 to 10.
+
+### Approach
+
+- [x] `BackupManager::locateBackup()` resolves a bare filename (must match the `backup-<version>-<date>-<time>.zip` pattern and resolve by `realpath()` inside the backup directory).
+- [x] `admin/update.php` `download_backup` POST action: login + CSRF required, streams the ZIP with `Content-Disposition: attachment`, `nosniff` and `no-store`, and logs a `UPDATE_ACTION` event.
+- [x] Download button per row in the Backups table, plus a hint that the file contains `blog-config.php`.
+- [x] README and CHANGELOG updated.
+
+### Testing
+
+- [x] `BackupManagerTest`: valid backup resolves; traversal, nested/absolute paths, wrong extension, unrelated files, missing files, empty names and an outward symlink are rejected. Live-checked on the dev install.
+
+------
+
 ## [Redux 2.7.1] — November 12, 2026 — Strict-CSP Admin & Upload Fixes
 
 ## FP-49. Strict-CSP-Compatible Admin: Remove Inline Scripts and Handlers
